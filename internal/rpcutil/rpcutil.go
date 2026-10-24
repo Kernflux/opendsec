@@ -185,6 +185,8 @@ func ServerOptions(extra ...grpc.ServerOption) []grpc.ServerOption {
 			return err
 		}),
 		grpc.MaxConcurrentStreams(1 << 16),
+		grpc.MaxRecvMsgSize(MaxMsgSize),
+		grpc.MaxSendMsgSize(MaxMsgSize),
 		grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{MinTime: 5 * time.Second, PermitWithoutStream: true}),
 		// Ping idle connections: a load balancer in front of the apiservers
 		// cuts connections idle longer than its timeout (HAProxy's default
@@ -198,6 +200,12 @@ func ServerOptions(extra ...grpc.ServerOption) []grpc.ServerOption {
 // ServerPingInterval: servers ping a connection after this long without
 // activity, below the idle timeout of common load balancers.
 const ServerPingInterval = 20 * time.Second
+
+// MaxMsgSize bounds a message in either direction, for servers and the
+// clients of Dial. It must hold what the in-sandbox agents send and accept
+// (80 MB: a 64 MB file read, 16 MB of command output per call, a large
+// write): gRPC's 4 MB default failed such calls at the apiserver and edge.
+const MaxMsgSize = 80 << 20
 
 // observeRPC records a served call; method is "/opendsec.v1.<Service>/<Method>".
 func observeRPC(method string, err error, t0 time.Time) {
@@ -221,6 +229,7 @@ func Dial(addr string, sec *Security, expect *pki.Identity) (*grpc.ClientConn, e
 			Backoff:           backoff.Config{BaseDelay: 100 * time.Millisecond, Multiplier: 1.6, Jitter: 0.2, MaxDelay: 2 * time.Second},
 			MinConnectTimeout: 2 * time.Second,
 		}),
+		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(MaxMsgSize), grpc.MaxCallSendMsgSize(MaxMsgSize)),
 	}
 	switch {
 	case sec != nil && sec.TLS != nil:

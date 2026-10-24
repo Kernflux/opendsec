@@ -86,7 +86,12 @@ def _reason_from_trailers(err: grpc.aio.AioRpcError) -> str | None:
 
 
 def _wrap(err: grpc.aio.AioRpcError) -> DSecError:
-    reason = _reason_from_trailers(err) or _CODE_REASON.get(err.code(), INTERNAL)
+    reason = _reason_from_trailers(err)
+    if reason is None and err.code() == grpc.StatusCode.RESOURCE_EXHAUSTED:
+        # Quota errors carry their reason; a bare RESOURCE_EXHAUSTED is
+        # gRPC's own, a message over the size limit.
+        reason = INVALID
+    reason = reason or _CODE_REASON.get(err.code(), INTERNAL)
     return DSecError(reason, err.details() or "")
 
 
@@ -469,7 +474,9 @@ class DSecClient:
 
     async def open(self) -> "DSecClient":
         if self._channel is None:
-            options = [("grpc.max_receive_message_length", 64 << 20),
+            # Messages up to 80 MB each way, as the servers allow: a 64 MB
+            # file read, 16 MB of command output per call.
+            options = [("grpc.max_receive_message_length", 80 << 20), ("grpc.max_send_message_length", 80 << 20),
                        # Reconnect quickly after an apiserver restart (gRPC's default backs off to 2 min).
                        ("grpc.initial_reconnect_backoff_ms", 100), ("grpc.max_reconnect_backoff_ms", 2000),
                        # Ping every 10 s: a connection to an apiserver that went

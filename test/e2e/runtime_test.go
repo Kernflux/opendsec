@@ -121,6 +121,22 @@ func TestRuntimeEndToEnd(t *testing.T) {
 		t.Fatalf("read: %v %v", d, err)
 	}
 
+	// Past gRPC's 4 MB default, through apiserver and edge: a 20 MB write
+	// and read, and 10 MB of command output.
+	big := make([]byte, 20<<20)
+	for i := range big {
+		big[i] = byte(i * 7)
+	}
+	if _, err := c.WriteFile(cx, &pb.WriteFileRequest{SandboxId: id, Path: "/work/big", Data: big}); err != nil {
+		t.Fatalf("20 MB write: %v", err)
+	}
+	if d, err := c.ReadFile(cx, &pb.FileRequest{SandboxId: id, Path: "/work/big"}); err != nil || string(d.Data) != string(big) {
+		t.Fatalf("20 MB read: %v (%d bytes)", err, len(d.GetData()))
+	}
+	if r := shell(t, c, id, "", "head -c 10485760 /work/big"); len(r.Stdout) != 10<<20 {
+		t.Fatalf("10 MB of output: got %d bytes", len(r.Stdout))
+	}
+
 	// Streaming output.
 	st, err := c.ExecStream(cx, &pb.ExecRequest{SandboxId: id, Cmd: "for i in 1 2 3; do echo $i; sleep 0.1; done"})
 	if err != nil {

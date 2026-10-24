@@ -72,7 +72,7 @@ asyncio.run(main())
 - **镜像**：管理员导入的镜像，比如 quickstart 导入的 `root/py:3.12`（python:3.12）；`client.list_images()` 可以查看。需要其他镜像请联系管理员。
 - **网络**：
   - 默认能否访问公网由集群配置决定（`network.default_rules`，管理员填写）。quickstart 装的集群默认不能访问，需要时在 `network_rules` 里放行，例如 `{"*": True}` 或规则集 `{"pypi": True}`。
-  - 内网地址（VPC、集群节点）和云元数据地址始终不可访问。
+  - 内网地址（VPC、集群节点）和云元数据地址默认不可访问：`*` 不包括它们，域名解析到的内网地址也一律拦截。确实需要访问内网的某个服务时，用地址或网段规则明确写出，例如 `{"10.30.0.10:5432/tcp": True}`（[网络策略](NETWORK.md)）。
   - 收紧规则：`network_rules` 的键可以是规则集名、域名（含子域名）、IPv4 地址或网段、`"*"`（所有公网地址），后面可以加 `:端口[/协议]` 只放行这些端口，例如 `{"*": False, "pypi.org:443": True, "files.pythonhosted.org:443/tcp": True}`；端口可以是范围 `8000-8080`，协议是 `tcp` 或 `udp`，不写时两个都放行。
   - 只支持 IPv4。
 - **生命周期**：
@@ -81,7 +81,7 @@ asyncio.run(main())
 - **配额**：每个项目同时存在的 sandbox 数和资源有上限（管理员填写）。超出时创建返回 `quota_exceeded`。
 - **磁盘**：可写盘默认 microvm 2 GB、container 1 GB，用 `disk_mb` 调整。
 - **命令输出**：每条命令的 stdout、stderr 各记录前 64 MB，超出部分丢弃（`ShellResult.dropped_bytes`），命令照常运行；每个会话保留最近 512 MB 的输出记录，更早的会被删除，`get_output` 取不到。
-- **限流**：每个身份在每个 apiserver 上每秒最多发起 2 万次创建、10 万次调用，正常使用不会碰到。
+- **限流**：每个身份在每个 apiserver 上每秒最多发起的创建数和调用数由集群配置决定（管理员填写；默认 2000 次创建、10000 次调用，示例生产配置是 2 万和 10 万）。批量创建在服务端排队，不会因为限流失败。
 
 ## 5. 错误与重试
 
@@ -101,3 +101,11 @@ asyncio.run(main())
 ## 6. token
 - token 有一个有效期（集群的 `max_token_ttl_s`，quickstart 设为 90 天；你的 token 什么时候到期，管理员填写，`opendsecctl token list` 可以查到）。到期前请找管理员换发（`opendsecctl token create <身份>`）。旧 token 在新 token 生效后撤销。
 - token 泄露时，立即通知管理员撤销（`opendsecctl token revoke`），撤销在 1 秒内对所有 apiserver 生效。
+
+## 7. 更多文档
+
+- [核心概念](CONCEPTS.md)：后端、状态、超时、会话、任务、镜像、网络、权限、错误
+- [Python SDK 参考](PYTHON_SDK.md)：全部类和方法
+- [命令行参考](CLI.md)：`opendsecctl` 的全部命令
+- [镜像与快照](IMAGES.md)、[网络策略](NETWORK.md)、[项目、身份与权限](IAM.md)
+- [故障排查](TROUBLESHOOTING.md)

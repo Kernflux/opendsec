@@ -188,6 +188,13 @@ docs/OPERATIONS.md §6.4.
   they go to the image store.
 
 ### Fixed
+- **Files and command output over 4 MB failed through the apiserver**: the
+  apiserver, the edge and the internal clients kept gRPC's 4 MB message
+  limit, so `write_file` and `read_file` of a larger file, and `run_shell`
+  of a command printing more than 4 MB, failed (the Python SDK reported
+  `quota_exceeded`). Messages now go up to 80 MB each way, as the agents in
+  the sandbox already allowed; the Python SDK and the Go client accept as
+  much, and the SDK reports a message over the limit as `invalid`.
 - **MicroVMs could not resume on Ubuntu 24.04's current kernel** (6.8.0-1xx):
   after `cgroup.kill`, that kernel kills every process later cloned into the
   cgroup, and a paused microVM resumes into its own. Killing a cgroup's

@@ -82,6 +82,12 @@ async def test_shell_files_stream_http(cluster):
         await sb.remove("/work/out.txt")
         with pytest.raises(DSecError):
             await sb.stat("/work/out.txt")
+        # Past gRPC's 4 MB default: a 20 MB file both ways, 10 MB of output.
+        big = bytes(range(256)) * (20 << 12)
+        await sb.write_file("/work/big", big)
+        assert await sb.read_file("/work/big") == big
+        assert len((await sb.run_shell("head -c 10485760 /work/big")).stdout_bytes) == 10 << 20
+        await sb.remove("/work/big")
 
         # Streaming.
         chunks, exit_ = [], None

@@ -66,6 +66,11 @@ func WithServerName(n string) Option { return func(o *options) { o.serverName = 
 // match); not imported, since this package is Apache-2.0 (NOTICE).
 const APIServerName = "api.opendsec.internal"
 
+// MaxMessageSize bounds a message in either direction, as the servers do
+// (internal/rpcutil.MaxMsgSize): file reads up to 64 MB and 16 MB of
+// command output per call fit.
+const MaxMessageSize = 80 << 20
+
 // Dial connects to an apiserver, or to several ("host:port,host:port",
 // balanced round-robin, verified as APIServerName under TLS); project is
 // the default project for creations. With token "", calls carry the token
@@ -80,7 +85,8 @@ func Dial(addr, token, project string, opts ...Option) (*Client, error) {
 	}
 	target := "passthrough:///" + addr
 	// A silently lost apiserver (partition, host down) fails within ~15 s.
-	dopts := []grpc.DialOption{grpc.WithKeepaliveParams(keepalive.ClientParameters{Time: 10 * time.Second, Timeout: 5 * time.Second, PermitWithoutStream: true})}
+	dopts := []grpc.DialOption{grpc.WithKeepaliveParams(keepalive.ClientParameters{Time: 10 * time.Second, Timeout: 5 * time.Second, PermitWithoutStream: true}),
+		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(MaxMessageSize), grpc.MaxCallSendMsgSize(MaxMessageSize))}
 	if token != "" {
 		dopts = append(dopts, grpc.WithPerRPCCredentials(bearer(token)))
 	}

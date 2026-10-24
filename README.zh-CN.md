@@ -1,6 +1,6 @@
 # OpenDsec：面向智能体训练的 sandbox 基础设施
 
-[English](README.md) | 中文 | [主页](https://kernflux.github.io/)
+[English](README.md) | 中文 | [主页](https://kernflux.github.io/) | [文档](https://kernflux.github.io/docs/)
 
 > **本项目借鉴自 DeepSeek 的 DSec 论文**：[*DeepSeek Elastic Compute (DSec): A Sandbox Infrastructure for Effective Agentic Training at Scale*](https://arxiv.org/abs/2609.22978)（arXiv:2609.22978）。
 >
