@@ -1,6 +1,6 @@
 # OpenDsec: sandbox infrastructure for agentic training
 
-English | [中文](README.zh-CN.md) | [Website](https://kernflux.github.io/opendsec/)
+English | [中文](README.zh-CN.md) | [Website](https://kernflux.github.io/)
 
 OpenDsec runs large numbers of isolated sandboxes (Firecracker microVMs, containers, full QEMU VMs) for reinforcement-learning rollouts and code-executing agents.
 
