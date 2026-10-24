@@ -2926,7 +2926,7 @@ E2B 的 `sandbox.fork()`、`create_snapshot()`、`Sandbox.create(snapshot_id)` �
   - E2B 恢复后按原来的超时重新计时；我们恢复后按空闲超时。
 
 **网络**：映射到 §20 的 `network_rules`。
-- `allow_internet_access=false`，或 `denyOut` 里有 `0.0.0.0/0`：规则 `"*": false`，撤销集群默认规则里的 `"*"`。E2B 默认放行公网，所以集群默认规则也要有 `"*"`；线上就是这样配的。
+- 和 E2B 一样默认放行公网：网关给每个 sandbox 加规则 `"*": true`，不依赖集群默认规则（集群默认拒绝时也一样，比如 quickstart 装的单机）。`allow_internet_access=false`，或 `denyOut` 里有 `0.0.0.0/0`：规则改为 `"*": false`。查询时 `"*": true` 不显示，和 E2B 一致。
 - `allowOut`：每一项成为一条放行规则。`0.0.0.0/0` 对应 `"*"`；`*.example.com` 对应 `example.com`（我们的域名规则本来就包含子域名，也包含它自己，比 E2B 宽一点）；IP 和网段原样使用。和 E2B 一样，放行优先于拒绝。
 - `denyOut` 里 `0.0.0.0/0` 以外的项返回 400：我们的模型是「默认拒绝、按规则放行」，没法表达「公网放行但拒绝某个地址」。
 - `maskRequestHost`、`httpsPorts`、`rules`（请求改写）、`egressProxy`、`mcp`、`volumeMounts` 返回 400。`dnsServers` 忽略：sandbox 的 DNS 由 edge 的代理处理。`allowPublicTraffic` 接受，但端口访问始终要 token（37.8）。

@@ -47,17 +47,18 @@ OpenDsec 是照着 DSec 论文做的。论文描述了 DeepSeek 用于智能体�
 
 ## 单机部署（5 分钟）
 
-一台 Linux x86_64 机器（在 Ubuntu 24.04 上测过；需要 root、systemd、cgroup v2，跑 microVM 还需要 `/dev/kvm`），装好 Go 1.27+：
+一台 Linux x86_64 机器（在 Ubuntu 24.04 上测过；需要 root、systemd、cgroup v2，跑 microVM 还需要 `/dev/kvm`，没有的话只装容器），装好 [Go 1.27+](https://go.dev/dl) 和 `make`：
 
 ```sh
 git clone https://github.com/kernflux/opendsec && cd opendsec
 sudo deploy/quickstart.sh --build-kernel     # 或 --no-microvm 只跑容器；--kernel FILE 用现成的 guest 内核
-. /root/opendsec-ops/demo.env                # 调用方的地址、token、CA
+. /root/opendsec-ops/demo.env                # 调用方的地址、token、CA，以及 E2B SDK 用的变量
+sudo apt install python3-venv                # Debian、Ubuntu
 python3 -m venv .venv && .venv/bin/pip install ./sdk/python
 .venv/bin/python sdk/python/examples/quickstart.py
 ```
 
-脚本以 systemd 服务装好 IAM、watcher、apiserver、edge，导入 `python:3.12` 镜像，创建项目 `root/demo` 和它的调用方，并各跑一个容器和 microVM sandbox 做检查。卸载：`sudo deploy/quickstart.sh --uninstall`。多机生产集群见 [docs/OPERATIONS.md](docs/OPERATIONS.md)。
+脚本以 systemd 服务装好 IAM、watcher、apiserver、edge 和 E2B 网关，导入 `python:3.12` 镜像，创建项目 `root/demo` 和它的调用方，并各跑一个容器和 microVM sandbox 做检查。卸载：`sudo deploy/quickstart.sh --uninstall`。多机生产集群见 [docs/OPERATIONS.md](docs/OPERATIONS.md)。
 
 **不能访问外网的机器**：在能上网的机器上做离线安装包（`deploy/offline/build-bundle.sh`），在目标机器上用 `./install.sh` 安装，单机和多机都支持，见 [deploy/offline/README.md](deploy/offline/README.md)。
 
@@ -188,7 +189,7 @@ export E2B_API_URL=http://<网关>:7400 E2B_SANDBOX_URL=http://<网关>:7400 E2B
 python -c 'from e2b import Sandbox; print(Sandbox.create().commands.run("echo hi").stdout)'
 ```
 
-- 启用方法：在集群配置里加 `e2b` 一节，写上网关地址、sandbox 所在的项目，以及各个 template（E2B 的 template id 对应哪个镜像、后端和资源；SDK 默认用 `base`）。然后给一台机器加上 fleet 角色 `e2b=<序号>`。详见 docs/OPERATIONS.md。
+- 启用方法：在集群配置里加 `e2b` 一节，写上网关地址、sandbox 所在的项目，以及各个 template（E2B 的 template id 对应哪个镜像、后端和资源；SDK 默认用 `base`）。然后给一台机器加上 fleet 角色 `e2b=<序号>`。详见 docs/OPERATIONS.md。`deploy/quickstart.sh` 在本机已经装好一个。
 - 已支持：sandbox 的创建、查询、列出、删除、超时、暂停、重新连接；命令的输出、退出码、后台运行、stdin、信号、环境变量、工作目录；PTY；文件的读写、列目录、建目录、改名、删除；访问 sandbox 里其他端口上的服务（HTTP、流式响应、WebSocket），E2B 的 code interpreter 就靠这个。fork 和快照（`fork()`、`create_snapshot()`、`Sandbox.create(snapshot_id)`；microVM 上连内存一起）；autoPause；网络选项（`allow_internet_access`、`allow_out`、拒绝全部流量的 `deny_out`、`update_network()`）。E2B 官方的 Python SDK（同步和异步）和 JS/TS SDK 的验收检查全部通过。
 - E2B 的 code interpreter（`e2b_code_interpreter`）：用 `deploy/e2b/build-code-interpreter.py` 构建的 template 即可使用（Python 内核）。它是内存快照，`Sandbox.create()` 约 280 ms，第一次 `run_code` 约 45 ms。
 - 还不支持：监听目录、签名的文件 URL、不带 token（浏览器直接打开）访问 sandbox 端口、构建 template。

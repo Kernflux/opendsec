@@ -42,7 +42,11 @@ type Server struct {
 	Engine  *placement.Engine
 	log     *slog.Logger
 
-	addrs   atomic.Pointer[map[string]string] // edge id -> addr
+	addrs atomic.Pointer[map[string]string] // edge id -> addr
+	// gone: edges missing from the latest snapshot, still routed to until
+	// edgeAddrGrace after they left it.
+	goneMu  sync.Mutex
+	gone    map[string]goneEdge
 	movedIn atomic.Pointer[map[string]string] // sandbox id -> edge, for sandboxes that moved (spec §26.2)
 	routes  sync.Map                          // the same, learned since the last snapshot
 
@@ -68,6 +72,17 @@ type Server struct {
 	lastIAM, lastSnap atomic.Int64 // unix ns of the last IAM answer and watcher snapshot (Ready)
 }
 
+type goneEdge struct {
+	addr  string
+	since time.Time
+}
+
+// edgeAddrGrace: an edge that drops out of the watcher snapshot keeps its
+// address this long. A watcher that just restarted publishes snapshots
+// without the edges it has not heard from yet; calls to their sandboxes
+// meanwhile would fail as not_found, which callers do not retry.
+const edgeAddrGrace = 2 * time.Minute
+
 type authnEntry struct {
 	principal string
 	exp       time.Time
@@ -79,6 +94,7 @@ func New(cfg config.APIServer, pcfg config.Placement, iamc pb.IAMClient, w pb.Wa
 		cfg: cfg, pcfg: pcfg, iam: iamc, watcher: w, pool: pool,
 		Engine: placement.New(pcfg), log: log,
 		authn: map[string]authnEntry{}, authz: map[string]time.Time{}, sbProject: map[string]string{},
+		gone: map[string]goneEdge{},
 	}
 	empty, none := map[string]string{}, map[string]string{}
 	s.addrs.Store(&empty)
@@ -136,11 +152,29 @@ func (s *Server) Refresh(ctx context.Context) {
 		wasHealthy[e.Id] = e.Healthy
 	}
 	s.Engine.UpdateSnapshot(snap)
+	s.goneMu.Lock()
+	defer s.goneMu.Unlock()
 	m := make(map[string]string, len(snap.Edges))
 	for _, e := range snap.Edges {
 		m[e.Id] = e.Addr
+		delete(s.gone, e.Id)
 		if e.Healthy && !wasHealthy[e.Id] {
 			s.pool.ResetBackoff(e.Addr) // edge is back: reconnect now, not after backoff
+		}
+	}
+	now := time.Now()
+	for id, addr := range *s.addrs.Load() {
+		if _, ok := m[id]; !ok {
+			if _, ok := s.gone[id]; !ok {
+				s.gone[id] = goneEdge{addr, now}
+			}
+		}
+	}
+	for id, g := range s.gone {
+		if now.Sub(g.since) < edgeAddrGrace {
+			m[id] = g.addr
+		} else {
+			delete(s.gone, id)
 		}
 	}
 	s.addrs.Store(&m)

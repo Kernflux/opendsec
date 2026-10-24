@@ -33,8 +33,8 @@
 ### 基础设施要求
 - **NAS**：使用 NFS 4.1 及以上版本，并且必须关闭 root squash（权限组里设为「不限制 root」）。edge 以 root 身份写快照，apiserver 要删除这些快照。
   - 挂上之后、迁移之前先跑 `opendsecctl image store-check -store /mnt/<新挂载点>`（不需要连集群），必需项全部 ok 才能用。不支持 `trusted.*` xattr 没关系（SPEC §29.5）。
-  - 挂载参数：`vers=4.1,nconnect=8,hard,timeo=600,lookupcache=positive,_netdev`。`lookupcache=positive` 让客户端不缓存「文件不存在」：不加的话，一台节点在镜像登记之前查过它，之后最长约一分钟内可能仍然找不到（SPEC §30）。
-  - fstab 写法：`<nas>:/ /mnt/opendsec-images nfs4 vers=4.1,nconnect=8,hard,timeo=600,lookupcache=positive,_netdev 0 0`。
+  - 挂载参数：`vers=4.2,nconnect=8,hard,timeo=600,lookupcache=positive,_netdev`。4.1 也能用，但找不到稀疏文件里的空洞：在另一台节点上用内存快照创建 sandbox 时，要把磁盘和内存按全尺寸读一遍（实测慢一倍多，`store-check` 会提示）。`lookupcache=positive` 让客户端不缓存「文件不存在」：不加的话，一台节点在镜像登记之前查过它，之后最长约一分钟内可能仍然找不到（SPEC §30）。
+  - fstab 写法：`<nas>:/ /mnt/opendsec-images nfs4 vers=4.2,nconnect=8,hard,timeo=600,lookupcache=positive,_netdev 0 0`。
   - 每个节点的 NFS 客户端标识必须不同。没有设置标识时，NFSv4 客户端用主机名标识自己，主机名相同的节点（比如从同一个镜像克隆出来的）会被服务端当成同一个客户端，互相作废对方的打开文件和锁（SPEC §33.4）。`deploy/node/install.sh` 用 `/etc/machine-id` 设置标识（`/etc/modprobe.d/opendsec-nfs.conf`），新的标识要等重新挂载、且旧挂载没有人在用之后才生效，最简单的是重启节点。检查方法：在 NFS 服务端看 `/proc/fs/nfsd/clients/*/info` 里的 `name`，每个节点应该各不相同；或者看服务端 syslog 里 `rpc.mountd` 的 `client attached/detached` 是否在不停地刷。
 - **LB**（云上的四层负载均衡，或自建的 HAProxy / LVS）：配置如下。
   - 监听 TCP 7100，不能用七层 HTTP/gRPC 监听：TLS 由 apiserver 自己终结。

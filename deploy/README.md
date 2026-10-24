@@ -210,6 +210,7 @@ systemctl enable --now opendsec-edge
 ```sh
 docker build -f deploy/Dockerfile -t <registry>/opendsec:0.1.0 .   # 并把清单里的 image 改成这个地址
 kubectl apply -f deploy/k8s/namespace.yaml
+# 先把 deploy/k8s/opendsec.json 里的 admin_token 换成自己的（dsk.admin.<随机串>）：IAM 拒绝用 CHANGE-ME 启动
 kubectl -n opendsec create secret generic opendsec-config --from-file=opendsec.json=deploy/k8s/opendsec.json
 opendsecctl pki init -config deploy/k8s/opendsec.json -out pki -hosts opendsec-apiserver.opendsec.svc,opendsec-apiserver.opendsec.svc.cluster.local
 kubectl -n opendsec create secret generic opendsec-pki --from-file=pki/ --dry-run=client -o yaml \
@@ -217,6 +218,10 @@ kubectl -n opendsec create secret generic opendsec-pki --from-file=pki/ --dry-ru
 kubectl label node <sandbox 节点> opendsec.io/sandbox-node=true   # 并按上文用 pki issue 为每个节点签发证书
 kubectl apply -k deploy/k8s
 ```
+
+- 至少 3 个节点：IAM 和 watcher 的副本要求分在不同节点上（anti-affinity）。资源请求：IAM 每个 2 核 2 GB、watcher 1 核 1 GB、apiserver 4 核 4 GB、edge 1 核 1 GB，按集群大小调整。
+- `images-pvc.yaml` 要一个 ReadWriteMany 的存储类（NFS 用 `vers=4.2`），名字改成集群里的。
+- 镜像里没有 Firecracker，edge 只提供 container 后端。
 
 edge DaemonSet 的几项设置**缺一不可**，否则 edge Pod 一重启，所有 sandbox 都会丢失：
 - `hostPID: true`：sandbox 是 edge 的子孙进程。如果它们在容器的 PID 命名空间里，容器的 1 号进程一退出，内核会把它们全部杀掉。
@@ -235,5 +240,5 @@ edge DaemonSet 的几项设置**缺一不可**，否则 edge Pod 一重启，所
 | aether / chronus | 发布新的版本目录 `/opt/opendsec/agents/<新版本>`，把 `agent_dir` 指过去：之后新建的 sandbox 用新版本，已经在跑的 sandbox 继续用它挂载的旧版本 |
 
 ## 验证情况
-- systemd unit：用 `systemd-analyze verify` 检查通过（拿一个故意写错的 unit 作对照，确认检查确实生效）；没有在这台机器上把它们安装为系统服务实际运行。
-- Kubernetes：`deploy/k8s/opendsec.json` 可以被 OpenDsec 加载并据此签发证书；清单经过 YAML 解析和结构检查（selector 与 label 一致、挂载与卷对应、副本数与配置一致）。**没有在真实的 Kubernetes 集群上运行过**，尤其是 edge 的 `hostPID`、挂载传播和 cgroup 这几项，需要在目标集群上验证。
+- systemd unit：单机（`quickstart.sh`）、多机集群和生产环境都在用。
+- Kubernetes（2026-10-24，k3s v1.36 单节点，用一个去掉 anti-affinity、调低资源请求的 overlay）：按上面的步骤部署，全部 Pod 就绪；container sandbox 的创建、执行、暂停恢复、`image pack`；删除 edge Pod 后，新的 edge Pod 接管了原有的 sandbox（`hostPID`、挂载传播和 cgroup 的设置有效）。**还没有验证**：多节点集群、fleet（Kubernetes 上没有）。

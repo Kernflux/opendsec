@@ -33,15 +33,12 @@ type networkConfig struct {
 const allTraffic = "0.0.0.0/0"
 
 // networkRules maps E2B's network options to network rules. E2B allows the
-// internet by default, as does a cluster whose default rules hold "*":
-// allow_internet_access false or denyOut 0.0.0.0/0 take "*" back, and
-// allowOut entries (allowed before denials, as in E2B) are rules of their
-// own. Other denials cannot be expressed (OpenDsec allows by rule only).
+// internet by default, whatever the cluster's default rules: "*" unless
+// allow_internet_access false or denyOut 0.0.0.0/0 take it back; allowOut
+// entries (allowed before denials, as in E2B) are rules of their own.
+// Other denials cannot be expressed (OpenDsec allows by rule only).
 func networkRules(internet *bool, n *networkConfig) (map[string]bool, error) {
-	rules := map[string]bool{}
-	if internet != nil && !*internet {
-		rules["*"] = false
-	}
+	rules := map[string]bool{"*": internet == nil || *internet}
 	if n == nil {
 		return rules, nil
 	}
@@ -69,21 +66,20 @@ func networkRules(internet *bool, n *networkConfig) (map[string]bool, error) {
 }
 
 // networkOf is the network config a sandbox's rules amount to (nil for
-// none of its own: the cluster's default rules).
+// E2B's default: the internet allowed, nothing else said).
 func networkOf(rules map[string]bool) *networkConfig {
-	if len(rules) == 0 {
-		return nil
-	}
 	n := &networkConfig{}
 	for k, v := range rules {
 		switch {
-		case k == "*" && v:
-			n.AllowOut = append(n.AllowOut, allTraffic)
+		case k == "*" && v: // the default
 		case k == "*":
 			n.DenyOut = append(n.DenyOut, allTraffic)
 		case v:
 			n.AllowOut = append(n.AllowOut, k)
 		}
+	}
+	if len(n.AllowOut)+len(n.DenyOut) == 0 {
+		return nil
 	}
 	slices.Sort(n.AllowOut)
 	return n

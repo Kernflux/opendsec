@@ -52,7 +52,7 @@ OpenDsec was built by following the DSec paper, which describes the sandbox infr
 
 ## Try it on one machine
 
-You need a Linux x86_64 machine (tested on Ubuntu 24.04) with root, systemd and cgroup v2, and Go 1.27 or newer. MicroVMs also need `/dev/kvm`: use bare metal, or a cloud VM with nested virtualization.
+You need a Linux x86_64 machine (tested on Ubuntu 24.04) with root, systemd and cgroup v2, [Go 1.27](https://go.dev/dl) or newer, and `make`. MicroVMs also need `/dev/kvm`: use bare metal, or a cloud VM with nested virtualization; without it the script sets up containers only.
 
 ```sh
 git clone https://github.com/kernflux/opendsec && cd opendsec
@@ -61,7 +61,7 @@ sudo deploy/quickstart.sh --build-kernel   # or --no-microvm for containers only
 
 The script checks the machine, builds the binaries, and fetches Firecracker. With `--build-kernel` it also builds the guest kernel, which takes a few minutes and needs `build-essential flex bison bc libelf-dev libssl-dev`. It then does the following:
 
-1. Installs IAM, watcher, apiserver and edge as systemd services, with their own CA and certificates.
+1. Installs IAM, watcher, apiserver, edge and the E2B gateway as systemd services, with their own CA and certificates.
 2. Imports `python:3.12` from Docker Hub.
 3. Creates the project `root/demo` and a caller for it.
 4. Runs a container sandbox and a microVM sandbox as a check.
@@ -72,6 +72,7 @@ Then use it from Python:
 
 ```sh
 . /root/opendsec-ops/demo.env                 # OPENDSEC_ADDR, OPENDSEC_TOKEN, OPENDSEC_PROJECT, OPENDSEC_CA
+sudo apt install python3-venv                 # Debian and Ubuntu
 python3 -m venv .venv && .venv/bin/pip install ./sdk/python
 .venv/bin/python sdk/python/examples/quickstart.py
 ```
@@ -89,13 +90,15 @@ async def main():
         try:
             print((await sb.run_shell("python3 -c 'print(6*7)'")).stdout)
             forks = await sb.fork(count=4)           # four copies, memory included
+            for f in forks:
+                await f.stop()
         finally:
             await sb.stop()
 
 asyncio.run(main())
 ```
 
-Admin commands use `. /root/opendsec-ops/env`, then `opendsecctl status` and `opendsecctl --help`. To remove everything, run `sudo deploy/quickstart.sh --uninstall`.
+The same `demo.env` points E2B's SDKs at the machine's E2B gateway (`pip install e2b`, then [docs/E2B.md](docs/E2B.md)). Admin commands use `. /root/opendsec-ops/env`, then `opendsecctl status` and `opendsecctl --help`. To remove everything, run `sudo deploy/quickstart.sh --uninstall`.
 
 **Machines without internet access**: build an offline bundle on a machine that has it (`deploy/offline/build-bundle.sh`) and install from it with `./install.sh`, for one machine or a cluster: see [deploy/offline/README.md](deploy/offline/README.md).
 
@@ -142,7 +145,7 @@ In a small cluster the control-plane services can share machines with edge: put 
 - **Shared file system**, mounted at `/mnt/opendsec-images` on every apiserver and edge node. It holds image layers and snapshots.
   - NFS 4.1+, CephFS or JuiceFS all work.
   - Root squash must be off.
-  - With NFS, mount it with `vers=4.1,nconnect=8,hard,timeo=600,lookupcache=positive,_netdev` in fstab. `lookupcache=positive` stops the client from caching "file not found": without it, a node that looked for an image before it was registered could keep missing it for up to a minute.
+  - With NFS, mount it with `vers=4.2,nconnect=8,hard,timeo=600,lookupcache=positive,_netdev` in fstab. NFS 4.1 works too, but cannot find the holes of sparse files, so moving a memory snapshot to another node reads its whole disk and memory size (about twice as slow in our tests). `lookupcache=positive` stops the client from caching "file not found": without it, a node that looked for an image before it was registered could keep missing it for up to a minute.
   - Check the file system with `opendsecctl image store-check -store /mnt/opendsec-images` before you use it.
 - **Load balancer**: plain TCP on port 7100; the apiservers terminate TLS themselves.
   - Health check: HTTP on port 9463, path `/readyz`.
@@ -233,7 +236,7 @@ Open only TCP 7100 (the load balancer) to callers. Keep every other port listed 
 
 | Task | How |
 |---|---|
-| Add a compute node | mount the shared file system on it (fstab, as above), then `opendsecops add-node node-a2 <ssh addr> <private addr> edge=node-a2` and `opendsecctl fleet node accept node-a2 -roles edge=node-a2 -domain a` |
+| Add a compute node | mount the shared file system on it (fstab, as above), then `opendsecops add-node node-a2 <ssh addr> <private addr> edge=node-a2` and `opendsecctl fleet node accept node-a2 -roles edge=node-a2 -domain a`; `opendsecops monitor` again adds it to Prometheus |
 | Upgrade | `make build && opendsecops release bin/`, then `opendsecctl fleet release push …` and `opendsecctl fleet rollout create -release <version>` |
 | Change the config | `opendsecctl fleet config put opendsec.json`, then `opendsecctl fleet rollout create -config-gen <n>` |
 | Maintain a node | `opendsecctl fleet node cordon <name>` … `uncordon`; `node evacuate` waits for its sandboxes to end |
@@ -262,7 +265,7 @@ export E2B_API_URL=http://<gateway>:7400 E2B_SANDBOX_URL=http://<gateway>:7400 E
 python -c 'from e2b import Sandbox; print(Sandbox.create().commands.run("echo hi").stdout)'
 ```
 
-- Enable it with an `e2b` section in the cluster config: the gateways' addresses, the project sandboxes go to, and the templates, i.e. which image, backend and resources an E2B template id means (SDKs default to `base`). Then give a node the fleet role `e2b=<index>`. See docs/OPERATIONS.md.
+- Enable it with an `e2b` section in the cluster config: the gateways' addresses, the project sandboxes go to, and the templates, i.e. which image, backend and resources an E2B template id means (SDKs default to `base`). Then give a node the fleet role `e2b=<index>`. See docs/OPERATIONS.md. `deploy/quickstart.sh` sets one up on its machine.
 - Supported: sandboxes (create, info, list, kill, timeout, pause, connect), commands (output, exit codes, background, stdin, signals, envs, cwd), PTYs, files (read, write, list, mkdir, rename, remove), servers on other ports of a sandbox (HTTP, streamed responses, WebSocket), which E2B's code interpreter uses, fork and snapshots (`fork()`, `create_snapshot()`, `Sandbox.create(snapshot_id)`; with memory on microVMs), autoPause, and network options (`allow_internet_access`, `allow_out`, `deny_out` of all traffic, `update_network()`). E2B's Python (sync and async) and JS/TS SDKs pass the gateway's acceptance check.
 - E2B's code interpreter (`e2b_code_interpreter`) works with a template built by `deploy/e2b/build-code-interpreter.py` (Python kernel; a memory snapshot, so `Sandbox.create()` takes about 280 ms and the first `run_code` about 45 ms).
 - Not yet: watching directories, signed file URLs, unauthenticated (browser) access to sandbox ports, building templates.

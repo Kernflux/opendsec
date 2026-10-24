@@ -146,7 +146,7 @@ var (
 		"/opendsec.v1.IAM/*":        {pki.RoleAPIServer, pki.RoleIAM},
 	}
 	WatcherACL = ACL{
-		"/opendsec.v1.Watcher/GetSnapshot": {pki.RoleAPIServer, pki.RoleFleet},
+		"/opendsec.v1.Watcher/GetSnapshot": {pki.RoleAPIServer, pki.RoleFleet, pki.RoleWatcher}, // watchers: seedFromPeers
 		"/opendsec.v1.Watcher/Register":    {pki.RoleEdge},
 	}
 	// Fleet (spec §28.8): node agents report and download; replicas copy

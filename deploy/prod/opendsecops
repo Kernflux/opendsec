@@ -36,8 +36,8 @@ DEBS=${OPENDSEC_DEBS:-}
 [ -z "$DEBS" ] || [ -f "$DEBS/apt-local.sh" ] || { echo "opendsecops: OPENDSEC_DEBS=$DEBS is not an offline bundle's debs/ (no apt-local.sh)" >&2; exit 1; }
 
 # Ports of /readyz (the -metrics listener) per role.
-declare -A PORT=([iam]=9461 [watcher]=9462 [apiserver]=9463 [edge]=9464 [fleet]=9465 [nodeagent]=9466)
-ROLES="iam watcher apiserver fleet edge" # components, in restart order
+declare -A PORT=([iam]=9461 [watcher]=9462 [apiserver]=9463 [edge]=9464 [fleet]=9465 [nodeagent]=9466 [e2b]=9467)
+ROLES="iam watcher apiserver e2b fleet edge" # components, in restart order
 
 die() { echo "opendsecops: $*" >&2; exit 1; }
 log() { echo "[$(date +%T)] $*"; }
@@ -379,6 +379,7 @@ roll() {
 	done
 	while read -r n id; do restart "$n" "opendsec-watcher@$id" watcher; done < <(with_role watcher)
 	while read -r n id; do restart "$n" "opendsec-apiserver@$id" apiserver; done < <(with_role apiserver)
+	while read -r n id; do restart "$n" "opendsec-e2b@$id" e2b; done < <(with_role e2b)
 	while read -r n id; do restart "$n" "opendsec-fleet@$id" fleet; done < <(with_role fleet)
 	while read -r n id; do
 		restart "$n" opendsec-edge edge

@@ -29,18 +29,35 @@ docs/OPERATIONS.md §6.4.
 
 ### Breaking
 - **`opendsecctl exec <id> <command> ...`**: everything after the command
-  name now goes to the command. `exec <id> ls -la` works, and so does
-  `python3 -c ...`. Flags for opendsecctl itself must come before the
-  command name, as in `exec -session s <id> <command>`.
+  name now goes to the command, each argument as given (quoted for the
+  sandbox's shell, as `docker exec` takes them): `exec <id> python3 -c
+  'print(6*7)'` works. A single argument is still a shell command line
+  (`exec <id> 'cd /tmp && ls'`). Scripts that quoted arguments twice for
+  the old joining must drop the inner quotes. Flags for opendsecctl itself
+  must come before the command name, as in `exec -session s <id> <command>`.
 - **Stricter config validation**: `edge_template.zone` must be `onprem` or
   `cloud`. Any other value used to pass, and then placement never used those
   edges.
 - **Placeholder admin token**: IAM refuses to start with the example
   configs' placeholder (`change-me`).
-- **Go module path**: now `github.com/<owner>/opendsec`. This matters only
+- **Go module path**: now `github.com/kernflux/opendsec`. This matters only
   to code importing `pkg/client`.
 
 ### Changed behaviour
+- **E2B gateway: internet by default, as on E2B** (SPEC §37.11). Sandboxes
+  made through the gateway get the rule `"*": true` unless the caller turns
+  it off (`allow_internet_access=False`, `deny_out` of all traffic),
+  whatever the cluster's `network.default_rules`. Before, they followed the
+  cluster default, so on a cluster that denies by default E2B code lost the
+  internet it expects.
+- **`deploy/quickstart.sh` sets up an E2B gateway** (port 7400, project
+  `root/demo`, template `base`) and writes `E2B_API_URL`, `E2B_SANDBOX_URL`
+  and `E2B_API_KEY` into `demo.env`. The demo caller may also publish images
+  in `root/demo` (`layer.publish`: `pack_diff`, snapshots).
+- **NFS 4.2 for the image store** (README, docs/OPERATIONS.md): 4.1 cannot
+  find the holes of sparse files, so a memory snapshot moving to another
+  node was read in full (141 s against 62 s in our test).
+  `opendsecctl image store-check` says so.
 - **Core scheduling**: every sandbox gets its own core-scheduling cookie
   where the kernel supports it (`core_sched`, default auto).
 - **Placement**: edges are ranked by what their hosts actually use (CPU and
@@ -171,6 +188,37 @@ docs/OPERATIONS.md §6.4.
   they go to the image store.
 
 ### Fixed
+- **MicroVMs could not resume on Ubuntu 24.04's current kernel** (6.8.0-1xx):
+  after `cgroup.kill`, that kernel kills every process later cloned into the
+  cgroup, and a paused microVM resumes into its own. Killing a cgroup's
+  processes now freezes it and signals them one by one.
+- **`not_found: unknown edge` during control-plane restarts**: a watcher that
+  had just started left edges of the edge template out of its snapshots
+  until they registered again (10 s), and calls to their sandboxes failed
+  with an error callers do not retry. A watcher now starts with the edges
+  its peers know, and apiservers keep routing to an edge missing from a
+  snapshot for 2 minutes. During the upgrade to this version the old
+  behaviour can still show (earlier watchers do not answer their peers):
+  in our test, 7 of about 4,000 calls in the minute the control plane
+  restarted.
+- **`opendsecops restart`, `status` and `monitor` skipped the E2B gateway**
+  (role `e2b`): a config pushed with `push-config` never reached it.
+- **`opendsecctl sandbox create -count N`** prints the sandboxes' ids, as
+  `sandbox fork` does. **`opendsecctl help`** (and `-h`, `--help`) prints
+  the usage. **`image import /missing/file.tar`** says the file is missing
+  instead of trying it as a Docker Hub image.
+- **`deploy/quickstart.sh`** checks for `make` and the Go version before
+  building; `--uninstall` also removes the empty `opendsec` cgroup.
+- **`deploy/offline/build-bundle.sh`** checks for pip, make and Go before
+  spending ten minutes downloading; the bundle carries E2B's SDK wheels, and
+  the closing hints work without internet.
+- **`deploy/e2b/build-code-interpreter.py`** asks for internet access, so it
+  works on clusters that deny it by default.
+- **Kubernetes manifests**: the apiserver ran as an unprivileged user and
+  could not write the image store; it runs as root with only `DAC_OVERRIDE`
+  and `FOWNER`, as its systemd unit, and reports ready on `/readyz`.
+- **Alert `OpenDsecEdgeDiskLow`** fired on every edge with less than 200 GB
+  free, whatever its size; it fires under 10% of the edge's disk now.
 - **Fleet rollouts after adding roles to several nodes** (SPEC §37.7): the
   rollout waited for every node's new, not yet deployed units to be ready,
   and those waited for the rollout. Nodes now record the roles they were

@@ -104,6 +104,8 @@ func main() {
 		err = clusterUp(args)
 	case "bench":
 		err = bench(args)
+	case "help", "-h", "-help", "--help":
+		fmt.Print(usage)
 	case "version":
 		fmt.Println(metrics.Version)
 	case "pki init":
@@ -367,9 +369,12 @@ func apiCommand(cmd string, args []string) error {
 			return err
 		}
 		fails := map[string]int{}
-		for _, r := range res {
+		for _, r := range res { // as sandbox fork prints them
 			if r.ErrorReason != "" {
 				fails[r.ErrorReason]++
+				fmt.Printf("%d\terror\t%s: %s\n", r.Index, r.ErrorReason, r.ErrorMessage)
+			} else {
+				fmt.Printf("%d\t%s\n", r.Index, r.Sandbox.Id)
 			}
 		}
 		fmt.Printf("created %d/%d in %v; failures: %v\n", len(res)-sum(fails), *count, time.Since(start).Round(time.Millisecond), fails)
@@ -481,7 +486,7 @@ func apiCommand(cmd string, args []string) error {
 			return err
 		}
 		st, err := c.ExecStream(ctx, &pb.ExecRequest{SandboxId: pos[0], Session: *session, User: *runAs,
-			Cmd: strings.Join(pos[1:], " "), TimeoutS: *timeoutS})
+			Cmd: shellCmd(pos[1:]), TimeoutS: *timeoutS})
 		if err != nil {
 			return err
 		}
@@ -599,6 +604,11 @@ func apiCommand(cmd string, args []string) error {
 		p := &images.Puller{Store: st, PlainHTTP: *plainHTTP,
 			Log: func(f string, a ...any) { fmt.Fprintf(os.Stderr, f+"\n", a...) }}
 		var res *images.ImportResult
+		if f, _, _ := strings.Cut(pos[0], "#"); strings.HasPrefix(f, "/") || strings.HasPrefix(f, ".") {
+			if _, err := os.Stat(f); err != nil { // a path, not an image reference
+				return fmt.Errorf("image archive: %w", err)
+			}
+		}
 		if images.IsArchive(pos[0]) { // an image archive on disk (spec §38)
 			res, err = p.Import(ctx, pos[0])
 		} else {
@@ -1009,4 +1019,21 @@ func registryCreds(ref, user string, passStdin bool, authFile string) (*images.C
 		return nil, err
 	}
 	return ra.For(r.Registry)
+}
+
+// shellCmd makes exec's command line: one argument is a shell command as
+// it stands ('cd /tmp && ls'); several are a command and its arguments,
+// each quoted as needed (python3 -c 'print(6*7)'), as docker exec takes them.
+func shellCmd(args []string) string {
+	if len(args) == 1 {
+		return args[0]
+	}
+	q := make([]string, len(args))
+	for i, a := range args {
+		q[i] = a
+		if a == "" || strings.Trim(a, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_@%+=:,./-") != "" {
+			q[i] = "'" + strings.ReplaceAll(a, "'", `'\''`) + "'"
+		}
+	}
+	return strings.Join(q, " ")
 }

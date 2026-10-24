@@ -83,7 +83,9 @@ async def sh(sb, cmd, timeout=1800):
 async def main():
     async with DSecClient() as c:
         sb = await c.run_sandbox(DSecRunArgs(backend="microvm", image=BASE, cpu_cores_limit=VCPUS,
-                                             memory_limit_mb=MEMORY_MB, disk_mb=8192, ttl_max=7200), timeout=300)
+                                             memory_limit_mb=MEMORY_MB, disk_mb=8192, ttl_max=7200,
+                                             network_rules={"*": True}),  # apt and pip, whatever the cluster's default
+                                 timeout=300)
         print("building in sandbox", sb.id, flush=True)
         try:
             await sh(sb, "mkdir -p /root/.server /root/.jupyter /root/.config/matplotlib "

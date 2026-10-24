@@ -92,11 +92,14 @@ groups:
     annotations:
       summary: "{{ $value | humanizePercentage }} of the cluster's sandbox memory is allocated"
   - alert: OpenDsecEdgeDiskLow
-    expr: opendsec_edge_disk_available_mb < 200 * 1024
+    # Under 10% of the edge's disk free: it rejects creations under 5% (disk_reserve_mb).
+    expr: |
+      opendsec_edge_disk_available_mb
+        / on(edge) max by (edge) (opendsec_edge_capacity{resource="disk_mb"}) < 0.10
     for: 10m
     labels: {severity: warning}
     annotations:
-      summary: "Edge {{ $labels.edge }} has {{ $value }} MB free on its state filesystem"
+      summary: "Edge {{ $labels.edge }} has {{ $value | humanizePercentage }} of its disk free on its state filesystem"
 
 - name: opendsec-nodes
   rules:

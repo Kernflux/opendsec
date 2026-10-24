@@ -35,7 +35,9 @@ while [ $# -gt 0 ]; do
 done
 [ -n "$out" ] || die "usage: build-bundle.sh OUT_DIR [options] (--help)"
 [ ${#images[@]} -gt 0 ] || images=(docker.io/library/python:3.12)
-for c in apt-get apt-cache apt-ftparchive dpkg python3 sha256sum; do command -v $c >/dev/null || die "needs $c"; done
+for c in apt-get apt-cache apt-ftparchive dpkg python3 sha256sum make; do command -v $c >/dev/null || die "needs $c (apt install apt-utils make python3-pip)"; done
+python3 -m pip --version >/dev/null 2>&1 || die "needs pip (apt install python3-pip)"
+PATH=$PATH:/usr/local/go/bin command -v go >/dev/null || die "needs Go 1.27+ (https://go.dev/dl)"
 . /etc/os-release
 target=$ID-$VERSION_ID-$(dpkg --print-architecture)
 mkdir -p "$out"
@@ -93,8 +95,8 @@ for ref in "${images[@]}"; do
 	echo "  $ref -> images/$f ($(du -sh "$B/images/$f" | cut -f1))"
 done
 
-say "building the Python SDK's wheels"
-python3 -m pip wheel -q -w "$B/wheels" "$REPO/sdk/python" ||
+say "building the Python SDK's wheels (and E2B's, for the E2B gateway)"
+python3 -m pip wheel -q -w "$B/wheels" "$REPO/sdk/python" e2b e2b-code-interpreter ||
 	die "pip wheel failed (python3 -m pip, with access to a package index)"
 
 echo "$target" > "$B/TARGET"

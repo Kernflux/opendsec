@@ -146,16 +146,26 @@ func (c *Cgroup) Populated() bool {
 	return err == nil && strings.Contains(string(b), "populated 1")
 }
 
-// Kill SIGKILLs every process in the cgroup (works on frozen cgroups too).
+// Kill SIGKILLs every process in the cgroup and its descendants (works on
+// frozen cgroups too) and waits, up to 5 s, until they are gone. It freezes
+// the cgroup first, so that nothing forks out of the way, and thaws it
+// after. Not cgroup.kill: on some kernels (Ubuntu 24.04's 6.8.0-1xx) a
+// cgroup that has been through cgroup.kill kills every process cloned into
+// it later (CLONE_INTO_CGROUP), and a paused microVM's cgroup is used again
+// when it resumes.
 func (c *Cgroup) Kill() {
-	if err := os.WriteFile(filepath.Join(c.Path, "cgroup.kill"), []byte("1"), 0); err != nil {
-		b, _ := os.ReadFile(filepath.Join(c.Path, "cgroup.procs"))
-		for _, f := range strings.Fields(string(b)) {
-			if pid, err := strconv.Atoi(f); err == nil {
-				syscall.Kill(pid, syscall.SIGKILL)
-			}
+	freeze := filepath.Join(c.Path, "cgroup.freeze")
+	os.WriteFile(freeze, []byte("1"), 0)
+	defer os.WriteFile(freeze, []byte("0"), 0)
+	for deadline := time.Now().Add(5 * time.Second); ; {
+		pids := c.Procs()
+		if len(pids) == 0 || time.Now().After(deadline) {
+			return
 		}
-		c.Freeze(false)
+		for _, pid := range pids {
+			syscall.Kill(pid, syscall.SIGKILL)
+		}
+		time.Sleep(2 * time.Millisecond)
 	}
 }
 

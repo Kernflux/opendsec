@@ -41,6 +41,9 @@ type Watcher struct {
 	// Holder identifies this instance for the reconcile lock; "" means a
 	// single watcher that always reconciles.
 	Holder string
+	// Peers are the other watcher replicas: a watcher starting takes the
+	// edges they know (seedFromPeers).
+	Peers []pb.WatcherClient
 
 	leaderUntil atomic.Int64 // unix nanos (local monotonic-derived) until which we hold the lock
 
@@ -57,6 +60,40 @@ func New(cfg config.Watcher, edges []config.Edge, pool *rpcutil.Pool, iam pb.IAM
 	}
 	w.snap.Store(&pb.Snapshot{})
 	return w
+}
+
+// seedFromPeers registers the edges the other watchers know. Edges of the
+// edge template are known only from their registrations, every 10 s: a
+// watcher that just started would otherwise publish snapshots without them,
+// and calls to their sandboxes through an apiserver that just started too
+// would fail as not_found. Edges probe as usual from here; a peer that
+// does not answer within 2 s is skipped (a whole cluster starting).
+func (w *Watcher) seedFromPeers(ctx context.Context) {
+	if len(w.Peers) == 0 {
+		return
+	}
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	var wg sync.WaitGroup
+	for _, p := range w.Peers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			snap, err := p.GetSnapshot(ctx, &pb.Empty{})
+			if err != nil {
+				return
+			}
+			for _, e := range snap.Edges {
+				w.mu.Lock()
+				known := w.edges[e.Id] != nil
+				w.mu.Unlock()
+				if !known {
+					w.Register(e.Id, e.Addr, e.Zone)
+				}
+			}
+		}()
+	}
+	wg.Wait()
 }
 
 // Register adds or updates an edge (edges re-register periodically).
@@ -91,6 +128,7 @@ func (w *Watcher) Run(ctx context.Context) {
 	if w.Holder != "" && w.iam != nil {
 		go w.elect(ctx)
 	}
+	w.seedFromPeers(ctx)
 	w.ProbeAll(ctx)
 	for {
 		select {

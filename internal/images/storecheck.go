@@ -108,6 +108,28 @@ func CheckStore(root string) []StoreCheck {
 		return nil
 	}())
 	add("symbolic links", true, os.Symlink("/bin/sh", p("sym")))
+	add("finds the holes of sparse files (snapshots move only their data; NFS needs vers=4.2)", false, func() error {
+		f, err := os.Create(p("sparse"))
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		if _, err := f.WriteAt([]byte("data"), 0); err != nil {
+			return err
+		}
+		if err := f.Truncate(64 << 20); err != nil {
+			return err
+		}
+		f.Sync()
+		h, err := unix.Seek(int(f.Fd()), 0, unix.SEEK_HOLE)
+		if err != nil {
+			return err
+		}
+		if h >= 64<<20 {
+			return errors.New("a 64 MB file with 4 bytes of data reads as all data: sparse snapshot files (disks, memory) are copied in full")
+		}
+		return nil
+	}())
 	add("0:0 character devices (layer whiteouts)", true, func() error {
 		if err := unix.Mknod(p("wh"), unix.S_IFCHR, 0); err != nil {
 			return err

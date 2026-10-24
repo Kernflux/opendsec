@@ -116,4 +116,23 @@ func TestWatcherHAAndDynamicEdge(t *testing.T) {
 	if _, err := c.Create(ctx(t), &pb.SandboxSpec{Backend: "sim", Resources: &pb.Resources{CpuCores: 1, MemoryMb: 512}}); err != nil {
 		t.Fatalf("create with one watcher down: %v", err)
 	}
+
+	// Started again, the watcher knows the dynamic edge from its peer at
+	// once, not only when the edge registers again (every 10 s): its
+	// snapshots never leave the edge out.
+	start = time.Now()
+	wc, w2, err := cluster.StartWatcher(cfg, li, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer wc.Stop()
+	eventuallyFor(t, 3*time.Second, func() bool {
+		for _, e := range w2.Snapshot().Edges {
+			if e.Id == "dyn-1" {
+				return true
+			}
+		}
+		return false
+	})
+	t.Logf("restarted watcher knew the dynamic edge after %v", time.Since(start).Round(10*time.Millisecond))
 }

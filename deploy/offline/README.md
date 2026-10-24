@@ -7,7 +7,7 @@
 | `release/<版本>/` | 打包好的版本：全部程序、Firecracker、guest 内核、systemd 单元、许可证 |
 | `debs/` | 本地软件源：e2fsprogs、erofs-utils、nftables、iproute2、NFS 的客户端和服务端、python3-venv 和 pip、Prometheus 和 Alertmanager，以及它们的依赖；`apt-local.sh` 从这里安装 |
 | `images/` | 基础镜像（OCI 格式的 tar），`IMAGES` 列出每个文件对应的镜像 |
-| `wheels/` | Python SDK 及其依赖的 wheel |
+| `wheels/` | Python SDK、E2B 的 SDK（`e2b`、`e2b-code-interpreter`）及其依赖的 wheel |
 | `deploy/`、`docs/` | 部署脚本和文档 |
 | `install.sh` | 单机安装 |
 | `TARGET` | 适用的系统，例如 `ubuntu-24.04-amd64` |
@@ -26,7 +26,10 @@ deploy/offline/build-bundle.sh /data/bundles --image docker.io/library/node:22 -
 
 得到 `opendsec-offline-<版本>-<系统>.tar.gz` 和它的 `.sha256`。拷到目标环境后先核对校验和。
 
+制作机需要 Go 1.27+、`make`、`apt-utils` 和 `python3-pip`（Ubuntu：`apt install make apt-utils python3-pip`），缺了会在开始时报出来。
+
 - `--no-microvm`：不带 guest 内核，只跑容器。
+- `--kernel FILE`：用指定的 guest 内核（比如 `quickstart.sh --build-kernel` 编出的 `/var/cache/opendsec-kbuild/vmlinux-opendsec`），不下载 `deploy/deps.lock` 里的那个。
 - `--no-monitoring`：不带 Prometheus 和 Alertmanager。
 - 客户自己的镜像：在能访问镜像仓库的机器上执行 `opendsecctl image save <镜像> -out x.tar`。`docker save` 导出的 tar 也能直接导入。
 

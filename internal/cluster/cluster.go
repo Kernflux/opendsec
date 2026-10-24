@@ -234,6 +234,13 @@ func StartWatcher(cfg *config.Cluster, i int, log *slog.Logger) (*Component, *wa
 	if len(cfg.Watcher.Replicas) > 0 {
 		w.Holder = "watcher/" + wr.ID
 	}
+	for _, r := range cfg.Watcher.Replicas {
+		if r.ID != wr.ID {
+			if pc, err := pool.Get(r.Addr); err == nil {
+				w.Peers = append(w.Peers, pb.NewWatcherClient(pc))
+			}
+		}
+	}
 	srv := grpc.NewServer(rpcutil.InternalServerOptions(sec, rpcutil.WatcherACL)...)
 	pb.RegisterWatcherServer(srv, &watcher.Service{W: w})
 	c, err := serve("watcher-"+wr.ID, wr.Addr, srv, w.Run)

@@ -19,6 +19,8 @@ sbx.files.write("/tmp/a.txt", "hello")
 sbx.kill()
 ```
 
+E2B's JS SDK needs Node.js 22.19 or newer (Ubuntu 24.04's own `nodejs` is 18: take Node from nodejs.org):
+
 ```js
 import { Sandbox } from 'e2b'
 
@@ -102,4 +104,4 @@ Measured through the gateway on microVMs (Firecracker), on the project's bare-me
 3. Put a load balancer in front: TCP 7400, health check HTTP 9467 `/readyz`, idle timeout at least 60 s. Terminate TLS there, or set `tls_cert` and `tls_key` on the gateways.
 4. Give callers tokens with `sandbox.create` and `sandbox.operate` on the project and `layer.use` on the images' projects. Snapshots also need `layer.publish` on the project, since a snapshot is an image there.
 5. The code interpreter needs its template: `deploy/e2b/build-code-interpreter.py` builds `root/code-interpreter:v1`, a memory snapshot of a microVM running E2B's code-interpreter server, and the template entry maps a name to it.
-6. For E2B's default of internet access, the cluster's `network.default_rules` should hold `"*": true`.
+6. As on E2B, sandboxes made through the gateway can reach the internet unless the caller turns it off (`allow_internet_access=False`, or `deny_out` of all traffic), whatever the cluster's `network.default_rules`.

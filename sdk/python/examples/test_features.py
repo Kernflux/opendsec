@@ -39,9 +39,12 @@ def need(cond, msg):
         raise AssertionError(msg)
 
 
-def args(backend, **kw):
+def args(backend, memory_mb=1024, **kw):
+    # Internet allowed explicitly: clusters deny outbound traffic by default
+    # unless their network.default_rules say otherwise.
     return DSecRunArgs(backend=backend, image="root/py:3.12", cpu_cores_limit=1,
-                       memory_limit_mb=1024, ttl_running_stop=300, **kw)
+                       memory_limit_mb=memory_mb, ttl_running_stop=300,
+                       network_rules={"*": True}, **kw)
 
 
 async def basics(c, backend):
@@ -181,17 +184,19 @@ async def images(c):
 
 async def batch_task(c):
     task = f"smoke-{tag}"
-    res = await c.run_sandboxes(args("microvm", task_id=task), 40)
-    bad = [r for r in res if isinstance(r, DSecError)]
-    need(not bad, bad[:3])
-    need(len(await c.list_sandboxes(task_id=task)) == 40, "list task")
-    await c.pause_task(task)
-    need(all(s.state == "PAUSED" for s in await c.list_sandboxes(task_id=task)), "pause_task")
-    await c.resume_task(task)
-    need(all(s.state == "RUNNING" for s in await c.list_sandboxes(task_id=task)), "resume_task")
-    rs = await asyncio.gather(*[s.run_shell("echo ok") for s in res])
-    need(all(r.stdout.strip() == "ok" for r in rs), "shell after resume_task")
-    await c.stop_task(task)
+    try:
+        res = await c.run_sandboxes(args("microvm", memory_mb=256, task_id=task), 20)  # fits a small machine
+        bad = [r for r in res if isinstance(r, DSecError)]
+        need(not bad, bad[:3])
+        need(len(await c.list_sandboxes(task_id=task)) == 20, "list task")
+        await c.pause_task(task)
+        need(all(s.state == "PAUSED" for s in await c.list_sandboxes(task_id=task)), "pause_task")
+        await c.resume_task(task)
+        need(all(s.state == "RUNNING" for s in await c.list_sandboxes(task_id=task)), "resume_task")
+        rs = await asyncio.gather(*[s.run_shell("echo ok") for s in res])
+        need(all(r.stdout.strip() == "ok" for r in rs), "shell after resume_task")
+    finally:
+        await c.stop_task(task)
     await asyncio.sleep(2)
     need(not await c.list_sandboxes(task_id=task), "stop_task")
 
@@ -205,7 +210,7 @@ async def main():
     tests += [(f"{b}: pause/resume", lambda b=b: pause_resume(c, b)) for b in ("container", "microvm")]
     tests += [("microvm: fork x3", lambda: fork(c)),
               ("images: pack_diff + memory snapshot", lambda: images(c)),
-              ("batch 40 + task pause/resume/stop", lambda: batch_task(c))]
+              ("batch 20 + task pause/resume/stop", lambda: batch_task(c))]
     try:
         for name, t in tests:
             if only in name:

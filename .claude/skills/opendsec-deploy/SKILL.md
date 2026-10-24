@@ -67,7 +67,7 @@ sudo deploy/quickstart.sh --uninstall      # 全部移除
 照 README「Deploy a cluster」做。要点和容易漏掉的地方：
 
 1. **基础设施先就位**：
-   - **共享存储**：挂到所有 apiserver 和 edge 节点的 `/mnt/opendsec-images`。NFS 的挂载参数用 `vers=4.1,nconnect=8,hard,timeo=600,lookupcache=positive,_netdev`，服务端必须关闭 root squash（`no_root_squash`）。挂好后执行 `opendsecctl image store-check -store /mnt/opendsec-images`，必需项全部 ok 才能继续。
+   - **共享存储**：挂到所有 apiserver 和 edge 节点的 `/mnt/opendsec-images`。NFS 的挂载参数用 `vers=4.2,nconnect=8,hard,timeo=600,lookupcache=positive,_netdev`，服务端必须关闭 root squash（`no_root_squash`）。挂好后执行 `opendsecctl image store-check -store /mnt/opendsec-images`，必需项全部 ok 才能继续。
    - **负载均衡**：四层 TCP 7100；健康检查用 HTTP，端口 9463，路径 `/readyz`；空闲超时不低于 30 秒。
    - 节点之间是私网，运维机能以 root ssh 到所有节点。
 2. **打包**：`make build && deploy/prod/opendsecops release bin/`。

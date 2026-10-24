@@ -2,7 +2,7 @@
 
 Run with E2B_API_URL, E2B_SANDBOX_URL and E2B_API_KEY set to the gateway and
 an OpenDsec token. NETWORK=1 adds the network checks, for edges with
-networking whose default rules allow the internet ("*"), as E2B's do.
+networking and a way out to the internet.
 Prints "OK <n> checks" on success.
 """
 import json

@@ -38,18 +38,21 @@ spec:
     metadata:
       labels: {app: opendsec-apiserver}
     spec:
-      securityContext: {runAsNonRoot: true, runAsUser: 65532, fsGroup: 65532}
+      # Root with only DAC_OVERRIDE and FOWNER, as the systemd unit: it
+      # deletes snapshot directories the edges (root) made in the image store.
+      securityContext: {runAsUser: 0, fsGroup: 65532}
       containers:
         - name: apiserver
           image: opendsec:0.1.0
-          command: ["/bin/sh", "-c", "exec opendsec-apiserver -config /etc/opendsec/opendsec.json -index ${HOSTNAME##*-}"]
+          command: ["/bin/sh", "-c", "exec opendsec-apiserver -config /etc/opendsec/opendsec.json -index ${HOSTNAME##*-} -metrics :9463"]
           ports:
             - {name: grpc, containerPort: 7100}
-          readinessProbe: {tcpSocket: {port: 7100}, periodSeconds: 5}
+            - {name: metrics, containerPort: 9463}
+          readinessProbe: {httpGet: {path: /readyz, port: 9463}, periodSeconds: 2, failureThreshold: 2}
           livenessProbe: {tcpSocket: {port: 7100}, periodSeconds: 10, failureThreshold: 6}
           resources:
             requests: {cpu: "4", memory: 4Gi}
-          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL], add: [DAC_OVERRIDE, FOWNER]}}
           volumeMounts:
             - {name: config, mountPath: /etc/opendsec/opendsec.json, subPath: opendsec.json, readOnly: true}
             - {name: pki, mountPath: /etc/opendsec/pki, readOnly: true}
