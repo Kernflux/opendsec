@@ -1,0 +1,23 @@
+# Runtime dependencies pinned into every release (spec §28.12).
+# name  version  source  sha256-of-the-file  path-in-the-release
+# Sources: url:<URL>[#<member of a .tgz>] or file:<path> (a local build;
+# a relative path is relative to this file's directory).
+# deploy/fetch-deps.sh OUT_DIR fetches and checks them; a mismatch fails.
+# The guest kernel is deploy/guest-kernel/build.sh's output (with EROFS,
+# 2026-10-17), published as a release asset; it keeps the path
+# vm/vmlinux-6.1.167-opendsec so that existing configs need no change.
+# Until it is published, put the file into the download cache
+# (~/.cache/opendsec-deps/vmlinux-6.1.167-opendsec.2) or use $OPENDSEC_KERNEL.
+firecracker v1.17.0 url:https://github.com/firecracker-microvm/firecracker/releases/download/v1.17.0/firecracker-v1.17.0-x86_64.tgz#release-v1.17.0-x86_64/firecracker-v1.17.0-x86_64 99ad0f5cd0514a88aad0e9ae8cfdb3cc3b4ab9d190e1194602406c786b5de7a5 bin/firecracker
+jailer v1.17.0 url:https://github.com/firecracker-microvm/firecracker/releases/download/v1.17.0/firecracker-v1.17.0-x86_64.tgz#release-v1.17.0-x86_64/jailer-v1.17.0-x86_64 65ef226e96f0ceda55ba643f445801ef2cc0ea667ef67cad8ac4f406c9c8434f bin/jailer
+guest-kernel 6.1.167-opendsec.2 url:https://github.com/kernflux/opendsec/releases/download/guest-kernel-6.1.167-opendsec.2/vmlinux-6.1.167-opendsec.2 47974d991db171ebbeadc2b792b2beaaa8949105ecaeb037e33ed15a1f9035a4 vm/vmlinux-6.1.167-opendsec
+# Licenses of what the release ships besides OpenDsec itself (NOTICE). The Go
+# modules compiled into the binaries get theirs from deploy/third-party-licenses.sh.
+firecracker-license v1.17.0 url:https://github.com/firecracker-microvm/firecracker/releases/download/v1.17.0/firecracker-v1.17.0-x86_64.tgz#release-v1.17.0-x86_64/LICENSE cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30 licenses/firecracker/LICENSE
+firecracker-notice v1.17.0 url:https://github.com/firecracker-microvm/firecracker/releases/download/v1.17.0/firecracker-v1.17.0-x86_64.tgz#release-v1.17.0-x86_64/NOTICE 0f443af83ca8226c7ec44e2ade3a09fa3eed8c9b923b6c014b6d439816b6f1c2 licenses/firecracker/NOTICE
+firecracker-third-party v1.17.0 url:https://github.com/firecracker-microvm/firecracker/releases/download/v1.17.0/firecracker-v1.17.0-x86_64.tgz#release-v1.17.0-x86_64/THIRD-PARTY a6d3ebd1c2f37d4fd83d0676621f695fc0cc2d8c6e646cdbb831b46e0650c208 licenses/firecracker/THIRD-PARTY
+guest-kernel-copying 6.1.167-opendsec.2 file:guest-kernel/licenses/COPYING fb5a425bd3b3cd6071a3a9aff9909a859e7c1158d54d32e07658398cd67eb6a0 licenses/linux/COPYING
+guest-kernel-gpl 6.1.167-opendsec.2 file:guest-kernel/licenses/GPL-2.0 f6b78c087c3ebdf0f3c13415070dd480a3f35d8fc76f3d02180a407c1c812f79 licenses/linux/GPL-2.0
+guest-kernel-syscall-note 6.1.167-opendsec.2 file:guest-kernel/licenses/Linux-syscall-note 8e378ab93586eb55135d3bc119cce787f7324f48394777d00c34fa3d0be3303f licenses/linux/Linux-syscall-note
+guest-kernel-config 6.1.167-opendsec.2 file:guest-kernel/vmlinux-6.1.167-opendsec.2.config c627ae5edf42d571ddc6133722f7790ea98d244ae2c467f4d0bfa24b970b6dab licenses/linux/vmlinux-6.1.167-opendsec.2.config
+guest-kernel-source 6.1.167-opendsec.2 file:guest-kernel/SOURCE.md a461477a3a5d109f248af9b70386f73253c1c4f1cb01c81ced136268baab0ed8 licenses/linux/SOURCE.md

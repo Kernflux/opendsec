@@ -1,0 +1,56 @@
+# Watchers: every instance probes edges and serves snapshots; the holder of
+# the IAM reconcile lock reconciles quota. Stable ids (watcher-0, watcher-1).
+apiVersion: v1
+kind: Service
+metadata:
+  name: opendsec-watcher
+  namespace: opendsec
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true
+  selector: {app: opendsec-watcher}
+  ports:
+    - {name: grpc, port: 7002}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: watcher
+  namespace: opendsec
+spec:
+  serviceName: opendsec-watcher
+  replicas: 2
+  podManagementPolicy: Parallel
+  selector:
+    matchLabels: {app: opendsec-watcher}
+  template:
+    metadata:
+      labels: {app: opendsec-watcher}
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector: {matchLabels: {app: opendsec-watcher}}
+                topologyKey: kubernetes.io/hostname
+      securityContext: {runAsNonRoot: true, runAsUser: 65532}
+      containers:
+        - name: watcher
+          image: opendsec:0.1.0
+          command: ["/bin/sh", "-c", "exec opendsec-watcher -config /etc/opendsec/opendsec.json -replica ${HOSTNAME##*-}"]
+          ports:
+            - {name: grpc, containerPort: 7002}
+          readinessProbe: {tcpSocket: {port: 7002}, periodSeconds: 5}
+          livenessProbe: {tcpSocket: {port: 7002}, periodSeconds: 10, failureThreshold: 6}
+          resources:
+            requests: {cpu: "1", memory: 1Gi}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+          volumeMounts:
+            - {name: config, mountPath: /etc/opendsec/opendsec.json, subPath: opendsec.json, readOnly: true}
+            - {name: pki, mountPath: /etc/opendsec/pki, readOnly: true}
+      volumes:
+        - name: config
+          secret: {secretName: opendsec-config}
+        - name: pki
+          secret: {secretName: opendsec-pki}

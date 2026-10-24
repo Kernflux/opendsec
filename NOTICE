@@ -1,0 +1,45 @@
+OpenDsec
+Copyright 2026 Yibo Zhou
+
+OpenDsec is licensed under the GNU Affero General Public License, version 3
+(LICENSE), except for these parts, which are under the Apache License 2.0
+(the LICENSE file in each), so that programs using OpenDsec as a client are
+not bound by the AGPL:
+
+- sdk/python/: the Python SDK;
+- pkg/: the Go client library;
+- proto/ and gen/: the API definitions and the code generated from them.
+
+Yibo Zhou also offers OpenDsec under a commercial license, for uses the
+AGPL does not allow (keeping modifications closed, offering it as a service
+without publishing them). Contact: zhyb1528@aliyun.com.
+
+OpenDsec is an independent implementation of the system described in the
+paper "DeepSeek Elastic Compute (DSec): A Sandbox Infrastructure for
+Effective Agentic Training at Scale" (arXiv:2609.22978). It is not
+affiliated with, endorsed by, or maintained by DeepSeek.
+
+proto/e2b/ holds E2B's envd API definitions (process.proto, filesystem.proto),
+copied from https://github.com/e2b-dev/E2B, Copyright 2023 FoundryLabs, Inc.,
+under the Apache License 2.0 (proto/e2b/LICENSE), with a go_package option
+added; gen/go/e2b/ is generated from them. deploy/e2b/build-code-interpreter.py
+installs E2B's code-interpreter server (https://github.com/e2b-dev/code-interpreter,
+Apache-2.0) into an image, with one change to its main.py (no JavaScript
+kernel needed). OpenDsec is not affiliated with E2B.
+
+Release packages contain, besides OpenDsec's own code (its LICENSE and this
+NOTICE are in licenses/opendsec/; its source is the repository at the
+release's tag), third-party software under its own licenses. Every release
+carries these licenses in licenses/:
+
+- licenses/go/: the Go standard library and the Go modules compiled into
+  the OpenDsec binaries (Apache-2.0, BSD, MIT, MPL-2.0); the index there
+  lists each module and version. MPL-2.0 modules are used unmodified.
+- licenses/firecracker/: Firecracker and its jailer (Apache-2.0), shipped
+  unmodified from the Firecracker project's release, with its NOTICE and
+  THIRD-PARTY files.
+- licenses/linux/: the Linux guest kernel (GPL-2.0 with the
+  Linux-syscall-note), built from unmodified kernel.org sources. SOURCE.md
+  there says where its complete corresponding source is: the kernel
+  tarball, the exact configuration and the build script
+  (deploy/guest-kernel in this repository).

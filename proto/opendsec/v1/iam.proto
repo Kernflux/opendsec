@@ -1,0 +1,332 @@
+syntax = "proto3";
+
+package opendsec.v1;
+
+option go_package = "github.com/kernflux/opendsec/gen/go/opendsec/v1;opendsecv1";
+
+import "opendsec/v1/types.proto";
+
+// Internal IAM service (paper §3). Called by apiservers, the watcher and edges
+// with the cluster service token. Management RPCs carry the authenticated
+// actor, filled in by the apiserver.
+service IAM {
+  // Creation hot path: authenticate + authorize + reserve quota in one round trip.
+  rpc Admit(AdmitRequest) returns (AdmitResponse);
+  rpc Authenticate(AuthenticateRequest) returns (Principal);
+  rpc Authorize(AuthorizeRequest) returns (Empty);
+  rpc Release(ReleaseRequest) returns (ReleaseResponse);
+  // ReleaseLeases returns many leases in one Raft commit (edges batch the
+  // leases of the sandboxes they end, spec §31). Leases not held are skipped.
+  rpc ReleaseLeases(ReleaseLeasesRequest) returns (ReleaseLeasesResponse);
+  // Where a lease is bound: an edge asks before keeping a sandbox it just
+  // created, whose caller may have given up and placed it elsewhere (spec §36).
+  rpc LeaseEdge(LeaseEdgeRequest) returns (LeaseEdgeResponse);
+  // Per-edge incremental reconcile (spec §15.2).
+  rpc ReconcileEdge(ReconcileEdgeRequest) returns (ReconcileEdgeResponse);
+  rpc SweepUnbound(SweepUnboundRequest) returns (SweepUnboundResponse);
+
+  rpc CreateProject(CreateProjectRequest) returns (Project);
+  rpc CreatePrincipal(CreatePrincipalRequest) returns (CreatePrincipalResponse);
+  rpc Grant(GrantRequest) returns (Project);
+  rpc Revoke(RevokeRequest) returns (Project);
+  rpc SetQuota(SetQuotaRequest) returns (Project);
+  rpc GetProject(GetProjectRequest) returns (Project);
+  // Usage accounting (spec §41): needs project.admin on the project.
+  rpc GetUsage(UsageRequest) returns (UsageReport);
+
+  // Token lifecycle (spec §14.3).
+  rpc CreateToken(CreateTokenRequest) returns (CreateTokenResponse);
+  rpc ListTokens(ListTokensRequest) returns (TokenList);
+  rpc RevokeToken(RevokeTokenRequest) returns (Empty);
+  rpc DeletePrincipal(DeletePrincipalRequest) returns (Empty);
+  rpc DeleteProject(DeleteProjectRequest) returns (Empty);
+  // Incremented on every revocation; apiservers drop their auth caches when it changes.
+  rpc SecurityEpoch(Empty) returns (EpochResponse);
+
+  // Lease locks for leader election of other components (spec §16.1).
+  rpc AcquireLock(LockRequest) returns (LockState);
+  rpc ReleaseLock(LockRequest) returns (Empty);
+
+  // Operations (spec §27.2): backup and restore of the IAM state, Raft
+  // membership. Cluster admins only (actor needs project.admin on root).
+  rpc Backup(IAMBackupRequest) returns (stream BackupChunk);
+  rpc Restore(stream BackupChunk) returns (Empty);
+  rpc Members(IAMMemberRequest) returns (IAMMemberList);
+  rpc AddMember(IAMMemberRequest) returns (IAMMemberList);
+  rpc RemoveMember(IAMMemberRequest) returns (IAMMemberList);
+
+  // A small replicated key-value area for other components' durable state
+  // (the fleet service, spec §28.3). IAM does not interpret the values.
+  // Reads go to the leader too, so they see every committed write.
+  rpc KVGet(KVGetRequest) returns (KVEntry);
+  rpc KVList(KVListRequest) returns (KVEntries);
+  rpc KVPut(KVPutRequest) returns (KVEntry);
+  rpc KVDelete(KVDeleteRequest) returns (Empty);
+}
+
+message KVEntry {
+  string key = 1;
+  bytes value = 2;
+  uint64 rev = 3;                      // revision of the last write; 0 = no such key (KVGet)
+}
+
+message KVGetRequest {
+  string key = 1;
+}
+
+message KVListRequest {
+  string prefix = 1;
+  bool keys_only = 2;                  // leave the values out
+}
+
+message KVEntries {
+  repeated KVEntry entries = 1;        // sorted by key
+}
+
+// With check, the write applies only if the key's current revision is
+// expect_rev (0: the key must not exist); otherwise it fails with reason
+// "conflict".
+message KVPutRequest {
+  string key = 1;
+  bytes value = 2;
+  bool check = 3;
+  uint64 expect_rev = 4;
+}
+
+message KVDeleteRequest {
+  string key = 1;
+  bool check = 2;
+  uint64 expect_rev = 3;
+}
+
+message LockRequest {
+  string name = 1;
+  string holder = 2;
+  double ttl_s = 3;
+}
+
+message LockState {
+  string name = 1;
+  string holder = 2;                   // current holder ("" = free)
+  double expires_at = 3;               // IAM clock
+  bool acquired = 4;                   // the caller holds it now
+}
+
+message Principal {
+  string id = 1;
+  string kind = 2;                     // user | service | agent
+  double token_expires_at = 3;         // of the token used to authenticate; 0 = never
+}
+
+message AdmitRequest {
+  string token = 1;
+  string project = 2;
+  repeated string perms = 3;
+  string lease = 4;                    // empty = no reservation
+  Resources resources = 5;
+  string edge = 6;                     // edge chosen for the sandbox: binds the lease to it
+  // Instead of token: a principal the apiserver authenticated itself (a
+  // token of an extension's authenticator, which IAM does not know).
+  string principal = 7;
+}
+
+message AdmitResponse {
+  string principal = 1;
+}
+
+message AuthenticateRequest {
+  string token = 1;
+}
+
+message AuthorizeRequest {
+  string principal = 1;
+  string project = 2;
+  string perm = 3;
+}
+
+message ReleaseRequest {
+  string lease = 1;
+  // The edge returning it: a lease bound to another edge is kept (spec §36).
+  // Set by IAM from the caller's certificate when an edge calls.
+  string edge = 2;
+}
+
+message ReleaseResponse {
+  bool released = 1;
+}
+
+message ReleaseLeasesRequest {
+  repeated string leases = 1;
+  string edge = 2;                     // as ReleaseRequest.edge
+}
+
+message LeaseEdgeRequest {
+  string lease = 1;
+}
+
+message LeaseEdgeResponse {
+  bool held = 1;
+  string edge = 2;                     // "" while unbound
+}
+
+message ReleaseLeasesResponse {
+  int32 released = 1; // how many of the leases were held
+}
+
+message ReconcileEdgeRequest {
+  string edge = 1;
+  repeated LeaseInfo live = 2;         // every live lease on this edge
+  double min_age_s = 3;                // younger leases are never released
+}
+
+message ReconcileEdgeResponse {
+  int32 adopted = 1;                   // live leases IAM did not know about
+  int32 bound = 2;                     // known leases now claimed by this edge
+  int32 released = 3;                  // leases of this edge whose sandbox is gone
+  int32 conflicts = 4;                 // reported here but claimed by another edge
+}
+
+message SweepUnboundRequest {
+  double max_age_s = 1;                // release leases no edge claimed for this long
+}
+
+message SweepUnboundResponse {
+  int32 released = 1;
+}
+
+message Permissions {
+  repeated string perms = 1;
+}
+
+// Quota and usage keys: sandboxes, cpu_cores, memory_mb, gpus. A missing quota
+// key means "inherit the parent's limit" (unlimited at the root).
+message Project {
+  string path = 1;
+  map<string, double> quota = 2;
+  map<string, double> usage = 3;
+  map<string, Permissions> policies = 4;
+  repeated string children = 5;
+}
+
+message CreateProjectRequest {
+  string actor = 1;
+  string parent = 2;
+  string name = 3;
+  map<string, double> quota = 4;
+}
+
+message CreatePrincipalRequest {
+  string actor = 1;
+  string project = 2;                  // actor needs project.admin here; the principal belongs to it
+  string id = 3;
+  string kind = 4;
+  double ttl_s = 5;                    // lifetime of the initial token; 0 = server default
+}
+
+message CreatePrincipalResponse {
+  string id = 1;
+  string token = 2;
+  TokenInfo token_info = 3;
+}
+
+message TokenInfo {
+  string id = 1;                       // "primary" for the legacy dsk.<principal>.<secret> token
+  string principal = 2;
+  double created_at = 3;
+  double expires_at = 4;               // 0 = never
+  string description = 5;
+  string created_by = 6;
+}
+
+message CreateTokenRequest {
+  string actor = 1;
+  string principal = 2;                // self, or a principal of a project the actor administers
+  double ttl_s = 3;
+  string description = 4;
+}
+
+message CreateTokenResponse {
+  string token = 1;
+  TokenInfo info = 2;
+}
+
+message ListTokensRequest {
+  string actor = 1;
+  string principal = 2;
+}
+
+message TokenList {
+  repeated TokenInfo tokens = 1;
+}
+
+message RevokeTokenRequest {
+  string actor = 1;
+  string principal = 2;
+  string token_id = 3;
+}
+
+message DeletePrincipalRequest {
+  string actor = 1;
+  string principal = 2;
+}
+
+message DeleteProjectRequest {
+  string actor = 1;
+  string project = 2;
+}
+
+message EpochResponse {
+  uint64 epoch = 1;
+}
+
+message GrantRequest {
+  string actor = 1;
+  string project = 2;
+  string principal = 3;
+  repeated string perms = 4;
+}
+
+message RevokeRequest {
+  string actor = 1;
+  string project = 2;
+  string principal = 3;
+  repeated string perms = 4;           // empty = revoke all
+}
+
+message SetQuotaRequest {
+  string actor = 1;
+  string project = 2;
+  map<string, double> quota = 3;
+}
+
+// UsageRequest asks for a project's and its subprojects' usage on the UTC
+// days from to to (YYYY-MM-DD, inclusive; empty: no bound).
+message UsageRequest {
+  string actor = 1;
+  string project = 2;
+  string from = 3;
+  string to = 4;
+}
+
+// UsageRow is one project's usage on one day: what its sandboxes' quota
+// leases held, for how long (running or paused); sandboxes still running
+// are counted up to the report's time.
+message UsageRow {
+  string project = 1;
+  string day = 2;
+  int64 sandboxes_started = 3;
+  double sandbox_hours = 4;
+  double cpu_core_hours = 5;
+  double memory_gb_hours = 6;
+  double gpu_hours = 7;
+}
+
+message UsageReport {
+  repeated UsageRow rows = 1;          // by day, then project
+  double as_of = 2;                    // unix seconds
+}
+
+message GetProjectRequest {
+  string actor = 1;
+  string project = 2;
+}

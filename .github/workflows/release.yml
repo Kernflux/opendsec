@@ -1,0 +1,45 @@
+# On a tag v<VERSION> (VERSION file): build, package with the pinned runtime
+# dependencies (deploy/deps.lock) and publish a GitHub release with
+#   opendsec-<version>.tar.gz   the release directory opendsecops and the
+#                               fleet install (docs/OPERATIONS.md)
+#   opendsec-<version>-py3-none-any.whl   the Python SDK
+# The guest kernel is fetched from its own release (see deps.lock).
+name: release
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: version matches the tag
+        run: test "v$(cat VERSION)" = "$GITHUB_REF_NAME"
+      - name: build
+        run: make build VERSION="$(cat VERSION)"
+      - name: package
+        run: |
+          deps=$(mktemp -d)
+          deploy/fetch-deps.sh "$deps"
+          deploy/third-party-licenses.sh "$deps"
+          mkdir -p out
+          bin/opendsecctl fleet release pack -bin bin -units deploy/systemd -deps "$deps" -out out
+          ver=$(bin/opendsecctl version)
+          tar -C out -czf "opendsec-$ver.tar.gz" "$ver"
+          sha256sum "opendsec-$ver.tar.gz" > "opendsec-$ver.tar.gz.sha256"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: SDK wheel
+        run: python -m pip install -q build && python -m build --wheel --outdir . sdk/python
+      - name: publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" --title "OpenDsec $GITHUB_REF_NAME" --generate-notes opendsec-*.tar.gz* opendsec-*.whl

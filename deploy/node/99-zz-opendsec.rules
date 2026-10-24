@@ -1,0 +1,5 @@
+# OpenDsec sandbox devices (SPEC §25.4), after 99-systemd.rules: no systemd
+# .device units for the edge's veths (ds*) and the writable disks' loop
+# devices; systemd tracking thousands of them costs PID 1 its CPU.
+SUBSYSTEM=="net", KERNEL=="ds*", TAG-="systemd", ENV{SYSTEMD_WANTS}="", ENV{NM_UNMANAGED}="1"
+SUBSYSTEM=="block", KERNEL=="loop*", ATTR{loop/backing_file}=="*/disk.img", TAG-="systemd"

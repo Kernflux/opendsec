@@ -1,0 +1,97 @@
+{
+  "tls": {
+    "dir": "/etc/opendsec/pki"
+  },
+  "iam": {
+    "admin_token": "dsk.admin.CHANGE-ME",
+    "max_token_ttl_s": 2592000,
+    "root_quota": {
+      "sandboxes": 380000
+    },
+    "replicas": [
+      {
+        "id": "0",
+        "addr": "iam-0.opendsec-iam.opendsec.svc.cluster.local:7001",
+        "raft_addr": "iam-0.opendsec-iam.opendsec.svc.cluster.local:7011",
+        "data_dir": "/var/lib/opendsec/iam"
+      },
+      {
+        "id": "1",
+        "addr": "iam-1.opendsec-iam.opendsec.svc.cluster.local:7001",
+        "raft_addr": "iam-1.opendsec-iam.opendsec.svc.cluster.local:7011",
+        "data_dir": "/var/lib/opendsec/iam"
+      },
+      {
+        "id": "2",
+        "addr": "iam-2.opendsec-iam.opendsec.svc.cluster.local:7001",
+        "raft_addr": "iam-2.opendsec-iam.opendsec.svc.cluster.local:7011",
+        "data_dir": "/var/lib/opendsec/iam"
+      }
+    ]
+  },
+  "watcher": {
+    "lock_ttl": 10,
+    "lost_edge_grace": 120,
+    "unbound_max_age": 600,
+    "replicas": [
+      {
+        "id": "0",
+        "addr": "watcher-0.opendsec-watcher.opendsec.svc.cluster.local:7002"
+      },
+      {
+        "id": "1",
+        "addr": "watcher-1.opendsec-watcher.opendsec.svc.cluster.local:7002"
+      }
+    ]
+  },
+  "apiserver": [
+    {
+      "addr": "0.0.0.0:7100",
+      "audit_dir": "/var/log/opendsec/audit"
+    },
+    {
+      "addr": "0.0.0.0:7100",
+      "audit_dir": "/var/log/opendsec/audit"
+    }
+  ],
+  "placement": {
+    "k": 2,
+    "max_attempts": 3,
+    "burst_threshold": 0.8
+  },
+  "admission": {
+    "default_ttl_running_stop_s": 3600,
+    "default_ttl_max_s": 86400,
+    "max_ttl_max_s": 604800,
+    "request_rate": 10000,
+    "create_rate": 2000,
+    "create_burst": 32768,
+    "auth_fail_rate": 5,
+    "max_inflight_creates": 2048
+  },
+  "edges": [],
+  "edge_template": {
+    "addr": "0.0.0.0:7201",
+    "zone": "onprem",
+    "state_dir": "/var/lib/opendsec",
+    "agent_dir": "/opt/opendsec/agents/0.1.0",
+    "persist_state": true,
+    "keep_sandboxes_on_exit": true,
+    "cpu_overcommit": 8,
+    "mem_overcommit": 1,
+    "images": {},
+    "backends": {
+      "container": {
+        "runtime": "linux",
+        "max_sandboxes": 3200,
+        "default_disk_mb": 10240,
+        "pids_max": 4096
+      }
+    },
+    "disk_overcommit": 1,
+    "disk_reserve_mb": 0
+  },
+  "image_store": {
+    "root": "/mnt/opendsec-images"
+  }
+}

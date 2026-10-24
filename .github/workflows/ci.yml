@@ -1,0 +1,66 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  go:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: gofmt
+        run: test -z "$(gofmt -l cmd ext internal pkg test $(ls -d ee 2>/dev/null))" || { gofmt -l cmd ext internal pkg test $(ls -d ee 2>/dev/null); exit 1; }
+      - run: go vet ./...
+      - run: make build
+      - name: the open build does not need ee/
+        run: make check-open
+      - name: enterprise build (private repository only)
+        if: hashFiles('ee/**') != ''
+        run: make build-ee
+      # As an unprivileged user: the tests that need root, KVM or a guest
+      # kernel skip themselves. Run them on a KVM machine (CONTRIBUTING.md).
+      - run: go test ./...
+      - name: licenses (NOTICE)
+        run: |
+          # The repository is AGPL-3.0; the client parts are Apache-2.0.
+          grep -q 'GNU AFFERO GENERAL PUBLIC LICENSE' LICENSE
+          for d in sdk/python pkg proto gen; do
+            grep -q 'Apache License' $d/LICENSE && cmp sdk/python/LICENSE $d/LICENSE
+          done
+      - name: every Go dependency has a license file
+        run: deploy/third-party-licenses.sh "$(mktemp -d)"
+      - name: shell scripts parse
+        run: |
+          bash -n deploy/quickstart.sh deploy/fetch-deps.sh deploy/third-party-licenses.sh deploy/prod/opendsecops deploy/prod/iam-backup.sh deploy/offline/build-bundle.sh deploy/offline/install.sh
+          sh -n deploy/node/install.sh deploy/guest-kernel/build.sh deploy/offline/apt-local.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bin
+          path: bin/
+          retention-days: 3
+
+  python:
+    runs-on: ubuntu-24.04
+    needs: go
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: bin
+          path: bin/
+      - run: chmod +x bin/*
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: SDK tests
+        run: |
+          python -m venv sdk/python/.venv
+          sdk/python/.venv/bin/pip install -q ./sdk/python pytest pytest-asyncio
+          cd sdk/python && .venv/bin/python -m pytest -q tests

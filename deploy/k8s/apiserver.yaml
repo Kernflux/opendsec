@@ -1,0 +1,66 @@
+# apiservers: stateless, but a StatefulSet gives each a stable index, which
+# selects its certificate (apiserver-<i>) and config entry.
+apiVersion: v1
+kind: Service
+metadata:
+  name: opendsec-apiserver
+  namespace: opendsec
+spec:
+  type: ClusterIP          # switch to LoadBalancer to expose the API to training clusters
+  selector: {app: opendsec-apiserver}
+  ports:
+    - {name: grpc, port: 7100, targetPort: 7100}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: opendsec-apiserver-pods
+  namespace: opendsec
+spec:
+  clusterIP: None
+  selector: {app: opendsec-apiserver}
+  ports:
+    - {name: grpc, port: 7100}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: apiserver
+  namespace: opendsec
+spec:
+  serviceName: opendsec-apiserver-pods
+  replicas: 2              # must match the number of "apiserver" entries in opendsec.json
+  podManagementPolicy: Parallel
+  updateStrategy: {type: RollingUpdate}
+  selector:
+    matchLabels: {app: opendsec-apiserver}
+  template:
+    metadata:
+      labels: {app: opendsec-apiserver}
+    spec:
+      securityContext: {runAsNonRoot: true, runAsUser: 65532, fsGroup: 65532}
+      containers:
+        - name: apiserver
+          image: opendsec:0.1.0
+          command: ["/bin/sh", "-c", "exec opendsec-apiserver -config /etc/opendsec/opendsec.json -index ${HOSTNAME##*-}"]
+          ports:
+            - {name: grpc, containerPort: 7100}
+          readinessProbe: {tcpSocket: {port: 7100}, periodSeconds: 5}
+          livenessProbe: {tcpSocket: {port: 7100}, periodSeconds: 10, failureThreshold: 6}
+          resources:
+            requests: {cpu: "4", memory: 4Gi}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+          volumeMounts:
+            - {name: config, mountPath: /etc/opendsec/opendsec.json, subPath: opendsec.json, readOnly: true}
+            - {name: pki, mountPath: /etc/opendsec/pki, readOnly: true}
+            - {name: audit, mountPath: /var/log/opendsec/audit}
+            - {name: images, mountPath: /mnt/opendsec-images}   # writes image manifests
+      volumes:
+        - name: config
+          secret: {secretName: opendsec-config}
+        - name: pki
+          secret: {secretName: opendsec-pki}
+        - name: audit
+          emptyDir: {}     # ship to central logging with a sidecar/agent; or use a PVC
+        - name: images
+          persistentVolumeClaim: {claimName: opendsec-images}

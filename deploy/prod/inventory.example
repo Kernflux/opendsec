@@ -1,0 +1,15 @@
+# OpenDsec production inventory, read by opendsecops (docs/OPERATIONS.md).
+# One node per line: name, ssh address, private address, roles.
+# Roles: iam=<replica id> watcher=<id> apiserver=<index> fleet=<id> edge=<edge id> monitor
+# Every IAM replica, watcher, apiserver and edge in the cluster config must
+# appear on exactly one node. The ssh address "local" runs the commands on
+# this machine without ssh (a single-node cluster, deploy/quickstart.sh).
+#
+# Example: three control-plane nodes, one per failure domain, and the
+# compute nodes running edge (more are added later with opendsecops add-node).
+ctl-1     203.0.113.11   10.0.0.11   iam=0 watcher=0 apiserver=0 fleet=0
+ctl-2     203.0.113.12   10.0.0.12   iam=1 watcher=1 apiserver=1 fleet=1
+ctl-3     203.0.113.13   10.0.0.13   iam=2 watcher=2 apiserver=2 fleet=2 monitor
+node-a1   203.0.113.21   10.0.1.21   edge=node-a1
+node-b1   203.0.113.22   10.0.1.22   edge=node-b1
+node-c1   203.0.113.23   10.0.1.23   edge=node-c1

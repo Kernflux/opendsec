@@ -1,0 +1,24 @@
+# Known vulnerabilities in the Go code and its dependencies, reported only
+# when our code can reach them. Runs on every change and weekly, so that a
+# vulnerability published later is noticed without a commit.
+name: vuln
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "17 3 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  govulncheck:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
+      - run: govulncheck ./...

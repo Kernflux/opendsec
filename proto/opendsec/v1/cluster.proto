@@ -1,0 +1,181 @@
+syntax = "proto3";
+
+package opendsec.v1;
+
+option go_package = "github.com/kernflux/opendsec/gen/go/opendsec/v1;opendsecv1";
+
+import "opendsec/v1/types.proto";
+import "opendsec/v1/runtime.proto";
+
+// Watcher (paper §3): probes edge health and aggregates scheduling state.
+// Holds no durable state; rebuilds its view by polling edges after a restart.
+service Watcher {
+  rpc GetSnapshot(Empty) returns (Snapshot);
+  rpc Register(RegisterEdgeRequest) returns (Empty);
+}
+
+message Snapshot {
+  int64 version = 1;
+  double taken_at = 2;
+  repeated EdgeState edges = 3;
+}
+
+message RegisterEdgeRequest {
+  string id = 1;
+  string addr = 2;
+  string zone = 3;
+}
+
+// Edge (paper §3): node-local admission, lifecycle and resource release.
+// Final admission authority: may reject a placement with no_capacity.
+service Edge {
+  rpc Status(EdgeStatusRequest) returns (EdgeStatusResponse);
+  rpc CreateSandbox(EdgeCreateRequest) returns (Sandbox);
+  rpc GetSandbox(SandboxRef) returns (Sandbox);
+  rpc ListSandboxes(SandboxFilter) returns (SandboxList);
+  rpc StopSandbox(SandboxRef) returns (Sandbox);
+  rpc PauseSandbox(SandboxRef) returns (Sandbox);
+  rpc ResumeSandbox(SandboxRef) returns (Sandbox);
+  rpc TouchSandbox(SandboxRef) returns (Sandbox);
+  rpc SetSandboxTimeout(SetTimeoutRequest) returns (Sandbox);
+  rpc ApplyTaskAction(EdgeTaskActionRequest) returns (TaskActionResult);
+  rpc Drain(DrainRequest) returns (Empty);
+
+  // Runtime operations, forwarded to the sandbox's aether. A paused sandbox
+  // is resumed first; every call refreshes the idle TTL.
+  rpc Exec(ExecRequest) returns (ExecResult);
+  rpc ExecStream(ExecRequest) returns (stream ExecEvent);
+  rpc GetOutput(OutputRequest) returns (ExecResult);
+  rpc ReadFile(FileRequest) returns (FileData);
+  rpc WriteFile(WriteFileRequest) returns (FileInfo);
+  rpc ListDir(FileRequest) returns (DirListing);
+  rpc Stat(FileRequest) returns (FileInfo);
+  rpc Remove(FileRequest) returns (Empty);
+  rpc Http(HttpRequest) returns (HttpResponse);
+  rpc ListSessions(SessionRef) returns (SessionList);
+  rpc CloseSession(SessionRef) returns (Empty);
+  rpc MakeDir(FileRequest) returns (FileInfo);
+  rpc Move(MoveRequest) returns (FileInfo);
+  // Processes (spec §37): commands run as processes of their own, outside
+  // shell sessions, as E2B's envd runs them: addressed by pid (or tag), with
+  // stdin, signals and an optional PTY. A stream ending does not end its
+  // process; ConnectProcess attaches to a running one.
+  rpc StartProcess(StartProcessRequest) returns (stream ProcessEvent);
+  rpc ConnectProcess(ProcessRef) returns (stream ProcessEvent);
+  rpc ListProcesses(ProcessRef) returns (ProcessList);
+  rpc SendProcessInput(ProcessInput) returns (Empty);
+  rpc CloseProcessStdin(ProcessRef) returns (Empty);
+  rpc SignalProcess(ProcessSignal) returns (Empty);
+  rpc ResizeProcess(ProcessResize) returns (Empty);
+  // A TCP connection to a port of the sandbox (spec §37.8), as a stream: the
+  // first message names the sandbox and port, then each side sends data;
+  // a side done sending ends its stream (half-close).
+  rpc ConnectPort(stream PortData) returns (stream PortData);
+
+  // Snapshot a sandbox's writable layer into the shared image store (spec §17.4).
+  rpc PackDiff(EdgePackDiffRequest) returns (EdgePackDiffResponse);
+  // Snapshot a sandbox into the image store, for fork and CreateSnapshot
+  // (spec §19). The sandbox is paused while it is taken.
+  rpc Snapshot(EdgeSnapshotRequest) returns (EdgeSnapshotResponse);
+  rpc UpdateNetwork(UpdateNetworkRequest) returns (Sandbox);
+
+  // Edge to edge (spec §26): another edge reads the files of a snapshot this
+  // edge holds (an ephemeral one: a fork's, or a paused sandbox moving).
+  rpc FetchSnapshot(FetchSnapshotRequest) returns (stream SnapshotChunk);
+  // Moving a paused sandbox to another edge (spec §26.2): BeginMove freezes
+  // it here as an ephemeral snapshot; the edge it moves to starts it from
+  // that and calls EndMove, after which it is gone from here.
+  rpc BeginMove(BeginMoveRequest) returns (EdgeSnapshotResponse);
+  rpc EndMove(EndMoveRequest) returns (Empty);
+}
+
+message FetchSnapshotRequest {
+  string snapshot_id = 1;
+  string file = 2;                     // one of the snapshot's files
+}
+
+// The first chunk carries the file's size (and content id, if it has one);
+// the others its data, holes left out.
+message SnapshotChunk {
+  int64 size = 1;
+  string content_id = 2;               // read-only disks: same id, same bytes
+  int64 offset = 3;
+  bytes data = 4;
+}
+
+message BeginMoveRequest {
+  string sandbox_id = 1;
+  string snapshot_id = 2;              // assigned by the apiserver
+}
+
+message EndMoveRequest {
+  string sandbox_id = 1;
+  string to_edge = 2;                  // the edge now running it; "" = move aborted
+}
+
+// An edge reachable from other edges.
+message EdgePeer {
+  string id = 1;
+  string addr = 2;
+}
+
+message EdgeSnapshotRequest {
+  string sandbox_id = 1;
+  string snapshot_id = 2;              // assigned by the apiserver
+  bool memory = 3;                     // include memory (backends that support it)
+  bool prefer_memory = 4;              // include memory if the backend supports it (fork)
+  // Keep the files on this edge, out of the image store: only to start
+  // copies now (fork); other edges fetch them from here (spec §26.1).
+  bool ephemeral = 5;
+}
+
+message EdgeSnapshotResponse {
+  string snapshot_id = 1;
+  bool memory = 2;
+  int64 size_bytes = 3;
+  bool held = 4;                       // ephemeral: the files are on this edge only
+}
+
+message EdgePackDiffRequest {
+  string sandbox_id = 1;
+  string layer_id = 2;
+  repeated string scrub = 3;   // extra paths (globs) to drop, on top of the defaults
+}
+
+message EdgePackDiffResponse {
+  string layer_id = 1;
+  int64 size_bytes = 2;
+}
+
+message EdgeStatusRequest {
+  bool include_leases = 1;
+}
+
+message EdgeStatusResponse {
+  EdgeState state = 1;
+  repeated LeaseInfo leases = 2;
+}
+
+message EdgeCreateRequest {
+  string id = 1;                       // assigned by the apiserver
+  string project = 2;
+  string principal = 3;
+  SandboxSpec spec = 4;
+  // The edge holding spec.snapshot's files when they are not in the image
+  // store (spec §26).
+  EdgePeer snapshot_peer = 5;
+  // The sandbox moves here from snapshot_peer (spec §26.2): id names that
+  // edge, and the sandbox keeps its creation time.
+  bool move = 6;
+  double created_at = 7;
+}
+
+message EdgeTaskActionRequest {
+  string project = 1;                  // only sandboxes in this project subtree
+  string task_id = 2;
+  TaskAction action = 3;
+}
+
+message DrainRequest {
+  bool draining = 1;
+}

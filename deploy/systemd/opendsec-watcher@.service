@@ -1,0 +1,27 @@
+# One watcher instance: systemctl enable --now opendsec-watcher@0  (instance = watcher id).
+# Configure "watcher": {"replicas": [...]} even for a single instance.
+[Unit]
+Description=OpenDsec watcher %i
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=opendsec
+Group=opendsec
+ExecStart=/usr/local/bin/opendsec-watcher -config /etc/opendsec/opendsec.json -replica %i -metrics :9462
+Restart=always
+RestartSec=1
+LimitNOFILE=1048576
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+ReadOnlyPaths=/etc/opendsec
+
+[Install]
+WantedBy=multi-user.target

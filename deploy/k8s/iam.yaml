@@ -1,0 +1,61 @@
+# IAM: 3 Raft replicas with stable identities (iam-0..2) and their own volumes.
+apiVersion: v1
+kind: Service
+metadata:
+  name: opendsec-iam
+  namespace: opendsec
+spec:
+  clusterIP: None                 # headless: stable per-replica DNS names
+  publishNotReadyAddresses: true  # replicas must resolve each other to elect a leader
+  selector: {app: opendsec-iam}
+  ports:
+    - {name: grpc, port: 7001}
+    - {name: raft, port: 7011}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: iam
+  namespace: opendsec
+spec:
+  serviceName: opendsec-iam
+  replicas: 3
+  podManagementPolicy: Parallel   # start all replicas together for the initial election
+  selector:
+    matchLabels: {app: opendsec-iam}
+  template:
+    metadata:
+      labels: {app: opendsec-iam}
+    spec:
+      affinity:
+        podAntiAffinity:          # one replica per node: survive a node loss
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector: {matchLabels: {app: opendsec-iam}}
+              topologyKey: kubernetes.io/hostname
+      securityContext: {runAsNonRoot: true, runAsUser: 65532, fsGroup: 65532}
+      containers:
+        - name: iam
+          image: opendsec:0.1.0
+          command: ["/bin/sh", "-c", "exec opendsec-iam -config /etc/opendsec/opendsec.json -replica ${HOSTNAME##*-}"]
+          ports:
+            - {name: grpc, containerPort: 7001}
+            - {name: raft, containerPort: 7011}
+          readinessProbe: {tcpSocket: {port: 7001}, periodSeconds: 5}
+          livenessProbe: {tcpSocket: {port: 7001}, periodSeconds: 10, failureThreshold: 6}
+          resources:
+            requests: {cpu: "2", memory: 2Gi}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+          volumeMounts:
+            - {name: data, mountPath: /var/lib/opendsec/iam}
+            - {name: config, mountPath: /etc/opendsec/opendsec.json, subPath: opendsec.json, readOnly: true}
+            - {name: pki, mountPath: /etc/opendsec/pki, readOnly: true}
+      volumes:
+        - name: config
+          secret: {secretName: opendsec-config}
+        - name: pki
+          secret: {secretName: opendsec-pki}
+  volumeClaimTemplates:
+    - metadata: {name: data}
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources: {requests: {storage: 20Gi}}   # Raft log + snapshots; use SSD-backed storage (fsync per admission)

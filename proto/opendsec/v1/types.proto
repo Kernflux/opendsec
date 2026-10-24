@@ -1,0 +1,221 @@
+syntax = "proto3";
+
+package opendsec.v1;
+
+option go_package = "github.com/kernflux/opendsec/gen/go/opendsec/v1;opendsecv1";
+
+message Empty {}
+
+// Resources requested by (or allocated to) a sandbox.
+message Resources {
+  double cpu_cores = 1;
+  int64 memory_mb = 2;
+  int32 gpus = 3;
+  int64 disk_mb = 4;                   // writable layer size; 0 = backend default
+}
+
+enum SandboxState {
+  SANDBOX_STATE_UNSPECIFIED = 0;
+  CREATING = 1;
+  RUNNING = 2;
+  PAUSING = 3;
+  PAUSED = 4;
+  RESUMING = 5;
+  STOPPING = 6;
+  STOPPED = 7;
+  FAILED = 8;
+}
+
+// What the caller asks for. The caller picks the backend explicitly; the SDK
+// does not abstract over backends (paper §3).
+message SandboxSpec {
+  string backend = 1;                  // sim | container | microvm | fullvm | fncall
+  string image = 2;                    // image / environment identifier
+  Resources resources = 3;
+  int64 ttl_running_stop_s = 4;        // idle timeout; 0 = cluster default
+  int64 ttl_max_s = 5;                 // absolute lifetime cap; 0 = cluster default
+  // Network policy (spec §20), default deny: rule set names, domains (with
+  // their subdomains), IPv4 CIDRs or "*" (any public address); true allows,
+  // false takes back a cluster default. Ignored on edges without networking.
+  map<string, bool> network_rules = 6; // e.g. {"pypi": true, "npm": false}
+  string init_user = 7;
+  string task_id = 8;                  // RL job / task, for task-level actions
+  string qos = 9;                      // LS | BE
+  string gpu_mode = 10;                // "" | shared | exclusive
+  map<string, string> labels = 11;
+  // Snapshot the sandbox started from (spec §19): set by ForkSandbox on the
+  // copies, never by callers. Its layers replace those of image.
+  string snapshot = 12;
+  // File access restrictions (spec §21): absolute paths in the sandbox made
+  // read-only, or hidden (an empty read-only directory, or an empty file).
+  // Missing paths are skipped. In container sandboxes root cannot undo them;
+  // in a microVM the guest's root can, so restrict a non-root init_user.
+  repeated string readonly_paths = 13;
+  repeated string masked_paths = 14;
+  // With ttl_paused_s > 0, a running sandbox reaching ttl_max_s or its idle
+  // timeout is paused instead of stopped (spec §37.11, E2B's autoPause),
+  // then kept paused ttl_paused_s more: its ttl_max_s becomes its age at
+  // the pause plus ttl_paused_s. Any call resumes it, as any paused sandbox.
+  int64 ttl_paused_s = 15;
+}
+
+message Sandbox {
+  string id = 1;                       // "<edge_id>.<lease>", edge_id that of the edge it was created on
+  string project = 2;
+  string principal = 3;
+  string edge_id = 4;                  // the edge it runs on (another one once moved, spec §26.2)
+  SandboxSpec spec = 5;
+  SandboxState state = 6;
+  double created_at = 7;
+  double last_active_at = 8;
+  double ended_at = 9;
+  string message = 10;                 // reason for FAILED / STOPPED
+}
+
+message SandboxRef {
+  string id = 1;
+}
+
+message SetTimeoutRequest {
+  string sandbox_id = 1;
+  int64 timeout_s = 2;                 // > 0
+  int64 max_lifetime_s = 3;            // set by the apiserver (the admission cap; 0 = none)
+}
+
+message SandboxFilter {
+  string project = 1;                  // matches the project and its subprojects
+  string task_id = 2;
+  bool include_ended = 3;
+}
+
+message SandboxList {
+  repeated Sandbox sandboxes = 1;
+}
+
+enum TaskAction {
+  TASK_ACTION_UNSPECIFIED = 0;
+  TASK_PAUSE = 1;
+  TASK_RESUME = 2;
+  TASK_STOP = 3;
+}
+
+message TaskActionResult {
+  int32 affected = 1;
+  int32 failed = 2;
+  repeated string errors = 3;
+}
+
+// Allocatable capacity of an edge (already multiplied by overcommit factors).
+message Capacity {
+  double cpu_cores = 1;
+  int64 memory_mb = 2;
+  int32 gpus = 3;
+  map<string, int32> max_sandboxes = 4; // per backend
+  int64 disk_mb = 5;                    // writable-disk capacity; 0 = not limited
+  map<string, int64> default_disk_mb = 6; // per backend: disk charged when a request has none
+}
+
+// Scheduling-relevant state of one edge, as reported by the edge and
+// aggregated by the watcher.
+message EdgeState {
+  string id = 1;
+  string addr = 2;
+  string zone = 3;                     // onprem | cloud
+  bool healthy = 4;
+  bool draining = 5;
+  repeated string backends = 6;
+  Capacity capacity = 7;
+  Resources alloc = 8;
+  map<string, int32> count_by_backend = 9;
+  map<string, int32> by_task = 10;
+  map<string, int32> by_project = 11;
+  map<string, int32> by_principal = 12;
+  double last_seen = 13;
+  int64 total_created = 14;
+  int64 total_rejected = 15;
+  // Node-level memory pressure (MemAvailable below the edge's reserve); the
+  // edge rejects creations while set and placement skips the edge.
+  bool under_pressure = 16;
+  int64 mem_available_mb = 17;
+  // Images each backend can run, for backends limited to locally configured
+  // images; a backend absent here runs any image (spec §17.1).
+  map<string, ImageList> images_by_backend = 18;
+  // Free space on the edge's state filesystem; under_pressure is also set
+  // while it is below the edge's disk reserve (spec §18.2).
+  int64 disk_available_mb = 19;
+  string pressure = 20;                // why under_pressure is set: "memory" | "disk"
+  // Snapshots held in the node's own snapshot cache: placement prefers these
+  // edges for copies of them (spec §19.12).
+  repeated string snapshots = 21;
+  // Sandboxes running here whose id names another edge: they moved here
+  // (spec §26.2). Apiservers route by this.
+  repeated string moved_in = 22;
+  // Versions of the node's runtime dependencies, e.g. firecracker -> 1.17.0
+  // (spec §28.12): snapshot-based creations only go to matching edges.
+  map<string, string> runtime_versions = 23;
+  // What the host actually uses (spec §3.4), next to what sandboxes were
+  // granted: placement ranks by whichever is higher. cpu_used: busy share of
+  // all CPUs, smoothed over about 10 s; mem_used: 1 - MemAvailable/MemTotal;
+  // both in [0, 1]. cpu_pressure: PSI "some" avg10 of /proc/pressure/cpu, in
+  // percent (time some runnable task waited for a CPU); with the edge's
+  // cpu_pressure_limit set, above it the edge is under pressure ("cpu").
+  double cpu_used = 24;
+  double mem_used = 25;
+  double cpu_pressure = 26;
+}
+
+message ImageList {
+  repeated string names = 1;
+}
+
+// A live quota reservation; the lease is the random suffix of the sandbox id.
+message LeaseInfo {
+  string lease = 1;
+  string project = 2;
+  Resources resources = 3;
+}
+
+message UpdateNetworkRequest {
+  string sandbox_id = 1;
+  map<string, bool> rules = 2;         // as SandboxSpec.network_rules
+  bool replace = 3;                    // replace the rules instead of merging into them
+}
+
+message DrainEdgeRequest {
+  string edge_id = 1;
+  bool draining = 2;                   // false: take new sandboxes again
+}
+
+// IAM operations (spec §27.2). The apiserver fills in actor.
+message IAMBackupRequest {
+  string actor = 1;
+}
+
+// A piece of an IAM backup: gzipped JSON of principals, projects, policies,
+// quotas and tokens (hashes only). Quota leases are not in it: reconcile
+// rebuilds them from the edges.
+message BackupChunk {
+  bytes data = 1;
+  string actor = 2;                    // restore: first chunk only
+}
+
+message IAMMember {
+  string id = 1;
+  string raft_addr = 2;
+  string addr = 3;                     // gRPC address clients and followers use
+  bool leader = 4;
+  bool voter = 5;
+  uint64 applied_index = 6;            // leader only: its own
+}
+
+message IAMMemberRequest {
+  string actor = 1;
+  string id = 2;
+  string raft_addr = 3;                // add only
+  string addr = 4;                     // add only
+}
+
+message IAMMemberList {
+  repeated IAMMember members = 1;
+  bool replicated = 2;                 // false: standalone IAM (no members)
+}

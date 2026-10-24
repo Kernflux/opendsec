@@ -1,0 +1,32 @@
+# One IAM replica per node: systemctl enable --now opendsec-iam@0  (instance = replica id)
+[Unit]
+Description=OpenDsec IAM replica %i
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=opendsec
+Group=opendsec
+# A replacement replica on a new node starts once with -join (see
+# docs/OPERATIONS.md); OPENDSEC_IAM_FLAGS in /etc/opendsec/iam.env carries it.
+EnvironmentFile=-/etc/opendsec/iam.env
+ExecStart=/usr/local/bin/opendsec-iam -config /etc/opendsec/opendsec.json -replica %i -metrics :9461 $OPENDSEC_IAM_FLAGS
+Restart=always
+RestartSec=1
+# iam.replicas[].data_dir must be /var/lib/opendsec/iam
+StateDirectory=opendsec/iam
+StateDirectoryMode=0700
+LimitNOFILE=1048576
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+ReadOnlyPaths=/etc/opendsec
+
+[Install]
+WantedBy=multi-user.target

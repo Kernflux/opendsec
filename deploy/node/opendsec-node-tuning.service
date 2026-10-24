@@ -1,0 +1,14 @@
+# OpenDsec node tuning (CPU governor, disk read-ahead) in place of tuned;
+# installed by deploy/node/install.sh.
+[Unit]
+Description=OpenDsec node tuning
+After=local-fs.target
+Before=opendsec-edge.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/opendsec-node-tuning
+
+[Install]
+WantedBy=multi-user.target

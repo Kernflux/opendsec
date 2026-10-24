@@ -1,0 +1,6 @@
+# OpenDsec sandbox veths (SPEC §25.4): configured by the edge, not networkd.
+[Match]
+Name=ds*
+
+[Link]
+Unmanaged=yes

@@ -1,0 +1,28 @@
+# The node runtime, one per sandbox node. Needs root, cgroup v2, overlayfs,
+# mkfs.ext4 and loop devices. Set the edge id in /etc/opendsec/edge.env:
+#   OPENDSEC_EDGE_ID=node-17
+#   OPENDSEC_EDGE_ADVERTISE=10.1.2.17:7201
+# and provision its certificate into /etc/opendsec/pki with `opendsecctl pki issue`.
+[Unit]
+Description=OpenDsec edge (sandbox node runtime)
+After=network-online.target local-fs.target
+RequiresMountsFor=/mnt/opendsec-images
+Wants=network-online.target
+
+[Service]
+EnvironmentFile=/etc/opendsec/edge.env
+ExecStart=/usr/local/bin/opendsec-edge -config /etc/opendsec/opendsec.json -id ${OPENDSEC_EDGE_ID} -advertise ${OPENDSEC_EDGE_ADVERTISE} -metrics :9464
+Restart=always
+RestartSec=1
+# Sandboxes live in /sys/fs/cgroup/opendsec/<edge>/..., outside this unit's
+# cgroup, and are re-adopted after a restart (persist_state +
+# keep_sandboxes_on_exit). Only ever signal the edge process itself.
+KillMode=process
+TimeoutStopSec=60
+StateDirectory=opendsec
+LimitNOFILE=1048576
+TasksMax=infinity
+# Root with full device and mount access is inherent to running sandboxes.
+
+[Install]
+WantedBy=multi-user.target

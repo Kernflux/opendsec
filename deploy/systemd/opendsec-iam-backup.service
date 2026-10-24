@@ -1,0 +1,8 @@
+# IAM backup (deploy/prod/iam-backup.sh), run daily by opendsec-iam-backup.timer.
+[Unit]
+Description=OpenDsec IAM backup
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/opendsec-iam-backup

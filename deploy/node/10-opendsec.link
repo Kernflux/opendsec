@@ -1,0 +1,7 @@
+# OpenDsec sandbox veths (SPEC §25.4): keep the edge's names and addresses.
+[Match]
+OriginalName=ds*
+
+[Link]
+NamePolicy=
+MACAddressPolicy=none

@@ -1,0 +1,269 @@
+syntax = "proto3";
+
+package opendsec.v1;
+
+option go_package = "github.com/kernflux/opendsec/gen/go/opendsec/v1;opendsecv1";
+
+import "opendsec/v1/types.proto";
+
+// Runtime is served inside every sandbox: by aether (routing on `session`)
+// and by each chronus instance (one shell session; `session` is ignored).
+// The same request messages are used by Edge and the public OpenDsec API, where
+// `sandbox_id` selects the sandbox (paper §3 node runtime, spec §11).
+service Runtime {
+  rpc Exec(ExecRequest) returns (ExecResult);
+  rpc ExecStream(ExecRequest) returns (stream ExecEvent);
+  rpc GetOutput(OutputRequest) returns (ExecResult);
+  rpc ReadFile(FileRequest) returns (FileData);
+  rpc WriteFile(WriteFileRequest) returns (FileInfo);
+  rpc ListDir(FileRequest) returns (DirListing);
+  rpc Stat(FileRequest) returns (FileInfo);
+  rpc Remove(FileRequest) returns (Empty);
+  rpc Http(HttpRequest) returns (HttpResponse);
+  rpc ListSessions(SessionRef) returns (SessionList);
+  rpc CloseSession(SessionRef) returns (Empty);
+  rpc MakeDir(FileRequest) returns (FileInfo);
+  rpc Move(MoveRequest) returns (FileInfo);
+  // Processes (spec §37): commands run as processes of their own, outside
+  // shell sessions, as E2B's envd runs them: addressed by pid (or tag), with
+  // stdin, signals and an optional PTY. A stream ending does not end its
+  // process; ConnectProcess attaches to a running one.
+  rpc StartProcess(StartProcessRequest) returns (stream ProcessEvent);
+  rpc ConnectProcess(ProcessRef) returns (stream ProcessEvent);
+  rpc ListProcesses(ProcessRef) returns (ProcessList);
+  rpc SendProcessInput(ProcessInput) returns (Empty);
+  rpc CloseProcessStdin(ProcessRef) returns (Empty);
+  rpc SignalProcess(ProcessSignal) returns (Empty);
+  rpc ResizeProcess(ProcessResize) returns (Empty);
+  // A TCP connection to a port of the sandbox (spec §37.8), as a stream: the
+  // first message names the sandbox and port, then each side sends data;
+  // a side done sending ends its stream (half-close).
+  rpc ConnectPort(stream PortData) returns (stream PortData);
+  // Heartbeat stream from aether; the edge marks the sandbox FAILED when it
+  // breaks while the sandbox should be running.
+  rpc Watch(Empty) returns (stream Heartbeat);
+  // Called by the edge after a microVM resumed from a memory snapshot,
+  // before the sandbox serves calls (spec §19.3): every copy of a snapshot
+  // would otherwise share the clock, random state and identity it had.
+  rpc PostRestore(PostRestoreRequest) returns (Empty);
+}
+
+message PostRestoreRequest {
+  int64 unix_nanos = 1;                // set the wall clock
+  bytes entropy = 2;                   // mixed into (and credited to) the kernel pool, then reseed
+  string hostname = 3;                 // empty = keep
+  string machine_id = 4;               // written to /etc/machine-id if it exists; empty = keep
+}
+
+message ExecRequest {
+  string sandbox_id = 1;
+  string session = 2;                  // default "default"
+  string cmd = 3;                      // shell command line
+  double timeout_s = 4;                // 0 = no timeout
+  map<string, string> env = 5;         // exported for this command only
+  string cwd = 6;                      // run in this directory (shell cwd unchanged)
+  bool background = 7;                 // return immediately with cmd_id
+  // Client-chosen id making the submission idempotent within the session:
+  // a resubmission with the same id (a retry after a lost connection)
+  // returns the command already started instead of running it again.
+  string request_id = 8;
+  // ExecStream: skip this much of the command's output (a resumed stream
+  // re-sends only what the caller has not received).
+  int64 stdout_offset = 9;
+  int64 stderr_offset = 10;
+  // The session's user when this request starts the session: a name, or
+  // uid[:gid] (no /etc/passwd entry needed); "" = the sandbox's init user.
+  // A session keeps its user: a later request naming another one fails.
+  // An agent's commands in a session of an unprivileged user cannot reach
+  // other sessions' sockets and records or change system files (spec §29.3).
+  string user = 11;
+}
+
+message ExecResult {
+  int64 cmd_id = 1;
+  bool done = 2;
+  int32 exit_code = 3;
+  bool timed_out = 4;
+  bytes stdout = 5;
+  bytes stderr = 6;
+  double duration_s = 7;
+  bool truncated = 8;                  // output exceeded the per-call limit
+  int64 stdout_size = 9;               // total recorded bytes so far
+  int64 stderr_size = 10;
+  // Output past the per-stream record limit (default 64 MB) was read and
+  // dropped, not recorded: how many bytes (spec §29.3).
+  int64 dropped_bytes = 11;
+}
+
+message ExecEvent {
+  oneof event {
+    int64 started = 1;                 // cmd_id
+    bytes stdout = 2;
+    bytes stderr = 3;
+    ExecResult exit = 4;               // final status (without output)
+  }
+}
+
+message OutputRequest {
+  string sandbox_id = 1;
+  string session = 2;
+  int64 cmd_id = 3;
+  int64 stdout_offset = 4;
+  int64 stderr_offset = 5;
+  double wait_s = 6;                   // wait up to this long for completion
+}
+
+message FileRequest {
+  string sandbox_id = 1;
+  string session = 2;
+  string path = 3;
+  int64 offset = 4;
+  int64 length = 5;                    // 0 = to end (capped)
+  bool recursive = 6;                  // Remove
+}
+
+message FileData {
+  bytes data = 1;
+  int64 size = 2;                      // total file size
+}
+
+message WriteFileRequest {
+  string sandbox_id = 1;
+  string session = 2;
+  string path = 3;
+  bytes data = 4;
+  uint32 mode = 5;                     // 0 = 0644 for new files
+  bool append = 6;
+}
+
+message FileInfo {
+  string name = 1;
+  string type = 2;                     // file | dir | symlink | other
+  int64 size = 3;
+  uint32 mode = 4;
+  double mtime = 5;
+}
+
+message DirListing {
+  repeated FileInfo entries = 1;
+}
+
+message HttpRequest {
+  string sandbox_id = 1;
+  string session = 2;
+  string method = 3;
+  string url = 4;
+  map<string, string> headers = 5;
+  bytes body = 6;
+  double timeout_s = 7;
+}
+
+message HttpResponse {
+  int32 status = 1;
+  map<string, string> headers = 2;
+  bytes body = 3;
+}
+
+message SessionRef {
+  string sandbox_id = 1;
+  string session = 2;
+}
+
+message SessionList {
+  repeated string sessions = 1;
+}
+
+message Heartbeat {
+  double at = 1;
+  int32 sessions = 2;
+}
+
+message MoveRequest {
+  string sandbox_id = 1;
+  string session = 2;
+  string source = 3;
+  string destination = 4;
+}
+
+// ---- processes (spec §37) ----------------------------------------------------------
+
+message PtySize {
+  uint32 cols = 1;
+  uint32 rows = 2;
+}
+
+message StartProcessRequest {
+  string sandbox_id = 1;
+  string cmd = 2;                      // executable (looked up in PATH)
+  repeated string args = 3;
+  map<string, string> env = 4;         // over the sandbox's environment
+  string cwd = 5;                      // "" = the image's workdir
+  string user = 6;                     // "" = the sandbox's user; a name, or uid[:gid]
+  string tag = 7;                      // optional name to address it by
+  bool stdin = 8;                      // keep stdin open for SendProcessInput (else /dev/null)
+  PtySize pty = 9;                     // set: run on a terminal of this size
+}
+
+// A process, by pid or else by tag.
+message ProcessRef {
+  string sandbox_id = 1;
+  uint32 pid = 2;
+  string tag = 3;
+}
+
+message ProcessEvent {
+  oneof event {
+    uint32 started = 1;                // pid; always the first event
+    bytes stdout = 2;
+    bytes stderr = 3;
+    bytes pty = 4;                     // terminal output (stdout and stderr)
+    ProcessExit exit = 5;              // the last event
+  }
+}
+
+message ProcessExit {
+  sint32 exit_code = 1;                // -1 when killed by a signal
+  bool exited = 2;                     // exited by itself (not by a signal)
+  string status = 3;                   // e.g. "exit status 1", "signal: killed"
+  string error = 4;
+}
+
+message ProcessInfo {
+  uint32 pid = 1;
+  string tag = 2;
+  string cmd = 3;
+  repeated string args = 4;
+  map<string, string> env = 5;
+  string cwd = 6;
+}
+
+message ProcessList {
+  repeated ProcessInfo processes = 1;
+}
+
+message ProcessInput {
+  string sandbox_id = 1;
+  uint32 pid = 2;
+  string tag = 3;
+  bytes data = 4;                      // to stdin, or to the terminal of a PTY process
+}
+
+message ProcessSignal {
+  string sandbox_id = 1;
+  uint32 pid = 2;
+  string tag = 3;
+  int32 signal = 4;                    // e.g. 15 (SIGTERM), 9 (SIGKILL); sent to its process group
+}
+
+message ProcessResize {
+  string sandbox_id = 1;
+  uint32 pid = 2;
+  string tag = 3;
+  PtySize size = 4;
+}
+
+message PortData {
+  string sandbox_id = 1;               // first message only
+  uint32 port = 2;                     // first message only: a port on the sandbox's loopback
+  bytes data = 3;
+}

@@ -1,0 +1,500 @@
+#!/bin/bash
+# opendsecops: install, upgrade and check an OpenDsec production cluster over ssh
+# (docs/OPERATIONS.md). Runs on an ops machine holding the cluster's secrets:
+#
+#   $OPENDSEC_OPS/inventory      nodes and their roles (deploy/prod/inventory.example)
+#   $OPENDSEC_OPS/opendsec.json  cluster config (deploy/prod/cluster.example.json)
+#   $OPENDSEC_OPS/admin.token    the admin token (dsk.admin.<secret>), mode 0600
+#   $OPENDSEC_OPS/pki/           the cluster CA (ca.key never leaves this machine)
+#   $OPENDSEC_OPS/releases/      packaged builds (opendsecops release)
+#   $OPENDSEC_OPS/backups/       IAM backups (opendsecops backup)
+#
+# On the nodes: /opt/opendsec/releases/<version>, /opt/opendsec/current -> the one
+# running, /usr/local/bin/opendsec-* -> current/bin, /etc/opendsec/{opendsec.json,pki/,
+# admin.token (IAM nodes), edge.env (edge nodes), node.env}, and the node agent
+# (/opt/opendsec/agent/opendsec-nodeagent).
+#
+# Machines without internet access (spec §38): OPENDSEC_DEBS names an
+# offline bundle's package repository (its debs/), from which packages are
+# installed on the nodes instead of their apt sources; release-add takes the
+# bundle's packaged release.
+#
+# With fleet replicas in the inventory (role fleet=<id>), upgrades and config
+# changes go through the fleet service (opendsecctl fleet, spec §28); this
+# script stays for the first install, certificates, adding machines
+# (add-node) and emergencies.
+set -euo pipefail
+
+OPS=${OPENDSEC_OPS:-/root/opendsec-ops}
+SSH_KEY=${OPENDSEC_SSH_KEY:-/root/.ssh/opendsec-ops}
+SSH_USER=${OPENDSEC_SSH_USER:-root}
+HERE=$(cd "$(dirname "$0")" && pwd)
+UNITS=${OPENDSEC_UNITS:-$HERE/../systemd}
+KEEP_RELEASES=${OPENDSEC_KEEP_RELEASES:-3}
+READY_TIMEOUT=${OPENDSEC_READY_TIMEOUT:-180}
+DEBS=${OPENDSEC_DEBS:-}
+[ -z "$DEBS" ] || [ -f "$DEBS/apt-local.sh" ] || { echo "opendsecops: OPENDSEC_DEBS=$DEBS is not an offline bundle's debs/ (no apt-local.sh)" >&2; exit 1; }
+
+# Ports of /readyz (the -metrics listener) per role.
+declare -A PORT=([iam]=9461 [watcher]=9462 [apiserver]=9463 [edge]=9464 [fleet]=9465 [nodeagent]=9466)
+ROLES="iam watcher apiserver fleet edge" # components, in restart order
+
+die() { echo "opendsecops: $*" >&2; exit 1; }
+log() { echo "[$(date +%T)] $*"; }
+
+# ---- inventory ---------------------------------------------------------------------
+
+# nodes: names in inventory order.
+nodes() { awk '!/^[[:space:]]*(#|$)/ {print $1}' "$OPS/inventory"; }
+field() { awk -v n="$1" -v f="$2" '!/^[[:space:]]*(#|$)/ && $1==n {print $f}' "$OPS/inventory"; }
+ssh_host() { field "$1" 2; }
+ip_of() { field "$1" 3; }
+# role NODE ROLE: the node's id for ROLE ("" if it has none; "1" for monitor).
+role() {
+	awk -v n="$1" -v r="$2" '!/^[[:space:]]*(#|$)/ && $1==n {
+		for (i = 4; i <= NF; i++) { split($i, kv, "="); if (kv[1]==r) { print (kv[2]=="" ? 1 : kv[2]); exit } } }' "$OPS/inventory"
+}
+# with_role ROLE: "node id" lines.
+with_role() { for n in $(nodes); do id=$(role "$n" "$1"); [ -n "$id" ] && echo "$n $id"; done; true; }
+targets() { if [ "${1:-all}" = all ]; then nodes; else field "$1" 1 | grep -q . || die "no node $1"; echo "$1"; fi; }
+
+# on NODE CMD: run CMD on the node (stdin closed: callers loop over `read`);
+# on_in feeds it stdin.
+# A node whose ssh address is "local" is this machine (no ssh).
+on() {
+	local n=$1; shift
+	if [ "$(ssh_host "$n")" = local ]; then bash -c "$*" </dev/null; return; fi
+	ssh -n -i "$SSH_KEY" -o BatchMode=yes -o StrictHostKeyChecking=accept-new "$SSH_USER@$(ssh_host "$n")" "$@"
+}
+on_in() {
+	local n=$1; shift
+	if [ "$(ssh_host "$n")" = local ]; then bash -c "$*"; return; fi
+	ssh -i "$SSH_KEY" -o BatchMode=yes -o StrictHostKeyChecking=accept-new "$SSH_USER@$(ssh_host "$n")" "$@"
+}
+put() {
+	local n=$1 src=$2 dst=$3
+	if [ "$(ssh_host "$n")" = local ]; then cp -r "$src" "$dst"; return; fi
+	scp -q -i "$SSH_KEY" -o BatchMode=yes -o StrictHostKeyChecking=accept-new -r "$src" "$SSH_USER@$(ssh_host "$n"):$dst"
+}
+
+# apt_on NODE PKG...: install packages on a node: from the offline bundle's
+# repository with OPENDSEC_DEBS, else from the node's apt sources.
+apt_on() {
+	local n=$1; shift
+	if [ -n "$DEBS" ]; then
+		on "$n" 'rm -rf /tmp/opendsec-debs'
+		put "$n" "$DEBS" /tmp/opendsec-debs
+		on "$n" "sh /tmp/opendsec-debs/apt-local.sh $*; rc=\$?; rm -rf /tmp/opendsec-debs; exit \$rc"
+	else
+		on "$n" "export DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=l; apt-get install -y -qq $* >/dev/null 2>&1 ||
+			{ apt-get update -qq && apt-get install -y -qq $* >/dev/null; }"
+	fi
+}
+
+units_of() { # the systemd units a node runs
+	local n=$1 id
+	id=$(role "$n" iam);       [ -n "$id" ] && echo "opendsec-iam@$id"
+	id=$(role "$n" watcher);   [ -n "$id" ] && echo "opendsec-watcher@$id"
+	id=$(role "$n" apiserver); [ -n "$id" ] && echo "opendsec-apiserver@$id"
+	id=$(role "$n" e2b);       [ -n "$id" ] && echo "opendsec-e2b@$id"
+	id=$(role "$n" fleet);     [ -n "$id" ] && echo "opendsec-fleet@$id"
+	id=$(role "$n" edge);      [ -n "$id" ] && echo "opendsec-edge"
+	true
+}
+
+# ready NODE ROLE: wait for the component's /readyz.
+ready() {
+	local n=$1 r=$2 ip deadline
+	ip=$(ip_of "$n"); deadline=$((SECONDS + READY_TIMEOUT))
+	until curl -sf -m 2 "http://$ip:${PORT[$r]}/readyz" >/dev/null; do
+		[ $SECONDS -lt $deadline ] || die "$r on $n not ready after ${READY_TIMEOUT}s: $(curl -s -m 2 "http://$ip:${PORT[$r]}/readyz" || echo unreachable)"
+		sleep 1
+	done
+}
+
+opendsecctl_ops() { # opendsecctl against the cluster as admin, from the ops machine
+	local api
+	api=$(with_role apiserver | awk 'NR==1 {print $1}') # not head: SIGPIPE under pipefail
+	OPENDSEC_ADDR=${OPENDSEC_ADDR:-$(ip_of "$api"):7100} OPENDSEC_TOKEN=$(cat "$OPS/admin.token") OPENDSEC_CA=$OPS/pki/ca.crt \
+		"$OPS/current/bin/opendsecctl" "$@"
+}
+
+# ---- release --------------------------------------------------------------------------
+
+cmd_release() { # release BIN_DIR: package a build with the runtime dependencies pinned in deploy/deps.lock
+	local bin=${1:?usage: opendsecops release BIN_DIR} ver deps
+	ver=$("$bin/opendsecctl" version)
+	[ -e "$OPS/releases/$ver" ] && die "release $ver exists"
+	deps=$(mktemp -d)
+	"$HERE/../fetch-deps.sh" "$deps" || { rm -rf "$deps"; die "fetching the runtime dependencies failed"; }
+	"$HERE/../third-party-licenses.sh" "$deps" || { rm -rf "$deps"; die "collecting the Go modules' licenses failed (needs the Go toolchain)"; }
+	mkdir -p "$OPS/releases"
+	"$bin/opendsecctl" fleet release pack -bin "$bin" -units "$UNITS" -deps "$deps" -out "$OPS/releases" >/dev/null ||
+		{ rm -rf "$deps"; die "packing failed"; }
+	rm -rf "$deps"
+	ln -sfn "releases/$ver" "$OPS/current.new" && mv -T "$OPS/current.new" "$OPS/current"
+	log "release $ver packaged in $OPS/releases/$ver (push it to the fleet: opendsecctl fleet release push $OPS/releases/$ver)"
+}
+
+cmd_release_add() { # release-add DIR: a release packaged elsewhere (an offline bundle's), made the current one
+	local dir=${1:?usage: opendsecops release-add DIR} ver
+	dir=$(cd "$dir" && pwd)
+	[ -x "$dir/bin/opendsecctl" ] && [ -f "$dir/SHA256SUMS" ] || die "$dir is not a packaged release (bin/opendsecctl, SHA256SUMS)"
+	(cd "$dir" && sha256sum -c --quiet SHA256SUMS) || die "$dir: files do not match its SHA256SUMS"
+	ver=$("$dir/bin/opendsecctl" version)
+	mkdir -p "$OPS/releases"
+	if [ -e "$OPS/releases/$ver" ]; then
+		log "release $ver is already in $OPS/releases"
+	else
+		cp -a "$dir" "$OPS/releases/$ver.new" && mv -T "$OPS/releases/$ver.new" "$OPS/releases/$ver"
+	fi
+	ln -sfn "releases/$ver" "$OPS/current.new" && mv -T "$OPS/current.new" "$OPS/current"
+	log "release $ver added to $OPS/releases"
+}
+
+# ---- certificates ---------------------------------------------------------------------
+
+cmd_certs() { # certs [LB_HOSTS]: create the CA if missing and issue every
+	# certificate the inventory needs that is missing; with LB_HOSTS (comma
+	# separated), reissue the apiservers' with those names too (the load
+	# balancer's address clients connect to).
+	local lb=${1:-} ctl=$OPS/current/bin/opendsecctl reissue=
+	if [ -n "$lb" ]; then echo "$lb" > "$OPS/lb_hosts"; reissue=1; fi
+	[ -z "$lb" ] && [ -f "$OPS/lb_hosts" ] && lb=$(cat "$OPS/lb_hosts")
+	if [ ! -f "$OPS/pki/ca.key" ]; then
+		"$ctl" pki init -config "$OPS/opendsec.json" -out "$OPS/pki" -days 825 -ca-days 3650 >/dev/null
+		chmod 0700 "$OPS/pki"
+		log "created the cluster CA in $OPS/pki (keep ca.key offline)"
+		reissue=1 # pki init issued the apiservers' without the load balancer's names
+	fi
+	for r in iam watcher apiserver fleet edge; do
+		while read -r n id; do
+			[ -z "$n" ] && continue
+			local f=$OPS/pki/$r-$id.crt hosts
+			hosts=$(ip_of "$n")
+			if [ "$r" = apiserver ] && [ -n "$lb" ]; then
+				hosts="$hosts,$lb"
+				[ -n "$reissue" ] && rm -f "$f"
+			fi
+			[ -f "$f" ] && continue
+			"$ctl" pki issue -ca "$OPS/pki" -role "$r" -id "$id" -hosts "$hosts" -out "$OPS/pki" -days 825 >/dev/null
+			log "issued $r-$id for $hosts"
+		done < <(with_role $r)
+	done
+	for n in $(nodes); do # every machine's node agent
+		[ -f "$OPS/pki/node-$n.crt" ] && continue
+		"$ctl" pki issue -ca "$OPS/pki" -role node -id "$n" -hosts "$(ip_of "$n")" -out "$OPS/pki" -days 825 >/dev/null
+		log "issued node-$n"
+	done
+	if [ ! -f "$OPS/pki/ops-ops.crt" ]; then # opendsecctl fleet -direct from this machine
+		"$ctl" pki issue -ca "$OPS/pki" -role ops -id ops -out "$OPS/pki" -days 825 >/dev/null
+		log "issued ops-ops (opendsecctl fleet -direct -pki $OPS/pki -ops-id ops)"
+	fi
+}
+
+cmd_rotate_ca() { # rotate-ca 1|2|3: replace the cluster CA without downtime.
+	# 1: a new CA; every node trusts both (old leaf certificates stay).
+	# 2: every certificate reissued by the new CA. 3: the old CA dropped.
+	# Each step pushes and does a rolling restart; give clients the bundle
+	# ($OPS/pki/ca.crt) after step 1 and again after step 3.
+	local p=$OPS/pki ctl=$OPS/current/bin/opendsecctl
+	case ${1:-} in
+	1)
+		[ -f "$p/next/ca.key" ] && die "a rotation is under way ($p/next exists)"
+		"$ctl" pki ca -out "$p/next" -days 3650
+		cp "$p/ca.crt" "$p/old-ca.crt"
+		cat "$p/old-ca.crt" "$p/next/ca.crt" > "$p/ca.crt" ;;
+	2)
+		[ -f "$p/next/ca.key" ] || die "run rotate-ca 1 first"
+		cp "$p/ca.key" "$p/old-ca.key"
+		cp "$p/next/ca.key" "$p/ca.key"
+		cat "$p/next/ca.crt" "$p/old-ca.crt" > "$p/ca.crt" # the signing CA first
+		find "$p" -maxdepth 1 -name '*-*.crt' ! -name 'old-ca.crt' -delete
+		find "$p" -maxdepth 1 -name '*-*.key' ! -name 'old-ca.key' -delete
+		cmd_certs ;;
+	3)
+		[ -f "$p/next/ca.key" ] || die "run rotate-ca 1 and 2 first"
+		cp "$p/next/ca.crt" "$p/ca.crt"
+		rm -rf "$p/next" "$p/old-ca.crt" "$p/old-ca.key" ;;
+	*) die "usage: opendsecops rotate-ca 1|2|3" ;;
+	esac
+	cmd_push_config all
+	roll ""
+	log "rotate-ca step $1 done"
+}
+
+# bundle NODE DIR: ca.crt plus the node's own certificates only.
+bundle() {
+	local n=$1 d=$2 id
+	mkdir -p "$d"; cp "$OPS/pki/ca.crt" "$d/"
+	id=$(role "$n" iam);       [ -n "$id" ] && cp "$OPS/pki/iam-$id".{crt,key} "$d/"
+	id=$(role "$n" watcher);   [ -n "$id" ] && cp "$OPS/pki/watcher-$id".{crt,key} "$d/"
+	id=$(role "$n" apiserver); [ -n "$id" ] && cp "$OPS/pki/apiserver-$id".{crt,key} "$d/"
+	id=$(role "$n" fleet);     [ -n "$id" ] && cp "$OPS/pki/fleet-$id".{crt,key} "$d/"
+	id=$(role "$n" edge);      [ -n "$id" ] && cp "$OPS/pki/edge-$id".{crt,key} "$d/"
+	[ -f "$OPS/pki/node-$n.crt" ] && cp "$OPS/pki/node-$n".{crt,key} "$d/"
+	true
+}
+
+# ---- install --------------------------------------------------------------------------
+
+# ship NODE VERSION: copy a release to the node (no switch).
+ship() {
+	local n=$1 ver=$2
+	on "$n" "test -f /opt/opendsec/releases/$ver/SHA256SUMS" 2>/dev/null && return 0
+	tar -C "$OPS/releases" -czf - "$ver" | on_in "$n" "mkdir -p /opt/opendsec/releases && tar -C /opt/opendsec/releases -xzf - &&
+		cd /opt/opendsec/releases/$ver && sha256sum -c --quiet SHA256SUMS"
+}
+
+# switch NODE VERSION: point current (and /usr/local/bin) at a shipped release.
+switch() {
+	on "$1" "set -e; ln -sfn releases/$2 /opt/opendsec/current.new && mv -T /opt/opendsec/current.new /opt/opendsec/current
+		for b in /opt/opendsec/current/bin/*; do ln -sfn \$b /usr/local/bin/\$(basename \$b); done
+		cd /opt/opendsec/releases && ls -1t | grep -vx \"\$(readlink /opt/opendsec/current | sed 's#releases/##')\" | tail -n +$KEEP_RELEASES | xargs -r rm -rf"
+}
+
+push_config() { # config, certificates and per-node files
+	local n=$1 tmp id
+	tmp=$(mktemp -d)
+	bundle "$n" "$tmp/pki"
+	cp "$OPS/opendsec.json" "$tmp/opendsec.json"
+	id=$(role "$n" edge)
+	[ -n "$id" ] && printf 'OPENDSEC_EDGE_ID=%s\nOPENDSEC_EDGE_ADVERTISE=%s:7201\n' "$id" "$(ip_of "$n")" > "$tmp/edge.env"
+	printf 'OPENDSEC_NODE=%s\nOPENDSEC_NODE_ADDR=%s\n' "$n" "$(ip_of "$n")" > "$tmp/node.env"
+	if [ -n "$(role "$n" iam)" ]; then cp "$OPS/admin.token" "$tmp/admin.token"; fi
+	on "$n" "rm -rf /tmp/opendsec-push && mkdir -m 0700 /tmp/opendsec-push"
+	put "$n" "$tmp/." /tmp/opendsec-push/
+	on "$n" 'set -e; cd /tmp/opendsec-push
+		install -d -m 0750 -g opendsec /etc/opendsec /etc/opendsec/pki.new
+		install -m 0640 -g opendsec opendsec.json /etc/opendsec/opendsec.json
+		for f in pki/*; do install -m 0640 -g opendsec $f /etc/opendsec/pki.new/; done
+		chmod 0644 /etc/opendsec/pki.new/*.crt
+		rm -rf /etc/opendsec/pki.old; [ -d /etc/opendsec/pki ] && mv /etc/opendsec/pki /etc/opendsec/pki.old; mv /etc/opendsec/pki.new /etc/opendsec/pki; rm -rf /etc/opendsec/pki.old
+		[ -f edge.env ] && install -m 0644 edge.env /etc/opendsec/edge.env
+		install -m 0644 node.env /etc/opendsec/node.env
+		[ -f admin.token ] && install -m 0640 -g opendsec admin.token /etc/opendsec/admin.token
+		rm -rf /tmp/opendsec-push'
+	rm -rf "$tmp"
+}
+
+cmd_install() { # install NODE|all: first install (does not start anything)
+	local ver
+	ver=$(readlink "$OPS/current" | sed 's#releases/##')
+	for n in $(targets "${1:-all}"); do
+		log "install $ver on $n"
+		on "$n" 'set -e; id opendsec >/dev/null 2>&1 || useradd --system --no-create-home --shell /usr/sbin/nologin opendsec
+			install -d -m 0755 /opt/opendsec /opt/opendsec/releases
+			install -d -m 0700 /var/backups/opendsec'
+		ship "$n" "$ver"; switch "$n" "$ver"
+		push_config "$n"
+		put "$n" "$UNITS/." /etc/systemd/system/
+		on "$n" 'rm -f /etc/systemd/system/*.example; systemctl daemon-reload'
+		if [ -n "$(role "$n" iam)" ]; then
+			put "$n" "$HERE/iam-backup.sh" /usr/local/sbin/opendsec-iam-backup
+			on "$n" "chmod 0755 /usr/local/sbin/opendsec-iam-backup; printf 'OPENDSEC_NODE=%s\nOPENDSEC_ADDR=%s\n' '$n' '${OPENDSEC_ADDR:-$(with_role apiserver | while read -r a _; do printf '%s:7100,' "$(ip_of "$a")"; done | sed 's/,$//')}' > /etc/opendsec/ops.env"
+		fi
+		if [ -n "$(role "$n" edge)" ]; then
+			local state
+			state=$(sed -n 's/.*"state_dir": *"\([^"]*\)".*/\1/p' "$OPS/opendsec.json" | awk 'NR==1')
+			on "$n" 'rm -rf /tmp/opendsec-node'
+			put "$n" "$HERE/../node" /tmp/opendsec-node
+			[ -z "$DEBS" ] || put "$n" "$DEBS" /tmp/opendsec-node/debs
+			on "$n" "OPENDSEC_STATE_DIR=${state:-/data/opendsec-state} ${DEBS:+OPENDSEC_DEBS=/tmp/opendsec-node/debs} sh /tmp/opendsec-node/install.sh && rm -rf /tmp/opendsec-node"
+		fi
+	done
+}
+
+cmd_install_agent() { # install-agent NODE|all: start the node agent from the node's current release (spec §28.9)
+	for n in $(targets "${1:-all}"); do
+		[ -f "$OPS/pki/node-$n.crt" ] || cmd_certs
+		push_config "$n"
+		put "$n" "$UNITS/opendsec-nodeagent.service" /etc/systemd/system/
+		on "$n" 'set -e; test -x /opt/opendsec/current/bin/opendsec-nodeagent || { echo "the current release has no node agent: install a newer release first" >&2; exit 1; }
+			install -D -m 0755 /opt/opendsec/current/bin/opendsec-nodeagent /opt/opendsec/agent/opendsec-nodeagent
+			systemctl daemon-reload; systemctl enable opendsec-nodeagent; systemctl restart opendsec-nodeagent'
+		log "$n: node agent running"
+	done
+}
+
+cmd_add_node() { # add-node NAME SSH_ADDR PRIVATE_ADDR ROLE...: a new machine (spec §28.7); then opendsecctl fleet node accept NAME
+	local n=${1:?usage: opendsecops add-node NAME SSH_ADDR PRIVATE_ADDR ROLE...} sshaddr=${2:?} addr=${3:?}
+	shift 3
+	[ $# -gt 0 ] || die "add-node needs the node's roles (e.g. edge=$n)"
+	field "$n" 1 | grep -q . && die "$n is in the inventory already"
+	echo "$n $sshaddr $addr $*" >> "$OPS/inventory"
+	cmd_certs
+	cmd_install "$n"
+	cmd_install_agent "$n"
+	log "$n added; components installed but not started. Next: opendsecctl fleet node accept $n -roles $(echo "$*" | tr ' ' ',') -domain <failure-domain>"
+}
+
+cmd_start() { # start NODE|all: enable and start the node's components, in order
+	for n in $(targets "${1:-all}"); do
+		for u in $(units_of "$n"); do on "$n" "systemctl enable --now $u"; done
+		[ -n "$(role "$n" iam)" ] && on "$n" "systemctl enable --now opendsec-iam-backup.timer"
+		log "$n: started $(units_of "$n" | tr '\n' ' ')"
+	done
+	for r in $ROLES; do
+		with_role $r | while read -r n _; do ready "$n" $r; done
+	done
+	log "all components ready"
+}
+
+cmd_push_config() { # push-config NODE|all: then restart with `opendsecops restart`
+	for n in $(targets "${1:-all}"); do push_config "$n"; log "$n: config and certificates pushed"; done
+}
+
+# ---- rolling restart / upgrade --------------------------------------------------------
+
+iam_leader() { # the node whose IAM replica leads ("" if none)
+	local n id
+	while read -r n id; do
+		if grep -q "^opendsec_iam_leader{replica=\"$id\"} 1" <<<"$(curl -sf -m 2 "http://$(ip_of "$n"):9461/metrics")"; then
+			echo "$n"; return 0
+		fi
+	done < <(with_role iam)
+	return 0
+}
+
+# roll VERSION: restart every component, one at a time, each waiting for the
+# last to be ready; IAM followers first and its leader last. VERSION "" keeps
+# each node's current release.
+roll() {
+	local ver=$1 leader
+	if [ -n "$ver" ]; then for n in $(nodes); do ship "$n" "$ver"; done; fi
+	restart() { # NODE UNIT ROLE
+		[ -n "$ver" ] && switch "$1" "$ver"
+		log "restart $2 on $1"
+		on "$1" "systemctl restart $2"
+		sleep 2; ready "$1" "$3"
+	}
+	leader=$(iam_leader)
+	for pass in followers leader; do
+		while read -r n id; do
+			[ -z "$n" ] && continue
+			if [ "$pass" = followers ] && [ "$n" = "$leader" ]; then continue; fi
+			if [ "$pass" = leader ] && [ "$n" != "$leader" ]; then continue; fi
+			restart "$n" "opendsec-iam@$id" iam
+		done < <(with_role iam)
+	done
+	while read -r n id; do restart "$n" "opendsec-watcher@$id" watcher; done < <(with_role watcher)
+	while read -r n id; do restart "$n" "opendsec-apiserver@$id" apiserver; done < <(with_role apiserver)
+	while read -r n id; do restart "$n" "opendsec-fleet@$id" fleet; done < <(with_role fleet)
+	while read -r n id; do
+		restart "$n" opendsec-edge edge
+		local deadline=$((SECONDS + READY_TIMEOUT))
+		until grep -q "\"id\":\"$id\",[^}]*\"healthy\":true" <<<"$(opendsecctl_ops status 2>/dev/null | tr -d ' \n')"; do
+			[ $SECONDS -lt $deadline ] || die "edge $id not healthy in the cluster snapshot"
+			sleep 1
+		done
+	done < <(with_role edge)
+	log "rolled: $(cmd_versions | sort -u | tr '\n' ' ')"
+}
+
+fleet_guard() { # the fleet drives upgrades once it runs (OPENDSEC_FORCE=1 overrides)
+	[ -n "$(with_role fleet)" ] && [ -z "${OPENDSEC_FORCE:-}" ] &&
+		die "this cluster has fleet replicas: use opendsecctl fleet release push / rollout create (spec §28), or OPENDSEC_FORCE=1 in an emergency"
+	true
+}
+
+cmd_upgrade() { # upgrade VERSION
+	local ver=${1:?usage: opendsecops upgrade VERSION}
+	fleet_guard
+	[ -d "$OPS/releases/$ver" ] || die "no release $ver (opendsecops release BIN_DIR)"
+	cmd_status >/dev/null || die "cluster not healthy before the upgrade; see opendsecops status"
+	roll "$ver"
+}
+
+cmd_rollback() { # rollback VERSION: the same rolling restart onto an older release
+	cmd_upgrade "$@"
+}
+
+cmd_restart() { fleet_guard; roll ""; } # restart: rolling restart (e.g. after push-config)
+
+# ---- checks and backups ---------------------------------------------------------------
+
+cmd_versions() {
+	for r in $ROLES; do
+		with_role $r | while read -r n _; do
+			v=$(curl -sf -m 2 "http://$(ip_of "$n"):${PORT[$r]}/metrics" | sed -n 's/^opendsec_build_info{version="\(.*\)"} 1$/\1/p')
+			echo "$r@$n ${v:-down}"
+		done
+	done
+}
+
+cmd_status() { # readiness of every component; exit 1 if any is not ready
+	local bad=0 out
+	for r in $ROLES; do
+		while read -r n id; do
+			[ -z "$n" ] && continue
+			if out=$(curl -s -m 2 -w '\n%{http_code}' "http://$(ip_of "$n"):${PORT[$r]}/readyz" 2>/dev/null) && [ "${out##*$'\n'}" = 200 ]; then
+				printf '%-10s %-6s %-4s ready\n' "$r" "$n" "$id"
+			else
+				printf '%-10s %-6s %-4s NOT READY %s\n' "$r" "$n" "$id" "$(echo "${out%$'\n'*}" | awk 'NR==1')"; bad=1
+			fi
+		done < <(with_role $r)
+	done
+	echo "iam leader: $(iam_leader)"
+	return $bad
+}
+
+cmd_backup() { # backup: one IAM backup into $OPS/backups
+	mkdir -p -m 0700 "$OPS/backups"
+	local f=$OPS/backups/iam-$(date -u +%Y%m%dT%H%M%SZ).json.gz
+	opendsecctl_ops iam backup -out "$f"
+}
+
+# ---- monitoring -----------------------------------------------------------------------
+
+prometheus_yml() {
+	local r
+	printf 'global:\n  scrape_interval: 15s\n  evaluation_interval: 15s\nrule_files: [/etc/prometheus/opendsec-alerts.yml]\n'
+	printf 'alerting:\n  alertmanagers: [{static_configs: [{targets: ["localhost:9093"]}]}]\nscrape_configs:\n'
+	for r in $ROLES; do
+		[ -n "$(with_role $r)" ] || continue
+		printf -- '- job_name: opendsec-%s\n  static_configs:\n  - targets: [' "$r"
+		with_role $r | while read -r n _; do printf '"%s:%s",' "$(ip_of "$n")" "${PORT[$r]}"; done | sed 's/,$//'
+		printf ']\n'
+	done
+	printf -- '- job_name: opendsec-nodeagent\n  static_configs:\n  - targets: ['
+	for n in $(nodes); do printf '"%s:%s",' "$(ip_of "$n")" "${PORT[nodeagent]}"; done | sed 's/,$//'
+	printf ']\n'
+	printf -- '- job_name: node\n  static_configs:\n  - targets: ['
+	for n in $(nodes); do printf '"%s:9100",' "$(ip_of "$n")"; done | sed 's/,$//'
+	printf ']\n'
+}
+
+cmd_monitor() { # monitor [WEBHOOK_URL]: node_exporter everywhere; Prometheus and
+	# Alertmanager on the monitor node, alerts to WEBHOOK_URL (Alertmanager webhook format)
+	local hook=${1:-} m tmp
+	for n in $(nodes); do
+		apt_on "$n" prometheus-node-exporter
+		on "$n" 'printf "%s\n" "ARGS=\"--collector.textfile.directory=/var/lib/prometheus/node-exporter --collector.filesystem.mount-points-exclude=^/(dev|proc|run|sys|media|var/lib/docker/.+|var/lib/containers/storage/.+)(\$|/)\"" > /etc/default/prometheus-node-exporter &&
+			systemctl restart prometheus-node-exporter'
+	done
+	m=$(with_role monitor | awk 'NR==1 {print $1}')
+	[ -n "$m" ] || die "no node has the monitor role"
+	tmp=$(mktemp -d)
+	prometheus_yml > "$tmp/prometheus.yml"
+	cp "$HERE/../monitoring/alerts.yml" "$tmp/opendsec-alerts.yml"
+	if [ -n "$hook" ]; then
+		printf 'route:\n  receiver: hook\n  group_by: [alertname]\n  repeat_interval: 4h\nreceivers:\n- name: hook\n  webhook_configs: [{url: "%s", send_resolved: true}]\n' "$hook" > "$tmp/alertmanager.yml"
+	else
+		printf 'route:\n  receiver: none\nreceivers:\n- name: none\n' > "$tmp/alertmanager.yml"
+	fi
+	apt_on "$m" prometheus prometheus-alertmanager
+	on "$m" 'mkdir -p /tmp/opendsec-mon'
+	put "$m" "$tmp/." /tmp/opendsec-mon/
+	on "$m" 'set -e; cd /tmp/opendsec-mon; promtool check rules opendsec-alerts.yml >/dev/null
+		install -m 0644 prometheus.yml opendsec-alerts.yml /etc/prometheus/; install -m 0644 alertmanager.yml /etc/prometheus/alertmanager.yml
+		promtool check config /etc/prometheus/prometheus.yml >/dev/null
+		systemctl restart prometheus prometheus-alertmanager; rm -rf /tmp/opendsec-mon'
+	rm -rf "$tmp"
+	log "Prometheus at http://$(ip_of "$m"):9090, Alertmanager at :9093${hook:+, alerts to $hook}"
+}
+
+cmd_help() { sed -n '2,15p' "$0"; grep -E '^cmd_[a-z_]+\(\) \{ #' "$0" | sed 's/^cmd_\([a-z_]*\)() { # /  \1: /; s/_/-/'; }
+
+c=${1:-help}; shift || true
+type "cmd_${c//-/_}" >/dev/null 2>&1 || die "unknown command $c (opendsecops help)"
+"cmd_${c//-/_}" "$@"

@@ -1,0 +1,206 @@
+{
+  "tls": {
+    "dir": "/etc/opendsec/pki"
+  },
+  "iam": {
+    "admin_id": "admin",
+    "admin_token": "dsk.admin.change-me-admin-secret",
+    "root_quota": {
+      "sandboxes": 380000
+    },
+    "max_token_ttl_s": 2592000,
+    "replicas": [
+      {
+        "id": "0",
+        "addr": "10.0.0.1:7001",
+        "raft_addr": "10.0.0.1:7011",
+        "data_dir": "/var/lib/opendsec/iam"
+      },
+      {
+        "id": "1",
+        "addr": "10.0.0.2:7001",
+        "raft_addr": "10.0.0.2:7011",
+        "data_dir": "/var/lib/opendsec/iam"
+      },
+      {
+        "id": "2",
+        "addr": "10.0.0.3:7001",
+        "raft_addr": "10.0.0.3:7011",
+        "data_dir": "/var/lib/opendsec/iam"
+      }
+    ]
+  },
+  "watcher": {
+    "addr": "127.0.0.1:7002",
+    "probe_interval": 1,
+    "reconcile_interval": 30,
+    "reconcile_min_age": 60,
+    "lost_edge_grace": 120,
+    "unbound_max_age": 600
+  },
+  "apiserver": [
+    {
+      "addr": "127.0.0.1:7100",
+      "audit_dir": "/var/log/opendsec/audit"
+    },
+    {
+      "addr": "127.0.0.1:7101",
+      "audit_dir": "/var/log/opendsec/audit"
+    }
+  ],
+  "placement": {
+    "k": 2,
+    "max_attempts": 3,
+    "burst_threshold": 0.8,
+    "burst_eligible_images": [
+      "registry.example/sphinx-9658:official"
+    ]
+  },
+  "admission": {
+    "default_ttl_running_stop_s": 3600,
+    "default_ttl_max_s": 86400,
+    "max_ttl_max_s": 604800,
+    "request_rate": 10000,
+    "create_rate": 2000,
+    "create_burst": 32768,
+    "auth_fail_rate": 5,
+    "max_inflight_creates": 2048
+  },
+  "edges": [
+    {
+      "id": "e001",
+      "addr": "127.0.0.1:7201",
+      "zone": "onprem",
+      "capacity": {
+        "cpu_cores": 192,
+        "memory_mb": 1572864
+      },
+      "cpu_overcommit": 8,
+      "mem_overcommit": 1,
+      "backends": {
+        "container": {
+          "max_sandboxes": 3200,
+          "create_latency_ms": 50,
+          "latency_sigma": 0.5
+        },
+        "microvm": {
+          "max_sandboxes": 800,
+          "create_latency_ms": 200,
+          "latency_sigma": 0.5
+        }
+      }
+    },
+    {
+      "id": "e002",
+      "addr": "127.0.0.1:7202",
+      "zone": "onprem",
+      "capacity": {
+        "cpu_cores": 192,
+        "memory_mb": 1572864
+      },
+      "backends": {
+        "container": {
+          "max_sandboxes": 3200,
+          "create_latency_ms": 50,
+          "latency_sigma": 0.5
+        }
+      }
+    },
+    {
+      "id": "c001",
+      "addr": "127.0.0.1:7301",
+      "zone": "cloud",
+      "capacity": {
+        "cpu_cores": 64,
+        "memory_mb": 262144
+      },
+      "backends": {
+        "container": {
+          "max_sandboxes": 1000,
+          "create_latency_ms": 80,
+          "latency_sigma": 0.5
+        }
+      }
+    },
+    {
+      "id": "e003",
+      "addr": "127.0.0.1:7203",
+      "zone": "onprem",
+      "state_dir": "/var/lib/opendsec",
+      "agent_dir": "/opt/opendsec/bin",
+      "persist_state": true,
+      "keep_sandboxes_on_exit": true,
+      "mem_reserve_mb": 4096,
+      "images": {
+        "python:3.12": [
+          "/srv/images/python312"
+        ]
+      },
+      "backends": {
+        "container": {
+          "runtime": "linux",
+          "max_sandboxes": 3200,
+          "default_disk_mb": 10240,
+          "pids_max": 4096
+        },
+        "microvm": {
+          "runtime": "firecracker",
+          "max_sandboxes": 1600,
+          "default_disk_mb": 10240,
+          "kernel": "/opt/opendsec/vm/vmlinux-6.1.167-opendsec",
+          "vm_overhead_mb": 64,
+          "image_pmem": true,
+          "free_page_reporting": true,
+          "cold_age_s": 120,
+          "disk_io": {
+            "read_mbps": 400,
+            "write_mbps": 200
+          }
+        },
+        "fncall": {
+          "runtime": "linux",
+          "max_sandboxes": 2000,
+          "default_disk_mb": 2048,
+          "warm_pool": {
+            "root/tools:1": 32
+          }
+        },
+        "fullvm": {
+          "runtime": "qemu",
+          "max_sandboxes": 64,
+          "default_disk_mb": 20480,
+          "kernel": "/opt/opendsec/vm/vmlinux-6.1.167-opendsec",
+          "full_init": true
+        }
+      },
+      "disk_overcommit": 1,
+      "disk_reserve_mb": 0,
+      "network": {
+        "enabled": true,
+        "subnet": "10.88.0.0/16",
+        "dns_port": 15353
+      },
+      "paused_mem_charge": 0.2
+    }
+  ],
+  "image_store": {
+    "root": "/mnt/opendsec-images"
+  },
+  "network": {
+    "rule_sets": {
+      "pypi": [
+        "pypi.org",
+        "files.pythonhosted.org"
+      ],
+      "npm": [
+        "registry.npmjs.org"
+      ],
+      "github": [
+        "github.com",
+        "codeload.github.com",
+        "objects.githubusercontent.com"
+      ]
+    },
+    "default_rules": {}
+  }
+}

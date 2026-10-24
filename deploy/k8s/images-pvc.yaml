@@ -1,0 +1,12 @@
+# Shared image store (spec §17.2): one ReadWriteMany volume mounted by every
+# apiserver and edge (3FS in the paper; CephFS, JuiceFS, NFS, ... here).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: opendsec-images
+  namespace: opendsec
+spec:
+  accessModes: [ReadWriteMany]
+  storageClassName: shared-fs     # a RWX-capable class in your cluster
+  resources:
+    requests: {storage: 10Ti}

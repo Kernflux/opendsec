@@ -1,0 +1,23 @@
+# The node agent, one per machine (spec §28.4). It switches releases under
+# /opt/opendsec, writes /etc/opendsec/{opendsec.json,edge.env} and restarts
+# OpenDsec's units, so it runs as root. It runs its own copy of the binary,
+# outside the releases: a release's agent replaces it only after passing
+# `opendsec-nodeagent -check`. Set the node in /etc/opendsec/node.env:
+#   OPENDSEC_NODE=node-a1
+#   OPENDSEC_NODE_ADDR=10.0.1.21
+# with its certificate node-<name> in /etc/opendsec/pki.
+[Unit]
+Description=OpenDsec node agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+EnvironmentFile=/etc/opendsec/node.env
+ExecStart=/opt/opendsec/agent/opendsec-nodeagent -config /etc/opendsec/opendsec.json -name ${OPENDSEC_NODE} -addr ${OPENDSEC_NODE_ADDR} -metrics :9466
+Restart=always
+RestartSec=2
+# Restarting the agent must never touch the components it manages.
+KillMode=process
+
+[Install]
+WantedBy=multi-user.target

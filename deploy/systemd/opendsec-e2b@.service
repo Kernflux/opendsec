@@ -1,0 +1,33 @@
+# One E2B gateway (spec §37): systemctl enable --now opendsec-e2b@0  (instance = index in "e2b.gateways")
+[Unit]
+Description=OpenDsec E2B gateway %i
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# Unprivileged, and facing outside traffic: it only calls the apiservers,
+# with its callers' tokens. It gets the cluster config and the CA
+# certificate as credentials, and no other file of /etc/opendsec (keys,
+# admin.token).
+DynamicUser=yes
+LoadCredential=config:/etc/opendsec/opendsec.json
+LoadCredential=ca.crt:/etc/opendsec/pki/ca.crt
+# -metrics also serves /readyz, the load balancer's health check.
+ExecStart=/usr/local/bin/opendsec-e2b -config ${CREDENTIALS_DIRECTORY}/config -ca ${CREDENTIALS_DIRECTORY}/ca.crt -index %i -metrics :9467
+TimeoutStopSec=45
+Restart=always
+RestartSec=1
+LimitNOFILE=1048576
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+InaccessiblePaths=/etc/opendsec
+
+[Install]
+WantedBy=multi-user.target

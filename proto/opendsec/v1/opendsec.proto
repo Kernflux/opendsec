@@ -1,0 +1,210 @@
+syntax = "proto3";
+
+package opendsec.v1;
+
+option go_package = "github.com/kernflux/opendsec/gen/go/opendsec/v1;opendsecv1";
+
+import "opendsec/v1/types.proto";
+import "opendsec/v1/iam.proto";
+import "opendsec/v1/cluster.proto";
+import "opendsec/v1/runtime.proto";
+
+// Public API served by the apiserver, the only ingress into the cluster.
+// Authenticate with metadata "authorization: Bearer <token>".
+service DSec {
+  rpc CreateSandbox(CreateSandboxRequest) returns (Sandbox);
+  // Bulk creation for jobs that request thousands of sandboxes; one result per
+  // sandbox, streamed as each completes.
+  rpc CreateSandboxes(CreateSandboxesRequest) returns (stream CreateSandboxResult);
+  rpc GetSandbox(SandboxRef) returns (Sandbox);
+  rpc ListSandboxes(SandboxFilter) returns (SandboxList);
+  rpc StopSandbox(SandboxRef) returns (Sandbox);
+  rpc PauseSandbox(SandboxRef) returns (Sandbox);
+  rpc ResumeSandbox(SandboxRef) returns (Sandbox);
+  rpc TouchSandbox(SandboxRef) returns (Sandbox);
+  // Ends the sandbox timeout_s from now (spec §37): its ttl_max_s becomes its
+  // age plus timeout_s, within the admission cap, and its idle timeout no
+  // shorter. As E2B's sandbox timeout.
+  rpc SetSandboxTimeout(SetTimeoutRequest) returns (Sandbox);
+  rpc ApplyTaskAction(TaskActionRequest) returns (TaskActionResult);
+  rpc ClusterStatus(Empty) returns (Snapshot);
+  // Stop (or resume) placing sandboxes on an edge, for maintenance; its
+  // sandboxes keep running. Needs project.admin on root.
+  rpc DrainEdge(DrainEdgeRequest) returns (Empty);
+  // IAM operations (spec §27.2), project.admin on root: back up and restore
+  // the IAM state; list, add and remove Raft replicas (actor is ignored).
+  rpc BackupIAM(IAMBackupRequest) returns (stream BackupChunk);
+  rpc RestoreIAM(stream BackupChunk) returns (Empty);
+  rpc IAMMembers(IAMMemberRequest) returns (IAMMemberList);
+  rpc AddIAMMember(IAMMemberRequest) returns (IAMMemberList);
+  rpc RemoveIAMMember(IAMMemberRequest) returns (IAMMemberList);
+
+  // Runtime operations inside a sandbox (needs sandbox.operate).
+  rpc Exec(ExecRequest) returns (ExecResult);
+  rpc ExecStream(ExecRequest) returns (stream ExecEvent);
+  rpc GetOutput(OutputRequest) returns (ExecResult);
+  rpc ReadFile(FileRequest) returns (FileData);
+  rpc WriteFile(WriteFileRequest) returns (FileInfo);
+  rpc ListDir(FileRequest) returns (DirListing);
+  rpc Stat(FileRequest) returns (FileInfo);
+  rpc Remove(FileRequest) returns (Empty);
+  rpc Http(HttpRequest) returns (HttpResponse);
+  rpc ListSessions(SessionRef) returns (SessionList);
+  rpc CloseSession(SessionRef) returns (Empty);
+  rpc MakeDir(FileRequest) returns (FileInfo);
+  rpc Move(MoveRequest) returns (FileInfo);
+  // Processes (spec §37): commands run as processes of their own, outside
+  // shell sessions, as E2B's envd runs them: addressed by pid (or tag), with
+  // stdin, signals and an optional PTY. A stream ending does not end its
+  // process; ConnectProcess attaches to a running one.
+  rpc StartProcess(StartProcessRequest) returns (stream ProcessEvent);
+  rpc ConnectProcess(ProcessRef) returns (stream ProcessEvent);
+  rpc ListProcesses(ProcessRef) returns (ProcessList);
+  rpc SendProcessInput(ProcessInput) returns (Empty);
+  rpc CloseProcessStdin(ProcessRef) returns (Empty);
+  rpc SignalProcess(ProcessSignal) returns (Empty);
+  rpc ResizeProcess(ProcessResize) returns (Empty);
+  // A TCP connection to a port of the sandbox (spec §37.8), as a stream: the
+  // first message names the sandbox and port, then each side sends data;
+  // a side done sending ends its stream (half-close).
+  rpc ConnectPort(stream PortData) returns (stream PortData);
+
+  // IAM management, same API for humans and agents. The actor field of each
+  // request is ignored and set to the authenticated principal.
+  rpc WhoAmI(Empty) returns (Principal);
+  rpc CreateProject(CreateProjectRequest) returns (Project);
+  rpc CreatePrincipal(CreatePrincipalRequest) returns (CreatePrincipalResponse);
+  rpc Grant(GrantRequest) returns (Project);
+  rpc Revoke(RevokeRequest) returns (Project);
+  rpc SetQuota(SetQuotaRequest) returns (Project);
+  rpc GetProject(GetProjectRequest) returns (Project);
+  // Usage of a project and its subprojects per day (spec §41); needs
+  // project.admin.
+  rpc GetUsage(UsageRequest) returns (UsageReport);
+  rpc CreateToken(CreateTokenRequest) returns (CreateTokenResponse);
+  rpc ListTokens(ListTokensRequest) returns (TokenList);
+  rpc RevokeToken(RevokeTokenRequest) returns (Empty);
+  rpc DeletePrincipal(DeletePrincipalRequest) returns (Empty);
+  rpc DeleteProject(DeleteProjectRequest) returns (Empty);
+
+  // Shared image store (spec §17). Names are "<project>/<repo>:<tag>";
+  // writes need layer.publish and reads/use need layer.use on that project.
+  rpc RegisterImage(RegisterImageRequest) returns (ImageInfo);
+  rpc ComposeImage(ComposeImageRequest) returns (ImageInfo);
+  rpc GetImage(ImageRef) returns (ImageInfo);
+  rpc ListImages(ListImagesRequest) returns (ImageInfoList);
+  rpc DeleteImage(ImageRef) returns (Empty);
+  // Snapshot a sandbox's writable layer as a new image on top of its own.
+  rpc PackDiff(PackDiffRequest) returns (ImageInfo);
+
+  // Snapshots and fork (spec §19). ForkSandbox copies a running sandbox into
+  // count running sandboxes; the source pauses briefly and keeps its id and
+  // TTLs. One result per copy, streamed as each completes.
+  rpc ForkSandbox(ForkSandboxRequest) returns (stream CreateSandboxResult);
+  // Save a sandbox as an image in the store: its filesystem, and with
+  // memory=true (microvm only) its memory, so new sandboxes resume from it.
+  rpc CreateSnapshot(CreateSnapshotRequest) returns (ImageInfo);
+
+  // Change a running sandbox's network rules (spec §20). Needs
+  // sandbox.operate; denials apply to new connections at once.
+  rpc UpdateNetwork(UpdateNetworkRequest) returns (Sandbox);
+}
+
+message ForkSandboxRequest {
+  string sandbox_id = 1;
+  int32 count = 2;                     // [1, 256]
+  int64 ttl_running_stop_s = 3;        // TTLs of the copies; 0 = cluster default
+  int64 ttl_max_s = 4;
+  map<string, string> labels = 5;      // added to the copies' labels
+  string task_id = 6;                  // default: the source's task
+  // Optional idempotency key (16-30 lowercase base32 chars): copy i gets a
+  // lease made from it, so a retry (retry = true) after a lost stream
+  // returns the copies the first attempt made and creates only the rest.
+  string request_id = 7;
+  bool retry = 8;
+}
+
+message CreateSnapshotRequest {
+  string sandbox_id = 1;
+  string image = 2;                    // "<project>/<repo>:<tag>"
+  bool memory = 3;
+  bool overwrite = 4;
+}
+
+message ImageInfo {
+  string name = 1;
+  repeated string layers = 2;          // bottom first
+  map<string, string> env = 3;
+  string workdir = 4;
+  string user = 5;
+  string parent = 6;
+  string source = 7;
+  double created_at = 8;
+  string created_by = 9;
+  string snapshot = 10;                // set for images made by CreateSnapshot
+  bool memory = 11;                    // the snapshot includes memory
+}
+
+message ImageRef {
+  string name = 1;
+}
+
+message ListImagesRequest {
+  string project = 1;                  // lists this project and its subprojects
+}
+
+message ImageInfoList {
+  repeated ImageInfo images = 1;
+}
+
+message RegisterImageRequest {
+  ImageInfo image = 1;                 // name + layers already in the store (opendsecctl image import)
+  bool overwrite = 2;
+}
+
+message ComposeImageRequest {
+  string name = 1;
+  repeated string parts = 2;           // images stacked bottom first: base, workspace, toolkits...
+  map<string, string> env = 3;         // added on top of the parts' env
+  string workdir = 4;
+  string user = 5;
+  bool overwrite = 6;
+}
+
+message PackDiffRequest {
+  string sandbox_id = 1;
+  string image = 2;                    // name of the new image
+  repeated string scrub = 3;           // extra paths to drop (globs, relative to /)
+  bool overwrite = 4;
+}
+
+message CreateSandboxRequest {
+  string project = 1;
+  SandboxSpec spec = 2;
+  string lease = 3;                    // optional idempotency key (lowercase base32)
+  // A retry of a create that may have gone through (spec §27.5): if a
+  // sandbox with this lease exists in the project, it is returned instead
+  // of a second one being created.
+  bool retry = 4;
+}
+
+message CreateSandboxesRequest {
+  string project = 1;
+  SandboxSpec spec = 2;
+  int32 count = 3;
+  string request_id = 4;               // as in ForkSandboxRequest
+  bool retry = 5;
+}
+
+message CreateSandboxResult {
+  int32 index = 1;
+  Sandbox sandbox = 2;                 // set on success
+  string error_reason = 3;             // set on failure
+  string error_message = 4;
+}
+
+message TaskActionRequest {
+  string project = 1;
+  string task_id = 2;
+  TaskAction action = 3;
+}

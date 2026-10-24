@@ -1,0 +1,307 @@
+syntax = "proto3";
+
+package opendsec.v1;
+
+option go_package = "github.com/kernflux/opendsec/gen/go/opendsec/v1;opendsecv1";
+
+import "opendsec/v1/types.proto";
+
+// Cluster management (spec §28). The fleet service keeps the desired state
+// of every machine (in the IAM key-value area) and drives rollouts; a node
+// agent on each machine reports its state and carries out the operations it
+// is handed.
+
+// Internal: node agents call Heartbeat and FetchRelease; fleet replicas
+// copy releases to each other with PutRelease. A replica that does not lead
+// forwards Heartbeat to the leader, so agents may talk to any replica.
+service Fleet {
+  rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
+  rpc FetchRelease(FetchReleaseRequest) returns (stream ReleaseChunk);
+  rpc PutRelease(stream ReleaseChunk) returns (Empty);
+}
+
+// Management. Served by the fleet replicas to apiservers (which authorize
+// the caller and pass it as the actor) and to operator certificates; the
+// apiserver serves the same service on its public port as a proxy.
+service FleetAdmin {
+  rpc ListNodes(FleetListNodesRequest) returns (FleetNodeList);
+  rpc GetNode(FleetNodeRef) returns (FleetNode);
+  // accept | cordon | uncordon | retire | pin | unpin | sync | set
+  rpc UpdateNode(FleetUpdateNodeRequest) returns (FleetNode);
+  // Creates active nodes already running a known release (migration from
+  // opendsecops, spec §28.9).
+  rpc ImportNodes(FleetImportRequest) returns (FleetNodeList);
+
+  rpc ListReleases(Empty) returns (FleetReleaseList);
+  // First chunk carries the version, size and sha256 of the release tarball.
+  rpc PushRelease(stream ReleaseChunk) returns (FleetRelease);
+
+  rpc PutConfig(FleetPutConfigRequest) returns (FleetConfig);
+  rpc GetConfig(FleetGetConfigRequest) returns (FleetConfig);
+
+  rpc CreateRollout(FleetCreateRolloutRequest) returns (FleetRollout);
+  // pause | resume | abort | rollback
+  rpc ControlRollout(FleetControlRolloutRequest) returns (FleetRollout);
+  rpc ListRollouts(Empty) returns (FleetRolloutList);
+  rpc GetRollout(FleetRolloutRef) returns (FleetRollout);
+}
+
+// ---- nodes ---------------------------------------------------------------------------
+
+message FleetNode {
+  string name = 1;                     // [a-z0-9-]{1,32}
+  string addr = 2;                     // private address
+  string domain = 3;                   // failure domain, for batching
+  // Component instances on the node: iam, watcher, apiserver, fleet -> id;
+  // edge -> edge id; monitor -> "".
+  map<string, string> roles = 4;
+  map<string, string> labels = 5;
+  string state = 6;                    // pending | active | cordoned | retired
+  string release = 7;                  // desired release
+  uint64 config_gen = 8;               // desired cluster config generation
+  bool pinned = 9;                     // reverted by a failed rollout; later rollouts skip it
+  string pinned_reason = 10;
+  double created_at = 11;
+  string created_by = 12;
+  bool sync = 13;                      // bring the node to its desired release and config
+  NodeStatus status = 14;              // last heartbeat (not stored)
+  string message = 15;                 // outcome of the last sync, or why it is pending
+  // The roles its units were last applied with (by a rollout or a sync).
+  // A role added since is not running yet and does not count against the
+  // node's health until a rollout or sync of the node deploys it. Empty:
+  // all of roles (nodes recorded before this field).
+  repeated string deployed_roles = 16;
+}
+
+message NodeStatus {
+  double last_seen = 1;                // fleet clock
+  string agent_version = 2;
+  string hostname = 3;
+  string kernel = 4;
+  double uptime_s = 5;
+  string current_release = 6;          // what /opt/opendsec/current points at
+  repeated string releases = 7;        // releases present on the node
+  uint64 config_gen = 8;               // generation of /etc/opendsec/opendsec.json
+  repeated UnitStatus units = 9;
+  map<string, int64> disk_free_mb = 10; // mount point -> free MB
+  bool store_mounted = 11;
+  OpStatus op = 12;                    // running or last operation
+  map<string, string> runtime_versions = 13; // e.g. firecracker -> 1.17.0
+}
+
+message UnitStatus {
+  string unit = 1;
+  string active_state = 2;             // systemd ActiveState
+  bool ready = 3;                      // /readyz answered 200
+  string reason = 4;                   // why not ready
+  bool iam_leader = 5;                 // an IAM replica that leads
+}
+
+message OpStatus {
+  string op_id = 1;
+  string kind = 2;
+  string state = 3;                    // running | ok | failed
+  string message = 4;
+  double started = 5;
+  double finished = 6;
+}
+
+// An operation for a node agent. Agents run one at a time and deduplicate by
+// op_id, so a fleet leader may hand the same operation out again.
+message NodeOp {
+  string op_id = 1;
+  // stage: download and verify the release, do not switch.
+  // apply: stage, switch /opt/opendsec/current, write the config files and
+  //        the release's unit files, restart units in order, each until its
+  //        /readyz answers; on failure put everything back.
+  // restart | stop | start: units only.
+  string kind = 2;
+  string release = 3;
+  string sha256 = 4;                   // of the release tarball
+  int64 size = 5;
+  uint64 config_gen = 6;
+  repeated NodeFile files = 7;         // under /etc/opendsec only
+  repeated NodeUnit units = 8;         // in order
+  double timeout_s = 9;                // per unit readiness
+}
+
+message NodeFile {
+  string name = 1;                     // base name under /etc/opendsec: opendsec.json | edge.env
+  bytes content = 2;
+  uint32 mode = 3;
+}
+
+message NodeUnit {
+  string unit = 1;                     // opendsec-*.service
+  string readyz = 2;                   // http://127.0.0.1:PORT/readyz; "" = active is enough
+}
+
+message HeartbeatRequest {
+  string node = 1;
+  string addr = 2;
+  NodeStatus status = 3;
+}
+
+message HeartbeatResponse {
+  double interval_s = 1;
+  NodeOp op = 2;                       // unset: nothing to do
+  string state = 3;                    // the node's state; retired agents stop their units
+  repeated NodeUnit units = 4;         // the node's units, for the agent to report on
+}
+
+message FetchReleaseRequest {
+  string version = 1;
+  int64 offset = 2;                    // resume a download
+}
+
+message ReleaseChunk {
+  string version = 1;                  // first chunk
+  int64 size = 2;                      // first chunk
+  string sha256 = 3;                   // first chunk
+  bytes data = 4;
+  string notes = 5;                    // first chunk, PushRelease
+}
+
+message FleetListNodesRequest {
+  string state = 1;                    // filter; "" = all
+  string role = 2;
+  string domain = 3;
+}
+
+message FleetNodeList {
+  repeated FleetNode nodes = 1;
+}
+
+message FleetNodeRef {
+  string name = 1;
+}
+
+message FleetUpdateNodeRequest {
+  string name = 1;
+  string action = 2;
+  // set: the fields to change (empty = unchanged; roles replace all roles)
+  string addr = 3;
+  string domain = 4;
+  map<string, string> roles = 5;
+  map<string, string> labels = 6;
+  string reason = 7;                   // pin
+}
+
+message FleetImportRequest {
+  repeated FleetNode nodes = 1;        // release and config_gen as running now
+}
+
+// ---- releases and config ------------------------------------------------------------
+
+message FleetRelease {
+  string version = 1;
+  string sha256 = 2;
+  int64 size = 3;
+  double created_at = 4;
+  string created_by = 5;
+  string notes = 6;
+  map<string, string> deps = 7;        // from the release's deps.lock: name -> version
+  repeated string replicas = 8;        // fleet replicas holding it
+  int32 nodes = 9;                     // nodes whose desired release it is
+}
+
+message FleetReleaseList {
+  repeated FleetRelease releases = 1;
+}
+
+message FleetConfig {
+  uint64 gen = 1;
+  bytes cluster_json = 2;
+  double created_at = 3;
+  string created_by = 4;
+  string note = 5;
+}
+
+message FleetPutConfigRequest {
+  bytes cluster_json = 1;
+  string note = 2;
+}
+
+message FleetGetConfigRequest {
+  uint64 gen = 1;                      // 0 = latest
+}
+
+// ---- rollouts ------------------------------------------------------------------------
+
+message FleetSelector {
+  repeated string roles = 1;           // nodes with any of these roles; empty = any
+  repeated string domains = 2;
+  map<string, string> labels = 3;
+  repeated string nodes = 4;           // explicit names
+}
+
+message FleetStrategy {
+  int32 canary = 1;                    // edge nodes in the first batch; default 1
+  double bake_s = 2;                   // watch the canary this long; default 300
+  int32 batch = 3;                     // edge nodes per batch; default 5% (1..100)
+  int32 max_per_domain = 4;            // per batch; default batch/2 (>= 1)
+  double pause_s = 5;                  // between batches; default 60
+  int32 max_failures = 6;              // failed nodes before pausing; default 0
+  double step_timeout_s = 7;           // per node; default 600
+}
+
+message FleetCreateRolloutRequest {
+  string release = 1;                  // "" = keep each node's release
+  uint64 config_gen = 2;               // 0 = keep each node's config
+  FleetSelector selector = 3;
+  FleetStrategy strategy = 4;
+  string note = 5;
+}
+
+message FleetStep {
+  string node = 1;
+  int32 batch = 2;                     // -1: control plane, one node at a time
+  string phase = 3;                    // pending | staging | staged | applying | verifying | ok | failed | reverting | reverted | skipped
+  string message = 4;
+  double started = 5;
+  double finished = 6;
+  string from_release = 7;             // what the node had before this step
+  uint64 from_gen = 8;
+  string op_id = 9;
+  string to_release = 10;              // what this step puts on the node
+  uint64 to_gen = 11;
+  int32 attempt = 12;
+}
+
+message FleetEvent {
+  double at = 1;
+  string message = 2;
+}
+
+message FleetRollout {
+  string id = 1;
+  string release = 2;
+  uint64 config_gen = 3;
+  FleetSelector selector = 4;
+  FleetStrategy strategy = 5;
+  string state = 6;                    // running | paused | done | aborted | rolling_back | rolled_back
+  string message = 7;
+  double created_at = 8;
+  string created_by = 9;
+  double finished_at = 10;
+  int32 batches = 11;
+  int32 batch = 12;                    // current edge batch (-1 control plane)
+  string note = 13;
+  bool rollback = 14;                  // this rollout puts nodes back (ControlRollout rollback)
+  repeated FleetStep steps = 15;       // GetRollout only
+  repeated FleetEvent events = 16;     // newest last
+  map<string, int32> phases = 17;      // phase -> nodes
+}
+
+message FleetRolloutList {
+  repeated FleetRollout rollouts = 1;  // newest first, without steps
+}
+
+message FleetRolloutRef {
+  string id = 1;
+}
+
+message FleetControlRolloutRequest {
+  string id = 1;
+  string action = 2;
+}

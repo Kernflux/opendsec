@@ -1,0 +1,72 @@
+# edge: one per sandbox node (label nodes with opendsec.io/sandbox-node=true).
+#
+# The edge owns host resources that must outlive the edge container, so it
+# re-adopts its sandboxes after a restart or upgrade:
+#   * hostPID: sandboxes are descendants of the edge; in a container PID
+#     namespace they would all be killed when the edge container exits.
+#   * mountPropagation: Bidirectional on the state dir: each sandbox's
+#     writable ext4 disk is mounted there and must live in the host mount
+#     namespace, not the container's.
+#   * /sys/fs/cgroup from the host: sandboxes run in /sys/fs/cgroup/opendsec/<edge>/.
+# Each node's certificate (edge-<id>.crt/.key + ca.crt) is provisioned into
+# /etc/opendsec/pki on the node with `opendsecctl pki issue` (the CA key never leaves
+# the operator's machine). The edge id is the node name, which must match
+# [a-z0-9-]{1,32}.
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: edge
+  namespace: opendsec
+spec:
+  selector:
+    matchLabels: {app: opendsec-edge}
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate: {maxUnavailable: 10%}   # edges restart without killing sandboxes
+  template:
+    metadata:
+      labels: {app: opendsec-edge}
+    spec:
+      nodeSelector: {opendsec.io/sandbox-node: "true"}
+      hostNetwork: true
+      hostPID: true
+      dnsPolicy: ClusterFirstWithHostNet
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: edge
+          image: opendsec:0.1.0
+          command:
+            - /bin/sh
+            - -c
+            - exec opendsec-edge -config /etc/opendsec/opendsec.json -id "$NODE_NAME" -addr 0.0.0.0:7201 -advertise "$NODE_IP:7201"
+          env:
+            - name: NODE_NAME
+              valueFrom: {fieldRef: {fieldPath: spec.nodeName}}
+            - name: NODE_IP
+              valueFrom: {fieldRef: {fieldPath: status.hostIP}}
+          ports:
+            - {name: grpc, containerPort: 7201, hostPort: 7201}
+          readinessProbe: {tcpSocket: {port: 7201}, periodSeconds: 5}
+          securityContext: {privileged: true}
+          resources:
+            requests: {cpu: "1", memory: 1Gi}
+          volumeMounts:
+            - {name: config, mountPath: /etc/opendsec/opendsec.json, subPath: opendsec.json, readOnly: true}
+            - {name: node-pki, mountPath: /etc/opendsec/pki, readOnly: true}
+            - {name: state, mountPath: /var/lib/opendsec, mountPropagation: Bidirectional}
+            - {name: cgroup, mountPath: /sys/fs/cgroup}
+            - {name: dev, mountPath: /dev}
+            - {name: images, mountPath: /mnt/opendsec-images}   # shared image store: layers read on demand; pack_diff writes layers
+      volumes:
+        - name: config
+          secret: {secretName: opendsec-config}
+        - name: node-pki
+          hostPath: {path: /etc/opendsec/pki, type: Directory}
+        - name: state
+          hostPath: {path: /var/lib/opendsec, type: DirectoryOrCreate}
+        - name: cgroup
+          hostPath: {path: /sys/fs/cgroup, type: Directory}
+        - name: dev
+          hostPath: {path: /dev, type: Directory}
+        - name: images
+          persistentVolumeClaim: {claimName: opendsec-images}

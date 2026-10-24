@@ -1,0 +1,39 @@
+# One apiserver instance: systemctl enable --now opendsec-apiserver@0  (instance = index in "apiserver")
+[Unit]
+Description=OpenDsec apiserver %i
+After=network-online.target
+RequiresMountsFor=/mnt/opendsec-images
+Wants=network-online.target
+
+[Service]
+# Root, but holding only file-access capabilities: the apiserver deletes
+# snapshot directories in the shared store that edges (root) created.
+User=root
+CapabilityBoundingSet=CAP_DAC_OVERRIDE CAP_FOWNER
+AmbientCapabilities=
+# -metrics also serves /readyz, the load balancer's health check (spec §27.1).
+ExecStart=/usr/local/bin/opendsec-apiserver -config /etc/opendsec/opendsec.json -index %i -metrics :9463
+# SIGTERM: /readyz fails, serving goes on for -drain-delay (6s) so the
+# balancer takes the instance out, then in-flight calls get -grace (30s).
+TimeoutStopSec=45
+Restart=always
+RestartSec=1
+# apiserver[].audit_dir must be /var/log/opendsec/audit
+LogsDirectory=opendsec/audit
+LogsDirectoryMode=0700
+LimitNOFILE=1048576
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+ReadOnlyPaths=/etc/opendsec
+# Shared image store (image_store.root): apiservers write image manifests.
+ReadWritePaths=/mnt/opendsec-images
+
+[Install]
+WantedBy=multi-user.target

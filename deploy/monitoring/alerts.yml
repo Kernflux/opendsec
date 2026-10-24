@@ -1,0 +1,204 @@
+# OpenDsec alert rules (docs/OPERATIONS.md has what to do for each).
+groups:
+- name: opendsec-control-plane
+  rules:
+  - alert: OpenDsecComponentDown
+    expr: up{job=~"opendsec-.*"} == 0
+    for: 1m
+    labels: {severity: critical}
+    annotations:
+      summary: "{{ $labels.job }} on {{ $labels.instance }} is not answering scrapes"
+  - alert: OpenDsecComponentNotReady
+    expr: opendsec_ready == 0
+    for: 2m
+    labels: {severity: critical}
+    annotations:
+      summary: "{{ $labels.job }} on {{ $labels.instance }} reports not ready (curl its /readyz for the reason)"
+  - alert: OpenDsecIAMNoLeader
+    expr: sum(opendsec_iam_leader) < 1
+    for: 30s
+    labels: {severity: critical}
+    annotations:
+      summary: "IAM has no Raft leader: creations and logins fail"
+  - alert: OpenDsecIAMQuorumAtRisk
+    expr: count(up{job="opendsec-iam"} == 1) < 3
+    for: 2m
+    labels: {severity: warning}
+    annotations:
+      summary: "Only {{ $value }} IAM replicas up: one more failure loses the quorum"
+  - alert: OpenDsecWatcherDegraded
+    expr: count(up{job="opendsec-watcher"} == 1) < 2
+    for: 2m
+    labels: {severity: warning}
+    annotations:
+      summary: "Fewer than 2 watchers up"
+  - alert: OpenDsecAPIServerDegraded
+    expr: count(opendsec_ready{job="opendsec-apiserver"} == 1) < 2
+    for: 2m
+    labels: {severity: warning}
+    annotations:
+      summary: "Fewer than 2 apiservers ready behind the load balancer"
+  - alert: OpenDsecCertExpiringSoon
+    expr: opendsec_tls_cert_expiry_timestamp_seconds - time() < 30 * 86400
+    for: 1h
+    labels: {severity: warning}
+    annotations:
+      summary: "Certificate {{ $labels.identity }} on {{ $labels.instance }} expires in {{ $value | humanizeDuration }}"
+  - alert: OpenDsecIAMBackupStale
+    expr: time() - opendsec_iam_backup_last_success_timestamp_seconds > 36 * 3600
+    labels: {severity: warning}
+    annotations:
+      summary: "No successful IAM backup on {{ $labels.instance }} for 36h"
+  - alert: OpenDsecVersionSkew
+    expr: count(count by (version) (opendsec_build_info{job!="opendsec-nodeagent"})) > 1
+    for: 2h
+    labels: {severity: info}
+    annotations:
+      summary: "More than one OpenDsec version running for 2h (an unfinished upgrade?)"
+
+- name: opendsec-sandboxes
+  rules:
+  - alert: OpenDsecEdgeUnhealthy
+    expr: max(opendsec_watcher_edges_unhealthy) > 0
+    for: 1m
+    labels: {severity: critical}
+    annotations:
+      summary: "{{ $value }} edge(s) not answering the watchers; their quota is released after lost_edge_grace"
+  - alert: OpenDsecCreateErrors
+    expr: |
+      sum(rate(opendsec_apiserver_create_seconds_count{reason!~"ok|invalid|forbidden|unauthenticated|not_found|quota_exceeded|rate_limited"}[5m]))
+        / clamp_min(sum(rate(opendsec_apiserver_create_seconds_count[5m])), 1e-9) > 0.02
+    for: 5m
+    labels: {severity: critical}
+    annotations:
+      summary: "{{ $value | humanizePercentage }} of sandbox creations fail on the server side"
+  - alert: OpenDsecCreateSlow
+    expr: histogram_quantile(0.99, sum by (le, backend) (rate(opendsec_apiserver_create_seconds_bucket{reason="ok"}[10m]))) > 5
+    for: 10m
+    labels: {severity: warning}
+    annotations:
+      summary: "p99 creation of {{ $labels.backend }} sandboxes is {{ $value | humanizeDuration }}"
+  - alert: OpenDsecEdgeUnderPressure
+    expr: max by (edge, pressure) (opendsec_edge_under_pressure) == 1
+    for: 5m
+    labels: {severity: warning}
+    annotations:
+      summary: "Edge {{ $labels.edge }} rejects creations under {{ $labels.pressure }} pressure"
+  - alert: OpenDsecCapacityLow
+    expr: |
+      sum(opendsec_edge_allocated{resource="memory_mb"}) / sum(opendsec_edge_capacity{resource="memory_mb"}) > 0.85
+    for: 15m
+    labels: {severity: warning}
+    annotations:
+      summary: "{{ $value | humanizePercentage }} of the cluster's sandbox memory is allocated"
+  - alert: OpenDsecEdgeDiskLow
+    expr: opendsec_edge_disk_available_mb < 200 * 1024
+    for: 10m
+    labels: {severity: warning}
+    annotations:
+      summary: "Edge {{ $labels.edge }} has {{ $value }} MB free on its state filesystem"
+
+- name: opendsec-nodes
+  rules:
+  - alert: NodeFilesystemAlmostFull
+    expr: |
+      node_filesystem_avail_bytes{fstype=~"ext4|xfs|nfs4?"} / node_filesystem_size_bytes < 0.10
+    for: 10m
+    labels: {severity: warning}
+    annotations:
+      summary: "{{ $labels.mountpoint }} on {{ $labels.instance }} is {{ $value | humanizePercentage }} free"
+  - alert: NodeImageStoreMissing
+    expr: absent(node_filesystem_size_bytes{mountpoint="/mnt/opendsec-images"}) or count(node_filesystem_size_bytes{mountpoint="/mnt/opendsec-images"}) < count(up{job="opendsec-edge"})
+    for: 5m
+    labels: {severity: critical}
+    annotations:
+      summary: "The image store (/mnt/opendsec-images) is not mounted on every edge node"
+- name: opendsec-fleet
+  rules:
+  - alert: OpenDsecFleetNoLeader
+    expr: count(up{job="opendsec-fleet"} == 1) > 0 and sum(opendsec_fleet_leader) < 1
+    for: 1m
+    labels: {severity: warning}
+    annotations:
+      summary: "No fleet replica leads: no heartbeats are taken and rollouts stand still (components keep running)"
+  - alert: OpenDsecFleetNodeSilent
+    expr: max(opendsec_fleet_heartbeat_age_seconds) > 60
+    for: 2m
+    labels: {severity: warning}
+    annotations:
+      summary: "A node agent has not reported for {{ $value }}s (opendsecctl fleet nodes shows which)"
+  - alert: OpenDsecFleetRolloutPaused
+    expr: max(opendsec_fleet_rollout_active{state="paused"}) == 1
+    for: 30m
+    labels: {severity: warning}
+    annotations:
+      summary: "A rollout has been paused for 30m (opendsecctl fleet rollout status): resume, roll back or abort it"
+  - alert: OpenDsecFleetDrift
+    expr: count(count by (release) (opendsec_fleet_node_release)) > 1 unless on() max(opendsec_fleet_rollout_active) == 1
+    for: 10m
+    labels: {severity: info}
+    annotations:
+      summary: "Nodes run different releases while no rollout is active (pinned nodes, or a node out of sync)"
+
+# SLO (docs/SLO.md): error ratios over several windows, and multi-window
+# burn-rate alerts. Targets: creations 99.9%, runtime calls 99.95%.
+- name: opendsec-slo
+  rules:
+  - record: opendsec:create_errors:ratio_rate5m
+    expr: |
+      sum(rate(opendsec_apiserver_create_seconds_count{reason=~"unavailable|internal|timeout|no_capacity"}[5m]))
+        / clamp_min(sum(rate(opendsec_apiserver_create_seconds_count{reason!~"invalid|unauthenticated|forbidden|not_found|quota_exceeded|rate_limited|conflict"}[5m])), 1e-9)
+  - record: opendsec:runtime_errors:ratio_rate5m
+    expr: |
+      sum(rate(opendsec_rpc_server_handled_total{job="opendsec-apiserver",service="DSec",method=~"Exec|ExecStream|ReadFile|WriteFile|StopSandbox|PauseSandbox|ResumeSandbox|ForkSandbox",reason=~"unavailable|internal"}[5m]))
+        / clamp_min(sum(rate(opendsec_rpc_server_handled_total{job="opendsec-apiserver",service="DSec",method=~"Exec|ExecStream|ReadFile|WriteFile|StopSandbox|PauseSandbox|ResumeSandbox|ForkSandbox",reason!~"invalid|unauthenticated|forbidden|not_found|quota_exceeded|rate_limited|conflict"}[5m])), 1e-9)
+  - record: opendsec:create_errors:ratio_rate30m
+    expr: |
+      sum(rate(opendsec_apiserver_create_seconds_count{reason=~"unavailable|internal|timeout|no_capacity"}[30m]))
+        / clamp_min(sum(rate(opendsec_apiserver_create_seconds_count{reason!~"invalid|unauthenticated|forbidden|not_found|quota_exceeded|rate_limited|conflict"}[30m])), 1e-9)
+  - record: opendsec:runtime_errors:ratio_rate30m
+    expr: |
+      sum(rate(opendsec_rpc_server_handled_total{job="opendsec-apiserver",service="DSec",method=~"Exec|ExecStream|ReadFile|WriteFile|StopSandbox|PauseSandbox|ResumeSandbox|ForkSandbox",reason=~"unavailable|internal"}[30m]))
+        / clamp_min(sum(rate(opendsec_rpc_server_handled_total{job="opendsec-apiserver",service="DSec",method=~"Exec|ExecStream|ReadFile|WriteFile|StopSandbox|PauseSandbox|ResumeSandbox|ForkSandbox",reason!~"invalid|unauthenticated|forbidden|not_found|quota_exceeded|rate_limited|conflict"}[30m])), 1e-9)
+  - record: opendsec:create_errors:ratio_rate1h
+    expr: |
+      sum(rate(opendsec_apiserver_create_seconds_count{reason=~"unavailable|internal|timeout|no_capacity"}[1h]))
+        / clamp_min(sum(rate(opendsec_apiserver_create_seconds_count{reason!~"invalid|unauthenticated|forbidden|not_found|quota_exceeded|rate_limited|conflict"}[1h])), 1e-9)
+  - record: opendsec:runtime_errors:ratio_rate1h
+    expr: |
+      sum(rate(opendsec_rpc_server_handled_total{job="opendsec-apiserver",service="DSec",method=~"Exec|ExecStream|ReadFile|WriteFile|StopSandbox|PauseSandbox|ResumeSandbox|ForkSandbox",reason=~"unavailable|internal"}[1h]))
+        / clamp_min(sum(rate(opendsec_rpc_server_handled_total{job="opendsec-apiserver",service="DSec",method=~"Exec|ExecStream|ReadFile|WriteFile|StopSandbox|PauseSandbox|ResumeSandbox|ForkSandbox",reason!~"invalid|unauthenticated|forbidden|not_found|quota_exceeded|rate_limited|conflict"}[1h])), 1e-9)
+  - record: opendsec:create_errors:ratio_rate6h
+    expr: |
+      sum(rate(opendsec_apiserver_create_seconds_count{reason=~"unavailable|internal|timeout|no_capacity"}[6h]))
+        / clamp_min(sum(rate(opendsec_apiserver_create_seconds_count{reason!~"invalid|unauthenticated|forbidden|not_found|quota_exceeded|rate_limited|conflict"}[6h])), 1e-9)
+  - record: opendsec:runtime_errors:ratio_rate6h
+    expr: |
+      sum(rate(opendsec_rpc_server_handled_total{job="opendsec-apiserver",service="DSec",method=~"Exec|ExecStream|ReadFile|WriteFile|StopSandbox|PauseSandbox|ResumeSandbox|ForkSandbox",reason=~"unavailable|internal"}[6h]))
+        / clamp_min(sum(rate(opendsec_rpc_server_handled_total{job="opendsec-apiserver",service="DSec",method=~"Exec|ExecStream|ReadFile|WriteFile|StopSandbox|PauseSandbox|ResumeSandbox|ForkSandbox",reason!~"invalid|unauthenticated|forbidden|not_found|quota_exceeded|rate_limited|conflict"}[6h])), 1e-9)
+  - record: opendsec:create_availability:ratio_rate5m
+    expr: 1 - opendsec:create_errors:ratio_rate5m
+  - alert: OpenDsecSLOCreateBurnFast
+    expr: opendsec:create_errors:ratio_rate1h > 14.4 * 0.001 and opendsec:create_errors:ratio_rate5m > 14.4 * 0.001
+    for: 2m
+    labels: {severity: critical}
+    annotations:
+      summary: "sandbox creations: errors at 14.4x the SLO budget ({{ $value | humanizePercentage }}); 2 days of this spends the 30-day budget"
+  - alert: OpenDsecSLOCreateBurnSlow
+    expr: opendsec:create_errors:ratio_rate6h > 6 * 0.001 and opendsec:create_errors:ratio_rate30m > 6 * 0.001
+    for: 15m
+    labels: {severity: warning}
+    annotations:
+      summary: "sandbox creations: errors at 6x the SLO budget ({{ $value | humanizePercentage }}); 5 days of this spends the 30-day budget"
+  - alert: OpenDsecSLORuntimeBurnFast
+    expr: opendsec:runtime_errors:ratio_rate1h > 14.4 * 0.0005 and opendsec:runtime_errors:ratio_rate5m > 14.4 * 0.0005
+    for: 2m
+    labels: {severity: critical}
+    annotations:
+      summary: "runtime calls (exec, files, stop, pause, resume, fork): errors at 14.4x the SLO budget ({{ $value | humanizePercentage }}); 2 days of this spends the 30-day budget"
+  - alert: OpenDsecSLORuntimeBurnSlow
+    expr: opendsec:runtime_errors:ratio_rate6h > 6 * 0.0005 and opendsec:runtime_errors:ratio_rate30m > 6 * 0.0005
+    for: 15m
+    labels: {severity: warning}
+    annotations:
+      summary: "runtime calls (exec, files, stop, pause, resume, fork): errors at 6x the SLO budget ({{ $value | humanizePercentage }}); 5 days of this spends the 30-day budget"

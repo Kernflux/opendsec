@@ -1,0 +1,13 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: opendsec
+resources:
+  - namespace.yaml
+  - images-pvc.yaml
+  - iam.yaml
+  - watcher.yaml
+  - apiserver.yaml
+  - edge.yaml
+# Secrets are created out of band (they hold the admin token and keys):
+#   kubectl -n opendsec create secret generic opendsec-config --from-file=opendsec.json=deploy/k8s/opendsec.json
+#   kubectl -n opendsec create secret generic opendsec-pki --from-file=<pki dir without ca.key>

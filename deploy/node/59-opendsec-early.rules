@@ -1,0 +1,4 @@
+# OpenDsec sandbox devices (SPEC §25.4): the writable disks' loop devices
+# (backed by <state_dir>/.../disk.img) need no persistent-storage links or
+# filesystem probing; a burst of thousands otherwise keeps udev busy.
+SUBSYSTEM=="block", KERNEL=="loop*", ATTR{loop/backing_file}=="*/disk.img", ENV{UDEV_DISABLE_PERSISTENT_STORAGE_RULES_FLAG}="1"

@@ -1,0 +1,74 @@
+{
+  "tls": {"dir": "/etc/opendsec/pki"},
+  "iam": {
+    "replicas": [
+      {"id": "0", "addr": "10.0.0.11:7001", "raft_addr": "10.0.0.11:7011", "data_dir": "/var/lib/opendsec/iam"},
+      {"id": "1", "addr": "10.0.0.12:7001", "raft_addr": "10.0.0.12:7011", "data_dir": "/var/lib/opendsec/iam"},
+      {"id": "2", "addr": "10.0.0.13:7001", "raft_addr": "10.0.0.13:7011", "data_dir": "/var/lib/opendsec/iam"}
+    ],
+    "admin_id": "admin",
+    "admin_token_file": "/etc/opendsec/admin.token",
+    "root_quota": {"sandboxes": 100000},
+    "max_token_ttl_s": 7776000
+  },
+  "watcher": {
+    "replicas": [
+      {"id": "0", "addr": "10.0.0.11:7002"},
+      {"id": "1", "addr": "10.0.0.12:7002"},
+      {"id": "2", "addr": "10.0.0.13:7002"}
+    ],
+    "probe_interval": 1,
+    "reconcile_interval": 30,
+    "reconcile_min_age": 60,
+    "lost_edge_grace": 120
+  },
+  "apiserver": [
+    {"addr": "10.0.0.11:7100", "audit_dir": "/var/log/opendsec/audit", "audit_max_mb": 256},
+    {"addr": "10.0.0.12:7100", "audit_dir": "/var/log/opendsec/audit", "audit_max_mb": 256},
+    {"addr": "10.0.0.13:7100", "audit_dir": "/var/log/opendsec/audit", "audit_max_mb": 256}
+  ],
+  "placement": {"k": 2, "max_attempts": 3},
+  "admission": {
+    "create_rate": 20000,
+    "create_burst": 32768,
+    "max_inflight_creates": 8192,
+    "request_rate": 100000
+  },
+  "image_store": {"root": "/mnt/opendsec-images"},
+  "fleet": {
+    "replicas": [
+      {"id": "0", "addr": "10.0.0.11:7300", "data_dir": "/var/lib/opendsec/fleet"},
+      {"id": "1", "addr": "10.0.0.12:7300", "data_dir": "/var/lib/opendsec/fleet"},
+      {"id": "2", "addr": "10.0.0.13:7300", "data_dir": "/var/lib/opendsec/fleet"}
+    ],
+    "heartbeat_s": 10
+  },
+  "network": {"rule_sets": {"pypi": ["pypi.org", "files.pythonhosted.org"]}},
+  "edge_template": {
+    "addr": "0.0.0.0:7201", "zone": "onprem",
+    "state_dir": "/data/opendsec-state", "agent_dir": "/opt/opendsec/current/agents",
+    "persist_state": true, "keep_sandboxes_on_exit": true,
+    "network": {"enabled": true, "subnet": "10.90.0.0/16", "dns_port": 15353},
+    "backends": {
+      "microvm": {"runtime": "firecracker", "max_sandboxes": 4000, "default_disk_mb": 2048,
+                  "firecracker": "/opt/opendsec/current/bin/firecracker", "jailer": "/opt/opendsec/current/bin/jailer",
+                  "kernel": "/opt/opendsec/current/vm/vmlinux-6.1.167-opendsec", "image_pmem": true, "free_page_reporting": true, "cold_age_s": 120},
+      "container": {"runtime": "linux", "max_sandboxes": 8000, "default_disk_mb": 1024}
+    }
+  },
+  "edges": [
+    {
+      "id": "node-a1", "addr": "10.0.1.21:7201", "zone": "onprem",
+      "state_dir": "/data/opendsec-state", "agent_dir": "/opt/opendsec/current/agents",
+      "persist_state": true, "keep_sandboxes_on_exit": true,
+      "network": {"enabled": true, "subnet": "10.90.0.0/16", "dns_port": 15353},
+      "backends": {
+        "microvm": {"runtime": "firecracker", "max_sandboxes": 4000, "default_disk_mb": 2048,
+                    "firecracker": "/opt/opendsec/current/bin/firecracker", "jailer": "/opt/opendsec/current/bin/jailer",
+                    "kernel": "/opt/opendsec/current/vm/vmlinux-6.1.167-opendsec", "image_pmem": true, "free_page_reporting": true, "cold_age_s": 120},
+        "container": {"runtime": "linux", "max_sandboxes": 8000, "default_disk_mb": 1024},
+        "fncall": {"runtime": "linux", "max_sandboxes": 4000, "default_disk_mb": 1024, "warm_pool": {"root/py:3.12": 64}}
+      }
+    }
+  ]
+}
