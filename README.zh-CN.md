@@ -51,7 +51,7 @@ OpenDsec 是照着 DSec 论文做的。论文描述了 DeepSeek 用于智能体�
 
 ```sh
 sudo -i                                      # 之后都以 root 执行
-apt install -y make git python3-venv         # Debian、Ubuntu
+apt update && apt install -y make git python3-venv   # Debian、Ubuntu
 curl -fsSL https://go.dev/dl/go1.27.3.linux-amd64.tar.gz | tar -C /usr/local -xz   # Go 1.27 或更新
 git clone https://github.com/kernflux/opendsec && cd opendsec
 deploy/quickstart.sh                         # 或 --no-microvm 只跑容器

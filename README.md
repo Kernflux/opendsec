@@ -56,7 +56,7 @@ You need a Linux x86_64 machine (tested on Ubuntu 24.04) with systemd and cgroup
 
 ```sh
 sudo -i                                    # the rest runs as root
-apt install -y make git python3-venv       # Debian and Ubuntu
+apt update && apt install -y make git python3-venv   # Debian and Ubuntu
 curl -fsSL https://go.dev/dl/go1.27.3.linux-amd64.tar.gz | tar -C /usr/local -xz   # Go 1.27 or newer
 git clone https://github.com/kernflux/opendsec && cd opendsec
 deploy/quickstart.sh                       # or --no-microvm for containers only
