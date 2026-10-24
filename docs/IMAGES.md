@@ -109,12 +109,14 @@ opendsecctl image pack $ID root/rl/repo-env:v1 -scrub srv/repo/.git
 ### 快照
 
 ```python
-sb = await client.run_sandbox(DSecRunArgs(backend="microvm", image="root/py:3.12", memory_limit_mb=2048))
-await sb.run_shell("python3 -c 'import torch' && (python3 -m http.server 8000 &)")
+sb = await client.run_sandbox(DSecRunArgs(backend="microvm", image="root/py:3.12", memory_limit_mb=2048,
+                                          network_rules={"pypi": True}))
+await sb.run_shell("pip install -q numpy")
+await sb.run_shell("(nohup python3 -c 'import numpy, http.server as h; h.test(h.SimpleHTTPRequestHandler, port=8000)' > /tmp/srv.log 2>&1 &)")
 img = await sb.create_snapshot("root/rl/warm:v1", memory=True)
 await sb.stop()
 
-# 从快照创建：约 55 ms，torch 已加载，http.server 已在运行
+# 从快照创建：约 55 ms，加载好 numpy 的 HTTP 服务已经在 8000 端口运行
 new = await client.run_sandbox(DSecRunArgs(backend="microvm", image="root/rl/warm:v1", memory_limit_mb=2048))
 ```
 

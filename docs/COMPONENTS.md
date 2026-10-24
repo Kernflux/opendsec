@@ -140,7 +140,7 @@ fleet ×3 + nodeagent（每台机器）：发布、配置、分批升级
 
 **职责**：探测 edge 的健康，汇总调度状态，驱动配额对账。代码在 `internal/watcher/watcher.go`（§3.5）。
 
-- **没有持久状态**：重启后从三个来源重建视图：配置里的 edge 列表、edge 定期的注册，以及轮询 edge。
+- **没有持久状态**：重启后从这些来源重建视图：配置里的 edge 列表、edge 定期的注册、轮询 edge，以及启动时向其他 watcher 取的快照。
 - **探测**：
   - 每 `probe_interval`（默认 1 秒）并发调用每台 edge 的 `Status`；
   - 连续失败 3 次判为不健康；
@@ -359,7 +359,7 @@ fleet ×3 + nodeagent（每台机器）：发布、配置、分批升级
 - **错误原因**：所有错误在 `ErrorInfo.reason` 里带一个稳定的字符串，例如 `no_capacity`、`quota_exceeded`、`not_found`、`unavailable`。SDK 和重试逻辑按它判断，不解析错误消息。
 - **连接**：
   - 服务端：每 20 秒 ping 空闲连接，防止负载均衡按空闲超时掐断安静的流；
-  - 内部客户端：每 30 秒 ping；重连退避上限 2 秒，edge 重启后能很快重新连上；
+  - 内部客户端：每 10 秒 ping，静默断开的连接约 15 秒内被发现；重连退避上限 2 秒，edge 重启后能很快重新连上；
   - 连接池：按地址复用连接。
 - **CA 轮换**：分三步，不停服（`opendsecops rotate-ca`，见 OPERATIONS.md）。
 

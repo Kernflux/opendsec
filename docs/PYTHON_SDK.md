@@ -67,7 +67,7 @@ await client.open()                      # 也可以手动打开和关闭
 await client.close()
 ```
 
-连接参数（自动处理，通常不用关心）：断线后 100 ms 起重连，最长退避 2 秒；每 10 秒发送一次 keepalive，静默断开的连接约 15 秒内被发现；单个响应最大 64 MB。
+连接参数（自动处理，通常不用关心）：断线后 100 ms 起重连，最长退避 2 秒；每 10 秒发送一次 keepalive，静默断开的连接约 15 秒内被发现；单个消息最大 80 MB。
 
 ## 创建参数：`DSecRunArgs`
 
@@ -447,13 +447,16 @@ results = await asyncio.gather(*(b.run_shell(f"python3 try.py --variant {i}")
 ### 预热好的环境
 
 ```python
-sb = await client.run_sandbox(DSecRunArgs(backend="microvm", image="root/py:3.12", memory_limit_mb=2048))
-await sb.run_shell("python3 -c 'import torch, transformers'")         # 加载慢的初始化
-await sb.create_snapshot("root/rl/warm-torch:v1", memory=True)
+sb = await client.run_sandbox(DSecRunArgs(backend="microvm", image="root/rl/model-server:v1",
+                                          memory_limit_mb=4096))
+# 启动一个常驻的服务：加载模型（慢）后在 8000 端口等待请求
+await sb.run_shell("(nohup python3 /srv/serve.py > /tmp/serve.log 2>&1 &)")
+await sb.run_shell("until curl -sf http://127.0.0.1:8000/ready; do sleep 1; done", timeout=600)
+await sb.create_snapshot("root/rl/model-server:warm", memory=True)
 await sb.stop()
-# 之后从这个快照创建，进程和已加载的模块都在，约 55 ms
-fast = await client.run_sandbox(DSecRunArgs(backend="microvm", image="root/rl/warm-torch:v1",
-                                            memory_limit_mb=2048))
+# 之后从这个快照创建：服务进程和已加载的模型都在，约 55 ms 就能接请求
+fast = await client.run_sandbox(DSecRunArgs(backend="microvm", image="root/rl/model-server:warm",
+                                            memory_limit_mb=4096))
 ```
 
 更多示例在仓库的 `sdk/python/examples/`：`quickstart.py`、`test_features.py`（逐项检查各功能）、`load_test.py`（压测）、`decoupled_rollout.py`（解耦 rollout）。
