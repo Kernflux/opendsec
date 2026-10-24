@@ -1,6 +1,6 @@
 # OpenDsec 部署
 
-- **单机试用**：`sudo deploy/quickstart.sh`（见仓库 README），一台机器上装好全部组件并跑通一个 sandbox。
+- **单机试用**：以 root 执行 `deploy/quickstart.sh`（见仓库 README），一台机器上装好全部组件并跑通一个 sandbox。
 - **多机生产集群**：`deploy/prod/opendsecops` + [docs/OPERATIONS.md](../docs/OPERATIONS.md)。
 - **Kubernetes**：`k8s/` 下的清单是**实验性**的，没有在真实集群上验证过，也还没有 fleet 和节点代理；镜像需要自己用 `Dockerfile` 构建。
 

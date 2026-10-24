@@ -45,20 +45,22 @@ OpenDsec 是照着 DSec 论文做的。论文描述了 DeepSeek 用于智能体�
 
 「DeepSeek」和「DSec」归各自的所有者所有，本项目使用这两个名称只为指明所实现的论文。
 
-## 单机部署（5 分钟）
+## 单机部署（约 10 分钟）
 
-一台 Linux x86_64 机器（在 Ubuntu 24.04 上测过；需要 root、systemd、cgroup v2，跑 microVM 还需要 `/dev/kvm`，没有的话只装容器），装好 [Go 1.27+](https://go.dev/dl) 和 `make`：
+一台 Linux x86_64 机器（在 Ubuntu 24.04 上测过；需要 systemd、cgroup v2，跑 microVM 还需要 `/dev/kvm`，没有的话只装容器）。下面每一步都以 root 执行：脚本要安装系统服务，生成的文件也放在 `/root/opendsec-ops`。
 
 ```sh
+sudo -i                                      # 之后都以 root 执行
+apt install -y make git python3-venv         # Debian、Ubuntu
+curl -fsSL https://go.dev/dl/go1.27.3.linux-amd64.tar.gz | tar -C /usr/local -xz   # Go 1.27 或更新
 git clone https://github.com/kernflux/opendsec && cd opendsec
-sudo deploy/quickstart.sh --build-kernel     # 或 --no-microvm 只跑容器；--kernel FILE 用现成的 guest 内核
+deploy/quickstart.sh                         # 或 --no-microvm 只跑容器
 . /root/opendsec-ops/demo.env                # 调用方的地址、token、CA，以及 E2B SDK 用的变量
-sudo apt install python3-venv                # Debian、Ubuntu
 python3 -m venv .venv && .venv/bin/pip install ./sdk/python
 .venv/bin/python sdk/python/examples/quickstart.py
 ```
 
-脚本以 systemd 服务装好 IAM、watcher、apiserver、edge 和 E2B 网关，导入 `python:3.12` 镜像，创建项目 `root/demo` 和它的调用方，并各跑一个容器和 microVM sandbox 做检查。卸载：`sudo deploy/quickstart.sh --uninstall`。多机生产集群见 [docs/OPERATIONS.md](docs/OPERATIONS.md)。
+脚本会下载 Firecracker 和 guest 内核（按 `deploy/deps.lock` 校验），以 systemd 服务装好 IAM、watcher、apiserver、edge 和 E2B 网关，导入 `python:3.12` 镜像，创建项目 `root/demo` 和它的调用方，并各跑一个容器和 microVM sandbox 做检查。不想下载内核时，`--kernel FILE` 用现成的内核，`--build-kernel` 自己编译。在全新的 8 核虚拟机上整个过程约 11 分钟，大部分时间在编译。卸载：以 root 执行 `deploy/quickstart.sh --uninstall`。多机生产集群见 [docs/OPERATIONS.md](docs/OPERATIONS.md)。
 
 **不能访问外网的机器**：在能上网的机器上做离线安装包（`deploy/offline/build-bundle.sh`），在目标机器上用 `./install.sh` 安装，单机和多机都支持，见 [deploy/offline/README.md](deploy/offline/README.md)。
 

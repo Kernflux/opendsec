@@ -3,12 +3,12 @@
 # machine (IAM, watcher, apiserver and edge as systemd units), import a base
 # image and run a sandbox. Run as root from a clone of the repository:
 #
-#   sudo deploy/quickstart.sh                  # container + microVM (if /dev/kvm)
-#   sudo deploy/quickstart.sh --no-microvm     # containers only
-#   sudo deploy/quickstart.sh --kernel FILE    # microVMs with this guest kernel
-#   sudo deploy/quickstart.sh --build-kernel   # build the guest kernel first
-#   sudo deploy/quickstart.sh --release DIR    # a packaged release, no build (offline bundles)
-#   sudo deploy/quickstart.sh --uninstall      # remove everything it installed
+#   deploy/quickstart.sh                 # container + microVM (if /dev/kvm)
+#   deploy/quickstart.sh --no-microvm    # containers only
+#   deploy/quickstart.sh --kernel FILE   # microVMs with this guest kernel
+#   deploy/quickstart.sh --build-kernel  # build the guest kernel first
+#   deploy/quickstart.sh --release DIR   # a packaged release, no build (offline bundles)
+#   deploy/quickstart.sh --uninstall     # remove everything it installed
 #
 # It uses the same tooling as a multi-node cluster (deploy/prod/opendsecops,
 # docs/OPERATIONS.md): the ops directory ($OPENDSEC_OPS, default

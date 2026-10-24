@@ -52,27 +52,29 @@ OpenDsec was built by following the DSec paper, which describes the sandbox infr
 
 ## Try it on one machine
 
-You need a Linux x86_64 machine (tested on Ubuntu 24.04) with root, systemd and cgroup v2, [Go 1.27](https://go.dev/dl) or newer, and `make`. MicroVMs also need `/dev/kvm`: use bare metal, or a cloud VM with nested virtualization; without it the script sets up containers only.
+You need a Linux x86_64 machine (tested on Ubuntu 24.04) with systemd and cgroup v2. MicroVMs also need `/dev/kvm`: use bare metal, or a cloud VM with nested virtualization; without it the script sets up containers only. Run every step below as root: the script installs system services, and the files it writes for you are in `/root/opendsec-ops`.
 
 ```sh
+sudo -i                                    # the rest runs as root
+apt install -y make git python3-venv       # Debian and Ubuntu
+curl -fsSL https://go.dev/dl/go1.27.3.linux-amd64.tar.gz | tar -C /usr/local -xz   # Go 1.27 or newer
 git clone https://github.com/kernflux/opendsec && cd opendsec
-sudo deploy/quickstart.sh --build-kernel   # or --no-microvm for containers only, or --kernel FILE
+deploy/quickstart.sh                       # or --no-microvm for containers only
 ```
 
-The script checks the machine, builds the binaries, and fetches Firecracker. With `--build-kernel` it also builds the guest kernel, which takes a few minutes and needs `build-essential flex bison bc libelf-dev libssl-dev`. It then does the following:
+The script checks the machine, builds the binaries, and downloads Firecracker and the guest kernel, checking each against `deploy/deps.lock`. Instead of the download, `--kernel FILE` uses a kernel you have, and `--build-kernel` builds it (a few more minutes; needs `build-essential flex bison bc libelf-dev libssl-dev`). It then does the following:
 
 1. Installs IAM, watcher, apiserver, edge and the E2B gateway as systemd services, with their own CA and certificates.
 2. Imports `python:3.12` from Docker Hub.
 3. Creates the project `root/demo` and a caller for it.
 4. Runs a container sandbox and a microVM sandbox as a check.
 
-The whole run took about six minutes on a fresh 16-core VM, most of it pulling the image. The cluster comes back by itself after a reboot.
+The whole run took about 11 minutes on a fresh 8-core VM, most of it building. The cluster comes back by itself after a reboot.
 
-Then use it from Python:
+Then use it from Python, still as root in the same directory:
 
 ```sh
 . /root/opendsec-ops/demo.env                 # OPENDSEC_ADDR, OPENDSEC_TOKEN, OPENDSEC_PROJECT, OPENDSEC_CA
-sudo apt install python3-venv                 # Debian and Ubuntu
 python3 -m venv .venv && .venv/bin/pip install ./sdk/python
 .venv/bin/python sdk/python/examples/quickstart.py
 ```
@@ -98,7 +100,7 @@ async def main():
 asyncio.run(main())
 ```
 
-The same `demo.env` points E2B's SDKs at the machine's E2B gateway (`pip install e2b`, then [docs/E2B.md](docs/E2B.md)). Admin commands use `. /root/opendsec-ops/env`, then `opendsecctl status` and `opendsecctl --help`. To remove everything, run `sudo deploy/quickstart.sh --uninstall`.
+The same `demo.env` points E2B's SDKs at the machine's E2B gateway (`pip install e2b`, then [docs/E2B.md](docs/E2B.md)). Admin commands use `. /root/opendsec-ops/env`, then `opendsecctl status` and `opendsecctl --help`. To remove everything, run `deploy/quickstart.sh --uninstall` as root.
 
 **Machines without internet access**: build an offline bundle on a machine that has it (`deploy/offline/build-bundle.sh`) and install from it with `./install.sh`, for one machine or a cluster: see [deploy/offline/README.md](deploy/offline/README.md).
 
