@@ -1,0 +1,705 @@
+<!doctype html>
+<!-- Source of https://kernflux.github.io/opendsec/ (published by .github/workflows/pages.yml). -->
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%231f4fd8'/%3E%3Crect x='7' y='7' width='8' height='8' fill='%23fff'/%3E%3Crect x='17' y='7' width='8' height='8' fill='%23fff' opacity='.6'/%3E%3Crect x='7' y='17' width='8' height='8' fill='%23fff' opacity='.6'/%3E%3Crect x='17' y='17' width='8' height='8' fill='%23fff'/%3E%3C/svg%3E">
+<meta property="og:title" content="OpenDsec">
+<meta property="og:description" content="Open-source sandbox infrastructure for agentic RL training: Firecracker microVMs, containers, fork with memory, E2B-compatible API.">
+<meta property="og:url" content="https://kernflux.github.io/opendsec/">
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
+<title>OpenDsec</title>
+<meta name="description" content="OpenDsec: open-source sandbox infrastructure for agentic RL training. Firecracker microVMs, containers, fork with memory, E2B-compatible API.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,500..800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a hardware datasheet. Cool paper, ruled tables, a measured trace in the hero, one cobalt accent. */
+:root {
+  --paper: #eef1f4;
+  --sheet: #f8f9fb;
+  --ink: #0e1a2b;
+  --muted: #566274;
+  --rule: #c8d0da;
+  --accent: #1f4fd8;
+  --accent-ink: #ffffff;
+  --code-bg: #e4e9ef;
+  --ok: #1d7a4a;
+  --font-display: "Archivo", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", system-ui, sans-serif;
+  --font-body: "IBM Plex Sans", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  --step--1: 0.8125rem;
+  --step-0: 1rem;
+  --step-1: 1.25rem;
+  --step-2: 1.625rem;
+  --step-3: clamp(2rem, 1.4rem + 2.6vw, 3.25rem);
+  --measure: 66ch;
+  --wrap: 1120px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #0b1220; --sheet: #111a2b; --ink: #e6ecf3; --muted: #93a1b3; --rule: #26334b;
+    --accent: #7ea2ff; --accent-ink: #0b1220; --code-bg: #0f1726; --ok: #5cc98e;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #0b1220; --sheet: #111a2b; --ink: #e6ecf3; --muted: #93a1b3; --rule: #26334b;
+  --accent: #7ea2ff; --accent-ink: #0b1220; --code-bg: #0f1726; --ok: #5cc98e;
+  color-scheme: dark;
+}
+
+/* language switch: Chinese unless data-lang="en" */
+:root:not([data-lang="en"]) [data-l="en"], :root[data-lang="en"] [data-l="zh"] { display: none !important; }
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } * { transition: none !important; animation: none !important; } }
+body {
+  background: var(--paper); color: var(--ink);
+  font-family: var(--font-body); font-size: var(--step-0); line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--paper); }
+a { color: var(--accent); text-underline-offset: 3px; }
+a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+code, pre, .mono { font-family: var(--font-mono); }
+.wrap {
+  max-width: var(--wrap); margin: 0 auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; margin: 0; letter-spacing: -0.01em; }
+h2 { font-size: var(--step-2); font-weight: 700; font-stretch: 112%; }
+h3 { font-size: var(--step-1); font-weight: 650; font-stretch: 105%; }
+p { margin: 0; }
+.label {
+  font-family: var(--font-mono); font-size: var(--step--1); text-transform: uppercase;
+  letter-spacing: 0.08em; color: var(--muted);
+}
+
+/* header */
+header.top {
+  position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5;
+  background: var(--paper); border-bottom: 1px solid var(--rule);
+}
+header.top .wrap { display: flex; align-items: center; gap: 24px; padding-block: 12px; flex-wrap: wrap; }
+.brand { display: flex; align-items: baseline; gap: 10px; text-decoration: none; color: var(--ink); }
+.brand b { font-family: var(--font-display); font-weight: 800; font-stretch: 118%; font-size: 1.25rem; letter-spacing: -0.02em; }
+.brand span { font-family: var(--font-mono); font-size: var(--step--1); color: var(--muted); }
+nav.links { display: flex; gap: 18px; flex-wrap: wrap; margin-left: auto; font-size: 0.9375rem; }
+nav.links a { color: var(--ink); text-decoration: none; }
+nav.links a:hover { color: var(--accent); }
+.tools { display: flex; gap: 8px; align-items: center; }
+.seg { display: inline-flex; border: 1px solid var(--rule); border-radius: 4px; overflow: hidden; }
+.seg button {
+  font: 500 var(--step--1) var(--font-mono); background: transparent; color: var(--muted);
+  border: 0; padding: 4px 10px; cursor: pointer;
+}
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+@media (max-width: 720px) { nav.links { order: 3; width: 100%; margin-left: 0; gap: 14px; } .tools { margin-left: auto; } }
+
+/* hero */
+.hero .wrap { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); gap: 48px; padding-block: 56px 48px; align-items: start; }
+@media (max-width: 900px) { .hero .wrap { grid-template-columns: minmax(0, 1fr); gap: 32px; padding-block: 36px 32px; } }
+.hero h1 { font-size: var(--step-3); font-weight: 800; font-stretch: 112%; line-height: 1.08; }
+.hero .lede { margin-top: 20px; font-size: 1.125rem; color: var(--muted); max-width: 52ch; }
+.cta { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 28px; }
+.btn {
+  display: inline-flex; align-items: center; gap: 8px; padding: 10px 18px; border-radius: 4px;
+  font-weight: 600; text-decoration: none; border: 1px solid var(--ink); color: var(--ink); background: transparent;
+}
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.btn:hover { filter: brightness(1.08); }
+.note { margin-top: 24px; font-size: var(--step--1); color: var(--muted); max-width: 60ch; border-left: 2px solid var(--rule); padding-left: 12px; }
+
+/* trace card */
+.trace { background: var(--sheet); border: 1px solid var(--rule); border-radius: 6px; min-width: 0; }
+.trace .bar { display: flex; justify-content: space-between; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--rule); }
+.trace table { width: 100%; border-collapse: collapse; font-family: var(--font-mono); font-size: 0.8125rem; font-variant-numeric: tabular-nums; }
+.trace td { padding: 9px 16px; border-bottom: 1px dashed var(--rule); vertical-align: baseline; }
+.trace tr:last-child td { border-bottom: 0; }
+.trace td.op { color: var(--ink); font-weight: 500; white-space: nowrap; }
+.trace td.what { color: var(--muted); }
+.trace td.t { text-align: right; white-space: nowrap; color: var(--accent); font-weight: 500; }
+.trace .scroll { overflow-x: auto; }
+.trace .foot { padding: 10px 16px; border-top: 1px solid var(--rule); font-size: var(--step--1); color: var(--muted); }
+
+section { border-top: 1px solid var(--rule); }
+section > .wrap { padding-block: 56px; }
+.head { display: grid; gap: 10px; margin-bottom: 28px; max-width: var(--measure); }
+.head p { color: var(--muted); }
+
+/* datasheet */
+.sheet { overflow-x: auto; border: 1px solid var(--rule); border-radius: 6px; background: var(--sheet); }
+.sheet table { width: 100%; border-collapse: collapse; min-width: 640px; font-variant-numeric: tabular-nums; }
+.sheet th, .sheet td { text-align: left; padding: 11px 16px; border-bottom: 1px solid var(--rule); vertical-align: baseline; }
+.sheet thead th { font-family: var(--font-mono); font-size: var(--step--1); font-weight: 500; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; background: var(--paper); }
+.sheet tbody tr:last-child td { border-bottom: 0; }
+.sheet td.v { font-family: var(--font-mono); font-weight: 500; white-space: nowrap; text-align: right; }
+.sheet th.v { text-align: right; }
+.sheet td.c { color: var(--muted); font-size: 0.9375rem; }
+.sheet td.p { font-weight: 500; }
+.sheet .grp td { font-family: var(--font-mono); font-size: var(--step--1); color: var(--accent); text-transform: uppercase; letter-spacing: 0.08em; padding-top: 16px; }
+.fine { margin-top: 12px; font-size: var(--step--1); color: var(--muted); max-width: var(--measure); }
+
+/* features */
+.feat { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; border: 1px solid var(--rule); border-radius: 6px; background: var(--sheet); }
+.feat > div { padding: 22px 22px 24px; border-right: 1px solid var(--rule); border-bottom: 1px solid var(--rule); display: grid; gap: 8px; align-content: start; }
+.feat > div:nth-child(3n) { border-right: 0; }
+.feat > div:nth-last-child(-n+3) { border-bottom: 0; }
+.feat p { color: var(--muted); font-size: 0.9375rem; }
+.feat .src { font-family: var(--font-mono); font-size: 0.75rem; color: var(--muted); }
+@media (max-width: 900px) {
+  .feat { grid-template-columns: minmax(0, 1fr); }
+  .feat > div { border-right: 0; }
+  .feat > div:nth-last-child(-n+3) { border-bottom: 1px solid var(--rule); }
+  .feat > div:last-child { border-bottom: 0; }
+}
+
+/* architecture */
+.diagram { overflow-x: auto; border: 1px solid var(--rule); border-radius: 6px; background: var(--sheet); padding: 12px; }
+.diagram svg { display: block; width: 100%; min-width: 760px; height: auto; }
+.diagram .box { fill: var(--paper); stroke: var(--ink); stroke-width: 1.2; }
+.diagram .box.acc { stroke: var(--accent); stroke-width: 1.6; }
+.diagram .store { fill: var(--code-bg); stroke: var(--rule); stroke-width: 1.2; }
+.diagram .t1 { font: 600 14px var(--font-body); fill: var(--ink); }
+.diagram .t2 { font: 400 11.5px var(--font-mono); fill: var(--muted); }
+.diagram .ln { stroke: var(--ink); stroke-width: 1.2; fill: none; }
+.diagram .ln.dash { stroke-dasharray: 4 4; stroke: var(--muted); }
+.diagram .ah { fill: var(--ink); }
+.diagram .ah.m { fill: var(--muted); }
+.legend { display: flex; gap: 20px; flex-wrap: wrap; margin-top: 12px; font-size: var(--step--1); color: var(--muted); }
+
+/* code tabs */
+.tabs { border: 1px solid var(--rule); border-radius: 6px; background: var(--sheet); min-width: 0; }
+.tablist { display: flex; gap: 0; border-bottom: 1px solid var(--rule); overflow-x: auto; }
+.tablist button {
+  font: 500 0.875rem var(--font-mono); background: transparent; color: var(--muted); border: 0;
+  border-bottom: 2px solid transparent; padding: 12px 18px; cursor: pointer; white-space: nowrap;
+}
+.tablist button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
+.panel { position: relative; }
+pre.code {
+  margin: 0; padding: 20px; overflow-x: auto; font-size: 0.84rem; line-height: 1.65;
+  background: var(--code-bg); color: var(--ink); border-radius: 0 0 6px 6px; tab-size: 4;
+}
+pre.code .c { color: var(--muted); }
+pre.code .k { color: var(--accent); }
+.panel .cap { padding: 12px 20px; font-size: 0.9375rem; color: var(--muted); border-bottom: 1px solid var(--rule); }
+.copy {
+  position: absolute; top: 10px; right: 10px; font: 500 0.75rem var(--font-mono);
+  background: var(--sheet); color: var(--ink); border: 1px solid var(--rule); border-radius: 4px; padding: 4px 10px; cursor: pointer;
+}
+.panel .cap + .copy, .panel .copy.low { top: auto; }
+
+/* quickstart steps */
+.steps { display: grid; gap: 0; border: 1px solid var(--rule); border-radius: 6px; background: var(--sheet); counter-reset: s; }
+.step { display: grid; grid-template-columns: 56px minmax(0, 1fr); border-bottom: 1px solid var(--rule); }
+.step:last-child { border-bottom: 0; }
+.step .n { font-family: var(--font-display); font-weight: 800; font-stretch: 120%; font-size: 1.375rem; color: var(--accent); padding: 18px 0 0 18px; }
+.step .b { padding: 18px 18px 18px 0; display: grid; gap: 10px; min-width: 0; }
+.step pre { margin: 0; padding: 12px 14px; background: var(--code-bg); border-radius: 4px; overflow-x: auto; font-size: 0.84rem; }
+.step p { color: var(--muted); font-size: 0.9375rem; }
+.split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 32px; align-items: start; }
+@media (max-width: 900px) { .split { grid-template-columns: minmax(0, 1fr); } }
+
+/* deploy options */
+.opts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
+@media (max-width: 980px) { .opts { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 560px) { .opts { grid-template-columns: minmax(0, 1fr); } }
+.opt { border-top: 3px solid var(--ink); padding-top: 14px; display: grid; gap: 8px; align-content: start; }
+.opt .tag { justify-self: start; font: 500 0.75rem var(--font-mono); border: 1px solid var(--rule); border-radius: 3px; padding: 1px 7px; color: var(--muted); }
+.opt .tag.ok { color: var(--ok); border-color: currentColor; }
+.opt p { color: var(--muted); font-size: 0.9375rem; }
+
+/* editions */
+.ed { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0; border: 1px solid var(--rule); border-radius: 6px; background: var(--sheet); }
+.ed > div { padding: 24px; display: grid; gap: 12px; align-content: start; }
+.ed > div + div { border-left: 1px solid var(--rule); }
+@media (max-width: 760px) { .ed { grid-template-columns: minmax(0, 1fr); } .ed > div + div { border-left: 0; border-top: 1px solid var(--rule); } }
+.ed ul { margin: 0; padding-left: 1.1em; display: grid; gap: 6px; color: var(--ink); }
+.ed li::marker { color: var(--muted); }
+.ed .lic { font-family: var(--font-mono); font-size: 0.875rem; color: var(--muted); }
+.mail { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.mail code { font-size: 0.9375rem; background: var(--code-bg); padding: 6px 10px; border-radius: 4px; user-select: all; }
+.mail button { font: 500 0.75rem var(--font-mono); background: transparent; color: var(--ink); border: 1px solid var(--rule); border-radius: 4px; padding: 6px 10px; cursor: pointer; }
+
+footer { border-top: 1px solid var(--rule); }
+footer .wrap { padding-block: 32px 48px; display: grid; gap: 14px; font-size: var(--step--1); color: var(--muted); max-width: var(--wrap); }
+footer p { max-width: 90ch; }
+footer .row { display: flex; gap: 18px; flex-wrap: wrap; }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="#top"><b>OpenDsec</b><span>by Kernflux</span></a>
+    <nav class="links" aria-label="Sections">
+      <a href="#numbers"><span data-l="zh">实测数据</span><span data-l="en">Numbers</span></a>
+      <a href="#features"><span data-l="zh">功能</span><span data-l="en">Features</span></a>
+      <a href="#arch"><span data-l="zh">架构</span><span data-l="en">Architecture</span></a>
+      <a href="#start"><span data-l="zh">快速开始</span><span data-l="en">Get started</span></a>
+      <a href="#license"><span data-l="zh">许可</span><span data-l="en">License</span></a>
+      <a href="https://github.com/Kernflux/opendsec">GitHub</a>
+    </nav>
+    <div class="tools">
+      <div class="seg" role="group" aria-label="Language">
+        <button type="button" id="lang-zh" data-set-lang="zh" aria-pressed="true">中文</button>
+        <button type="button" id="lang-en" data-set-lang="en" aria-pressed="false">EN</button>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main id="top">
+  <div class="hero">
+    <div class="wrap">
+      <div>
+        <p class="label" style="margin-bottom:14px"><span data-l="zh">开源 · AGPL-3.0 · Linux x86_64</span><span data-l="en">Open source · AGPL-3.0 · Linux x86_64</span></p>
+        <h1>
+          <span data-l="zh">给每一次 rollout 一个隔离的 sandbox</span>
+          <span data-l="en">An isolated sandbox for every rollout</span>
+        </h1>
+        <p class="lede">
+          <span data-l="zh">OpenDsec 在你自己的机器上运行大批 Firecracker microVM、容器和 QEMU 虚拟机，供强化学习训练和会执行代码的智能体使用。它照 DeepSeek 的 DSec 论文实现，兼容 E2B 的 SDK。</span>
+          <span data-l="en">OpenDsec runs large fleets of Firecracker microVMs, containers and QEMU VMs on your own machines, for reinforcement-learning rollouts and code-executing agents. It implements the design in DeepSeek's DSec paper and speaks the E2B API.</span>
+        </p>
+        <div class="cta">
+          <a class="btn primary" href="#start"><span data-l="zh">5 分钟单机部署</span><span data-l="en">Install on one machine</span></a>
+          <a class="btn" href="https://github.com/Kernflux/opendsec"><span data-l="zh">在 GitHub 上查看</span><span data-l="en">View on GitHub</span></a>
+        </div>
+        <p class="note">
+          <span data-l="zh">基于论文 <a href="https://arxiv.org/abs/2609.22978">DeepSeek Elastic Compute (DSec)</a>（arXiv:2609.22978）。本项目独立开发，与 DeepSeek 没有关系，未经其认可，也不包含其代码。</span>
+          <span data-l="en">Based on the paper <a href="https://arxiv.org/abs/2609.22978">DeepSeek Elastic Compute (DSec)</a> (arXiv:2609.22978). An independent project: not affiliated with or endorsed by DeepSeek, and it contains no DeepSeek code.</span>
+        </p>
+      </div>
+
+      <figure class="trace" style="margin:0">
+        <div class="bar">
+          <span class="label"><span data-l="zh">一个 microVM 的生命周期</span><span data-l="en">One microVM, start to fork</span></span>
+          <span class="label">python:3.12 · 2 vCPU</span>
+        </div>
+        <div class="scroll">
+          <table>
+            <tbody>
+              <tr><td class="op">create</td><td class="what"><span data-l="zh">冷启动到可执行命令</span><span data-l="en">cold boot to first command</span></td><td class="t">~100 ms</td></tr>
+              <tr><td class="op">run_shell</td><td class="what"><span data-l="zh">持久会话，cd 和 export 保留</span><span data-l="en">persistent session keeps cd and env</span></td><td class="t">&nbsp;</td></tr>
+              <tr><td class="op">pause</td><td class="what"><span data-l="zh">拍快照后结束进程，内存释放</span><span data-l="en">snapshot, then exit; memory freed</span></td><td class="t">&nbsp;</td></tr>
+              <tr><td class="op">resume</td><td class="what"><span data-l="zh">从快照恢复，进程原样继续</span><span data-l="en">restore; processes carry on</span></td><td class="t">~50 ms</td></tr>
+              <tr><td class="op">fork ×8</td><td class="what"><span data-l="zh">连同内存复制，源 VM 只停顿</span><span data-l="en">copies with memory; source pauses only</span></td><td class="t">~10 ms</td></tr>
+              <tr><td class="op">restore ×64</td><td class="what"><span data-l="zh">同节点并发恢复，共享内存页</span><span data-l="en">concurrent on one node, pages shared</span></td><td class="t">~0.2 s</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <figcaption class="foot"><span data-l="zh">典型值，在 2 × AMD EPYC 裸金属机上实测，不是论文中的数据。详见下表。</span><span data-l="en">Typical values measured on 2 × AMD EPYC bare metal, not figures from the paper. Details below.</span></figcaption>
+      </figure>
+    </div>
+  </div>
+
+  <section id="numbers">
+    <div class="wrap">
+      <div class="head">
+        <p class="label"><span data-l="zh">实测数据</span><span data-l="en">Measured</span></p>
+        <h2><span data-l="zh">每个数字都可以复现</span><span data-l="en">Every number can be reproduced</span></h2>
+        <p><span data-l="zh">测量方法和原始记录写在仓库的 docs/SPEC.md 里，基准命令随代码一起提供。</span><span data-l="en">How each figure was measured is recorded in docs/SPEC.md, and the benchmark commands ship with the code.</span></p>
+      </div>
+      <div class="sheet">
+        <table>
+          <thead>
+            <tr>
+              <th><span data-l="zh">参数</span><span data-l="en">Parameter</span></th>
+              <th><span data-l="zh">条件</span><span data-l="en">Conditions</span></th>
+              <th class="v"><span data-l="zh">典型值</span><span data-l="en">Typ.</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr class="grp"><td colspan="3">microVM · Firecracker</td></tr>
+            <tr><td class="p"><span data-l="zh">冷启动</span><span data-l="en">Cold start</span></td><td class="c"><span data-l="zh">到第一条命令可以执行</span><span data-l="en">until the first command can run</span></td><td class="v">0.1 s</td></tr>
+            <tr><td class="p"><span data-l="zh">从内存快照创建</span><span data-l="en">Create from memory snapshot</span></td><td class="c"><span data-l="zh">快照在本节点</span><span data-l="en">snapshot on the same node</span></td><td class="v">55 ms</td></tr>
+            <tr><td class="p"><span data-l="zh">暂停后恢复</span><span data-l="en">Resume after pause</span></td><td class="c"><span data-l="zh">暂停时内存已全部释放</span><span data-l="en">memory fully released while paused</span></td><td class="v">50 ms</td></tr>
+            <tr><td class="p"><span data-l="zh">跨节点 fork 8 个副本</span><span data-l="en">Fork 8 copies to another node</span></td><td class="c"><span data-l="zh">直接从源节点拉取快照</span><span data-l="en">snapshot pulled from the source node</span></td><td class="v">0.58 s</td></tr>
+            <tr><td class="p"><span data-l="zh">暂停的 VM 换节点恢复</span><span data-l="en">Resume a paused VM on another node</span></td><td class="c">512 MB</td><td class="v">0.35 s</td></tr>
+            <tr><td class="p"><span data-l="zh">16 个闲置 VM 的宿主机内存</span><span data-l="en">Host memory of 16 idle VMs</span></td><td class="c"><span data-l="zh">开启 pmem、balloon、DAMON，相对不开启</span><span data-l="en">pmem, balloon and DAMON on, vs. off</span></td><td class="v">31 %</td></tr>
+            <tr class="grp"><td colspan="3"><span data-l="zh">规模</span><span data-l="en">Scale</span></td></tr>
+            <tr><td class="p"><span data-l="zh">一次突发创建 microVM</span><span data-l="en">microVMs in one burst</span></td><td class="c"><span data-l="zh">单节点 384 线程，5120 个</span><span data-l="en">5120 on one 384-thread node</span></td><td class="v">37 s</td></tr>
+            <tr><td class="p"><span data-l="zh">一次突发创建容器</span><span data-l="en">Containers in one burst</span></td><td class="c"><span data-l="zh">两节点，8192 个</span><span data-l="en">8192 on two nodes</span></td><td class="v"><span data-l="zh">0 失败</span><span data-l="en">0 failed</span></td></tr>
+            <tr class="grp"><td colspan="3"><span data-l="zh">其他后端</span><span data-l="en">Other backends</span></td></tr>
+            <tr><td class="p">FnCall</td><td class="c"><span data-l="zh">预建池，经 API 创建</span><span data-l="en">pre-built pool, created through the API</span></td><td class="v">2 ms</td></tr>
+            <tr><td class="p"><span data-l="zh">QEMU 完整 VM 启动</span><span data-l="en">QEMU full VM boot</span></td><td class="c"><span data-l="zh">镜像自己的 init 作为 PID 1</span><span data-l="en">the image's own init as PID 1</span></td><td class="v">0.23 s</td></tr>
+            <tr><td class="p"><span data-l="zh">E2B code interpreter</span><span data-l="en">E2B code interpreter</span></td><td class="c"><span data-l="zh">Sandbox.create() / 第一次 run_code</span><span data-l="en">Sandbox.create() / first run_code</span></td><td class="v">280 / 45 ms</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="fine"><span data-l="zh">测试机器：2 × AMD EPYC 9Y24（384 线程），1.5 TB 内存，NVMe RAID0，Ubuntu 24.04，内核 6.8。数字随硬件和存储变化。</span><span data-l="en">Test machines: 2 × AMD EPYC 9Y24 (384 threads), 1.5 TB RAM, NVMe RAID0, Ubuntu 24.04, kernel 6.8. Results vary with hardware and storage.</span></p>
+    </div>
+  </section>
+
+  <section id="features">
+    <div class="wrap">
+      <div class="head">
+        <p class="label"><span data-l="zh">功能</span><span data-l="en">Features</span></p>
+        <h2><span data-l="zh">为强化学习训练设计</span><span data-l="en">Built for RL training</span></h2>
+        <p><span data-l="zh">标注「论文」的来自 DSec 论文的设计；标注「新增」的是我们自己的选择。docs/SPEC.md 逐条注明了出处。</span><span data-l="en">"Paper" marks a design taken from the DSec paper; "Added" marks our own choices. docs/SPEC.md cites the source of each one.</span></p>
+      </div>
+      <div class="feat">
+        <div>
+          <h3><span data-l="zh">四种后端</span><span data-l="en">Four backends</span></h3>
+          <p><span data-l="zh">容器、FnCall、Firecracker microVM、QEMU 完整 VM（支持 PCI 直通）。同一套 API 和 SDK。</span><span data-l="en">Container, FnCall, Firecracker microVM and QEMU full VM with PCI passthrough, behind one API and SDK.</span></p>
+          <span class="src"><span data-l="zh">论文 · microVM 为主力：新增</span><span data-l="en">Paper · microVM as the main backend: added</span></span>
+        </div>
+        <div>
+          <h3><span data-l="zh">fork 与内存快照</span><span data-l="en">Fork and memory snapshots</span></h3>
+          <p><span data-l="zh"><code>fork(count=N)</code> 连同内存复制正在运行的 VM。同节点副本共享内存页，跨节点直接从源节点拉取。</span><span data-l="en"><code>fork(count=N)</code> clones a running VM with its memory. Copies on one node share pages; other nodes pull from the source node.</span></p>
+          <span class="src"><span data-l="zh">新增</span><span data-l="en">Added</span></span>
+        </div>
+        <div>
+          <h3><span data-l="zh">按任务暂停</span><span data-l="en">Pause a whole task</span></h3>
+          <p><span data-l="zh">训练被抢占时整批暂停，内存换出或释放；之后对暂停的 sandbox 发请求会自动恢复。</span><span data-l="en">Pause every sandbox of a task when training is preempted, releasing memory. The next call to a paused sandbox resumes it.</span></p>
+          <span class="src"><span data-l="zh">论文</span><span data-l="en">Paper</span></span>
+        </div>
+        <div>
+          <h3><span data-l="zh">分层镜像</span><span data-l="en">Layered images</span></h3>
+          <p><span data-l="zh">从任意 OCI 仓库导入，组合镜像不复制数据，<code>pack_diff</code> 把环境存成新镜像。镜像库放在 NFS、CephFS 或 JuiceFS 上。</span><span data-l="en">Import from any OCI registry, compose layers without copying, and save an environment with <code>pack_diff</code>. The store lives on NFS, CephFS or JuiceFS.</span></p>
+          <span class="src"><span data-l="zh">论文 · 共享文件系统：新增</span><span data-l="en">Paper · shared file system: added</span></span>
+        </div>
+        <div>
+          <h3><span data-l="zh">默认拒绝的网络</span><span data-l="en">Default-deny network</span></h3>
+          <p><span data-l="zh">每个 sandbox 按域名、网段和端口放行，运行中可以修改。由 nftables 和 DNS 代理执行。</span><span data-l="en">Allow by domain, CIDR and port per sandbox, changeable while it runs. Enforced with nftables and a DNS proxy.</span></p>
+          <span class="src"><span data-l="zh">论文 · nftables 实现：新增</span><span data-l="en">Paper · nftables enforcement: added</span></span>
+        </div>
+        <div>
+          <h3><span data-l="zh">隔离</span><span data-l="en">Isolation</span></h3>
+          <p><span data-l="zh">每个 VM 独立 uid 的 jailer、防 SMT 侧信道的核心调度、seccomp、只读代理、按会话的用户。</span><span data-l="en">A jailer with a uid per VM, core scheduling against SMT side channels, seccomp, read-only agents, per-session users.</span></p>
+          <span class="src"><span data-l="zh">论文</span><span data-l="en">Paper</span></span>
+        </div>
+        <div>
+          <h3><span data-l="zh">项目与配额</span><span data-l="en">Projects and quotas</span></h3>
+          <p><span data-l="zh">多级项目、层级配额、有界委托；IAM 用 Raft 多副本；组件之间 mTLS，短期可吊销的 token，审计日志。</span><span data-l="en">Nested projects, hierarchical quotas, bounded delegation. Raft-replicated IAM, mTLS between components, short-lived revocable tokens, audit logs.</span></p>
+          <span class="src"><span data-l="zh">论文</span><span data-l="en">Paper</span></span>
+        </div>
+        <div>
+          <h3><span data-l="zh">兼容 E2B</span><span data-l="en">E2B compatible</span></h3>
+          <p><span data-l="zh">按 E2B SDK 写的程序不改代码就能运行：命令、文件、PTY、端口、fork、快照、code interpreter。官方 Python 和 JS SDK 的验收检查全部通过。</span><span data-l="en">Programs written for the E2B SDK run unchanged: commands, files, PTY, ports, fork, snapshots, code interpreter. E2B's Python and JS SDK checks all pass.</span></p>
+          <span class="src"><span data-l="zh">新增</span><span data-l="en">Added</span></span>
+        </div>
+        <div>
+          <h3><span data-l="zh">运维</span><span data-l="en">Operations</span></h3>
+          <p><span data-l="zh">fleet 分批滚动升级，失败自动回退；离线安装包；Prometheus 指标和告警。升级任何组件都不影响运行中的 sandbox。</span><span data-l="en">Staged fleet rollouts with automatic rollback, an offline bundle, Prometheus metrics and alerts. Upgrading any component leaves running sandboxes alone.</span></p>
+          <span class="src"><span data-l="zh">新增</span><span data-l="en">Added</span></span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="arch">
+    <div class="wrap">
+      <div class="head">
+        <p class="label"><span data-l="zh">架构</span><span data-l="en">Architecture</span></p>
+        <h2><span data-l="zh">无状态入口，节点做最终准入</span><span data-l="en">A stateless front door; each node admits its own work</span></h2>
+        <p><span data-l="zh">apiserver 按 watcher 汇总的状态用 power-of-k 选节点，节点上的 edge 根据实际资源决定接不接。任何一个组件重启，运行中的 sandbox 都不受影响。</span><span data-l="en">The apiserver picks nodes with power-of-k over the state the watcher aggregates, and the edge on each node decides from real usage. Any component can restart without touching running sandboxes.</span></p>
+      </div>
+      <div class="diagram">
+        <svg viewBox="0 0 880 410" role="img" aria-labelledby="arch-title">
+          <title id="arch-title">OpenDsec components: clients, E2B gateway, apiserver, IAM, watcher, edges and the shared image store</title>
+          <defs>
+            <marker id="ar" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path class="ah" d="M0,0 L8,4 L0,8 z"/></marker>
+            <marker id="am" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path class="ah m" d="M0,0 L8,4 L0,8 z"/></marker>
+          </defs>
+
+          <!-- clients -->
+          <rect class="box" x="20" y="120" width="160" height="62" rx="4"/>
+          <text class="t1" x="34" y="146">Python SDK</text>
+          <text class="t2" x="34" y="166">opendsecctl</text>
+          <rect class="box" x="20" y="250" width="160" height="62" rx="4"/>
+          <text class="t1" x="34" y="276">E2B SDK</text>
+          <text class="t2" x="34" y="296">Python · JS</text>
+          <rect class="box" x="210" y="250" width="120" height="62" rx="4"/>
+          <text class="t1" x="224" y="276" data-l="zh">E2B 网关</text>
+          <text class="t1" x="224" y="276" data-l="en">E2B gateway</text>
+          <text class="t2" x="224" y="296">:7400</text>
+
+          <!-- control plane -->
+          <rect class="box acc" x="370" y="150" width="170" height="80" rx="4"/>
+          <text class="t1" x="386" y="178">apiserver ×N</text>
+          <text class="t2" x="386" y="198" data-l="zh">无状态 · 调度</text>
+          <text class="t2" x="386" y="198" data-l="en">stateless · placement</text>
+          <text class="t2" x="386" y="216">power-of-k</text>
+
+          <rect class="box" x="370" y="20" width="170" height="70" rx="4"/>
+          <text class="t1" x="386" y="46">IAM · Raft ×3</text>
+          <text class="t2" x="386" y="66" data-l="zh">项目 · 配额 · token</text>
+          <text class="t2" x="386" y="66" data-l="en">projects · quota · tokens</text>
+
+          <rect class="box" x="620" y="20" width="240" height="70" rx="4"/>
+          <text class="t1" x="636" y="46">watcher ×N</text>
+          <text class="t2" x="636" y="66" data-l="zh">探测 edge · 汇总调度状态</text>
+          <text class="t2" x="636" y="66" data-l="en">probes edges · scheduling state</text>
+
+          <!-- edges -->
+          <rect class="box" x="620" y="120" width="240" height="56" rx="4"/>
+          <text class="t1" x="636" y="144">edge</text>
+          <text class="t2" x="636" y="163">microVM · container · FnCall</text>
+          <rect class="box" x="620" y="188" width="240" height="56" rx="4"/>
+          <text class="t1" x="636" y="212">edge</text>
+          <text class="t2" x="636" y="231">microVM · container · full VM</text>
+          <rect class="box" x="620" y="256" width="240" height="56" rx="4"/>
+          <text class="t1" x="636" y="280">edge</text>
+          <text class="t2" x="636" y="299" data-l="zh">每个 sandbox 内：aether · chronus</text>
+          <text class="t2" x="636" y="299" data-l="en">inside each sandbox: aether · chronus</text>
+
+          <!-- store -->
+          <rect class="store" x="370" y="346" width="490" height="46" rx="4"/>
+          <text class="t1" x="386" y="374" data-l="zh">共享镜像库</text>
+          <text class="t1" x="386" y="374" data-l="en">Shared image store</text>
+          <text class="t2" x="500" y="374">NFS 4.2 · CephFS · JuiceFS</text>
+
+          <!-- lines -->
+          <path class="ln" d="M180 165 H366" marker-end="url(#ar)"/>
+          <path class="ln" d="M180 281 H206" marker-end="url(#ar)"/>
+          <path class="ln" d="M330 281 H350 V205 H366" marker-end="url(#ar)"/>
+          <path class="ln" d="M455 150 V94" marker-end="url(#ar)"/>
+          <path class="ln" d="M540 170 H580 V55 H616" marker-end="url(#ar)"/>
+          <path class="ln" d="M540 190 H600 V148 H616" marker-end="url(#ar)"/>
+          <path class="ln" d="M600 190 V216 H616" marker-end="url(#ar)"/>
+          <path class="ln" d="M600 216 V284 H616" marker-end="url(#ar)"/>
+          <path class="ln dash" d="M860 90 V110" marker-end="url(#am)"/>
+          <path class="ln dash" d="M740 312 V342" marker-end="url(#am)"/>
+          <path class="ln dash" d="M455 230 V342" marker-end="url(#am)"/>
+        </svg>
+      </div>
+      <div class="legend">
+        <span data-l="zh">实线：请求　虚线：健康探测和镜像读取</span>
+        <span data-l="en">Solid: requests · Dashed: health probes and image reads</span>
+      </div>
+    </div>
+  </section>
+
+  <section id="start">
+    <div class="wrap">
+      <div class="head">
+        <p class="label"><span data-l="zh">快速开始</span><span data-l="en">Get started</span></p>
+        <h2><span data-l="zh">一台 Linux 机器，几分钟装好</span><span data-l="en">One Linux machine, a few minutes</span></h2>
+        <p><span data-l="zh">需要 x86_64、root、systemd、cgroup v2，以及 Go 1.27+ 和 make。有 /dev/kvm 时同时装好 microVM，没有就只装容器。已在全新的 Ubuntu 24.04 上验证。</span><span data-l="en">Needs x86_64, root, systemd, cgroup v2, Go 1.27+ and make. With /dev/kvm you get microVMs too; without it, containers only. Verified on fresh Ubuntu 24.04.</span></p>
+      </div>
+      <div class="split">
+        <div class="steps">
+          <div class="step"><div class="n">1</div><div class="b">
+            <p><span data-l="zh">取代码并安装。脚本会下载 guest 内核，装好全部服务和 E2B 网关，并各跑一个容器和 microVM 做检查。</span><span data-l="en">Clone and install. The script downloads the guest kernel, installs every service and the E2B gateway, then runs one container and one microVM as a check.</span></p>
+            <pre><code>git clone https://github.com/kernflux/opendsec
+cd opendsec
+sudo deploy/quickstart.sh</code></pre>
+          </div></div>
+          <div class="step"><div class="n">2</div><div class="b">
+            <p><span data-l="zh">装 Python SDK，运行示例。</span><span data-l="en">Install the Python SDK and run the example.</span></p>
+            <pre><code>. /root/opendsec-ops/demo.env
+python3 -m venv .venv
+.venv/bin/pip install ./sdk/python
+.venv/bin/python sdk/python/examples/quickstart.py</code></pre>
+          </div></div>
+          <div class="step"><div class="n">3</div><div class="b">
+            <p><span data-l="zh">不用了就卸载，机器恢复原样。</span><span data-l="en">Remove everything when you are done.</span></p>
+            <pre><code>sudo deploy/quickstart.sh --uninstall</code></pre>
+          </div></div>
+        </div>
+
+        <div class="tabs">
+          <div class="tablist" role="tablist" aria-label="Examples">
+            <button type="button" role="tab" id="tab-py" aria-selected="true" aria-controls="p-py">Python SDK</button>
+            <button type="button" role="tab" id="tab-e2b" aria-selected="false" aria-controls="p-e2b" tabindex="-1">E2B SDK</button>
+            <button type="button" role="tab" id="tab-cli" aria-selected="false" aria-controls="p-cli" tabindex="-1">CLI</button>
+          </div>
+          <div class="panel" role="tabpanel" id="p-py" aria-labelledby="tab-py">
+            <button type="button" class="copy" data-copy="code-py">copy</button>
+<pre class="code" id="code-py"><span class="k">from</span> opendsec <span class="k">import</span> DSecClient, DSecContainerRunArgs
+
+<span class="k">async with</span> DSecClient() <span class="k">as</span> client:
+    sb = <span class="k">await</span> client.run_container(DSecContainerRunArgs(
+        container_image=<span class="k">"root/py:3.12"</span>,
+        memory_limit_mb=4096, cpu_cores_limit=4,
+        network_rules={<span class="k">"pypi"</span>: True}, task_id=<span class="k">"job-1"</span>))
+    r = <span class="k">await</span> sb.run_shell(<span class="k">"pip install pytest &amp;&amp; pytest -q"</span>)
+
+    forks = <span class="k">await</span> sb.fork(count=8)   <span class="c"># 8 copies of this exact state</span>
+    <span class="k">await</span> client.pause_task(<span class="k">"job-1"</span>)  <span class="c"># preempted: pause the batch</span></pre>
+          </div>
+          <div class="panel" role="tabpanel" id="p-e2b" aria-labelledby="tab-e2b" hidden>
+            <button type="button" class="copy" data-copy="code-e2b">copy</button>
+<pre class="code" id="code-e2b"><span class="c"># point the E2B SDK at your gateway; nothing else changes</span>
+export E2B_API_URL=http://gateway:7400
+export E2B_SANDBOX_URL=http://gateway:7400
+export E2B_API_KEY=&lt;OpenDsec token&gt;
+
+<span class="k">from</span> e2b <span class="k">import</span> Sandbox
+
+sbx = Sandbox.create()
+print(sbx.commands.run(<span class="k">"uname -r"</span>).stdout)
+snap = sbx.create_snapshot()        <span class="c"># microVM: memory included</span>
+copy = Sandbox.create(snap.snapshot_id)</pre>
+          </div>
+          <div class="panel" role="tabpanel" id="p-cli" aria-labelledby="tab-cli" hidden>
+            <button type="button" class="copy" data-copy="code-cli">copy</button>
+<pre class="code" id="code-cli"><span class="c"># import an image into the shared store</span>
+opendsecctl image import docker://python:3.12-slim \
+    -as root/rl/python:3.12 -store /mnt/opendsec-images
+
+<span class="c"># 500 sandboxes for one task, then pause them together</span>
+opendsecctl sandbox create -backend microvm \
+    -image root/rl/python:3.12 -count 500 -task job-1
+opendsecctl task pause job-1
+
+opendsecctl exec "$ID" python3 -c 'print(6*7)'</pre>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="deploy">
+    <div class="wrap">
+      <div class="head">
+        <p class="label"><span data-l="zh">部署方式</span><span data-l="en">Deployment</span></p>
+        <h2><span data-l="zh">从一台机器到一个集群</span><span data-l="en">From one machine to a cluster</span></h2>
+      </div>
+      <div class="opts">
+        <div class="opt">
+          <span class="tag ok"><span data-l="zh">已验证</span><span data-l="en">Verified</span></span>
+          <h3><span data-l="zh">单机</span><span data-l="en">Single machine</span></h3>
+          <p><span data-l="zh"><code>quickstart.sh</code> 一条命令装好，适合试用和小规模使用。</span><span data-l="en">One <code>quickstart.sh</code> run. For trying it out and small workloads.</span></p>
+          <a href="https://github.com/Kernflux/opendsec#readme">README</a>
+        </div>
+        <div class="opt">
+          <span class="tag ok"><span data-l="zh">已验证</span><span data-l="en">Verified</span></span>
+          <h3><span data-l="zh">多机集群</span><span data-l="en">Cluster</span></h3>
+          <p><span data-l="zh">3 台管控节点加任意数量的计算节点，共享存储和四层负载均衡。fleet 负责滚动升级和加机器。</span><span data-l="en">Three control nodes plus any number of compute nodes, shared storage and an L4 load balancer. fleet handles rollouts and new nodes.</span></p>
+          <a href="https://github.com/Kernflux/opendsec/blob/main/docs/OPERATIONS.md">OPERATIONS.md</a>
+        </div>
+        <div class="opt">
+          <span class="tag ok"><span data-l="zh">已验证</span><span data-l="en">Verified</span></span>
+          <h3><span data-l="zh">离线环境</span><span data-l="en">Air-gapped</span></h3>
+          <p><span data-l="zh">在能上网的机器上做离线包，目标机器不联网也能装，单机和集群都支持。</span><span data-l="en">Build a bundle on a connected machine and install with no internet access, single node or cluster.</span></p>
+          <a href="https://github.com/Kernflux/opendsec/blob/main/deploy/offline/README.md">deploy/offline</a>
+        </div>
+        <div class="opt">
+          <span class="tag"><span data-l="zh">实验</span><span data-l="en">Experimental</span></span>
+          <h3>Kubernetes</h3>
+          <p><span data-l="zh">提供清单文件，支持容器 sandbox。多节点还没有充分验证。</span><span data-l="en">Manifests for container sandboxes. Multi-node is not fully verified yet.</span></p>
+          <a href="https://github.com/Kernflux/opendsec/blob/main/deploy/README.md">deploy/README.md</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="license">
+    <div class="wrap">
+      <div class="head">
+        <p class="label"><span data-l="zh">许可</span><span data-l="en">License</span></p>
+        <h2><span data-l="zh">开源版和商业授权</span><span data-l="en">Open source and commercial licensing</span></h2>
+      </div>
+      <div class="ed">
+        <div>
+          <h3><span data-l="zh">开源版</span><span data-l="en">Open source</span></h3>
+          <p class="lic">AGPL-3.0 · Apache-2.0</p>
+          <ul>
+            <li><span data-l="zh">服务端和工具：AGPL-3.0</span><span data-l="en">Servers and tools: AGPL-3.0</span></li>
+            <li><span data-l="zh">Python SDK、Go 客户端、API 定义：Apache-2.0，调用 OpenDsec 的程序不受 AGPL 约束</span><span data-l="en">Python SDK, Go client and API definitions: Apache-2.0, so programs that call OpenDsec are not bound by the AGPL</span></li>
+            <li><span data-l="zh">贡献代码需要签署 CLA</span><span data-l="en">Contributions need a signed CLA</span></li>
+          </ul>
+          <a href="https://github.com/Kernflux/opendsec/blob/main/NOTICE">NOTICE</a>
+        </div>
+        <div>
+          <h3><span data-l="zh">商业授权与企业版</span><span data-l="en">Commercial license and enterprise edition</span></h3>
+          <p class="lic"><span data-l="zh">私有化部署 · 技术支持</span><span data-l="en">Private deployment · support</span></p>
+          <ul>
+            <li><span data-l="zh">修改后不开源，或作为服务对外提供但不公开修改</span><span data-l="en">Keep modifications closed, or offer OpenDsec as a service without publishing changes</span></li>
+            <li><span data-l="zh">企业版：用企业身份提供方（OIDC）单点登录</span><span data-l="en">Enterprise edition: single sign-on with your identity provider (OIDC)</span></li>
+            <li><span data-l="zh">企业版：审计日志实时送往 SIEM，哈希链防篡改</span><span data-l="en">Enterprise edition: audit logs streamed to your SIEM, hash-chained against tampering</span></li>
+          </ul>
+          <div class="mail">
+            <code id="mail">zhyb1528@aliyun.com</code>
+            <button type="button" id="copy-mail" data-copy="mail"><span data-l="zh">复制邮箱</span><span data-l="en">Copy address</span></button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <p><span data-l="zh">OpenDsec 实现的是论文 <i>DeepSeek Elastic Compute (DSec): A Sandbox Infrastructure for Effective Agentic Training at Scale</i>（arXiv:2609.22978）描述的系统。感谢论文作者公开了如此详细的设计。在研究中用到 OpenDsec 时，请引用这篇论文。</span><span data-l="en">OpenDsec implements the system described in <i>DeepSeek Elastic Compute (DSec): A Sandbox Infrastructure for Effective Agentic Training at Scale</i> (arXiv:2609.22978). We thank its authors for publishing the design in such detail. If you use OpenDsec in research, please cite the paper.</span></p>
+    <p><span data-l="zh">「DeepSeek」和「DSec」归各自的所有者所有，这里使用只为指明所实现的论文。本项目与 DeepSeek 没有关系。</span><span data-l="en">"DeepSeek" and "DSec" belong to their owners and are used here only to name the paper. This project is not affiliated with DeepSeek.</span></p>
+    <div class="row">
+      <span>© 2026 Yibo Zhou · Kernflux</span>
+      <a href="https://github.com/Kernflux/opendsec">GitHub</a>
+      <a href="https://github.com/Kernflux/opendsec/blob/main/CHANGELOG.md">CHANGELOG</a>
+      <a href="https://github.com/Kernflux/opendsec/blob/main/docs/E2B.md"><span data-l="zh">从 E2B 迁移</span><span data-l="en">Migrating from E2B</span></a>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  var root = document.documentElement;
+  function setLang(l) {
+    root.setAttribute('data-lang', l);
+    root.lang = l === 'zh' ? 'zh-CN' : 'en';
+    document.querySelectorAll('[data-set-lang]').forEach(function (b) {
+      b.setAttribute('aria-pressed', String(b.getAttribute('data-set-lang') === l));
+    });
+    try { localStorage.setItem('opendsec-lang', l); } catch (e) {}
+  }
+  var start = 'zh';
+  var h = location.hash.replace('#', '');
+  if (h === 'en' || h === 'zh') start = h;
+  else {
+    var saved = null;
+    try { saved = localStorage.getItem('opendsec-lang'); } catch (e) {}
+    if (saved === 'en' || saved === 'zh') start = saved;
+    else if (!/^zh/i.test(navigator.language || '')) start = 'en';
+  }
+  setLang(start);
+  document.querySelectorAll('[data-set-lang]').forEach(function (b) {
+    b.addEventListener('click', function () { setLang(b.getAttribute('data-set-lang')); });
+  });
+
+  var tabs = Array.prototype.slice.call(document.querySelectorAll('[role="tab"]'));
+  function select(t) {
+    tabs.forEach(function (x) {
+      var on = x === t;
+      x.setAttribute('aria-selected', String(on));
+      x.tabIndex = on ? 0 : -1;
+      document.getElementById(x.getAttribute('aria-controls')).hidden = !on;
+    });
+  }
+  tabs.forEach(function (t, i) {
+    t.addEventListener('click', function () { select(t); });
+    t.addEventListener('keydown', function (e) {
+      var d = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
+      if (!d) return;
+      var n = tabs[(i + d + tabs.length) % tabs.length];
+      select(n); n.focus();
+    });
+  });
+
+  document.querySelectorAll('[data-copy]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var el = document.getElementById(b.getAttribute('data-copy'));
+      var text = el.textContent;
+      var label = b.innerHTML;
+      function done(msg) { b.textContent = msg; setTimeout(function () { b.innerHTML = label; }, 1400); }
+      function fallback() {
+        var r = document.createRange(); r.selectNodeContents(el);
+        var s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
+        done(root.lang === 'en' ? 'selected' : '已选中');
+      }
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(function () { done(root.lang === 'en' ? 'copied' : '已复制'); }, fallback);
+      } else fallback();
+    });
+  });
+})();
+</script>
+</body>
+</html>

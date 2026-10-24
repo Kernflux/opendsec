@@ -18,7 +18,7 @@ for be in ${backends//,/ }; do
 		bad=1
 		continue
 	fi
-	got=$("$ctl" exec "$id" python3 -c "'print(6*7)'" 2>&1)
+	got=$("$ctl" exec "$id" python3 -c 'print(6*7)' 2>&1)
 	"$ctl" sandbox stop "$id" >/dev/null 2>&1
 	took=$(awk -v a="$t0" -v b="$(date +%s%N)" 'BEGIN {printf "%.2f", (b - a) / 1e9}')
 	if [ "$got" = 42 ]; then
