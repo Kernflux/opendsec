@@ -100,7 +100,7 @@ async def main():
 asyncio.run(main())
 ```
 
-The same `demo.env` points E2B's SDKs at the machine's E2B gateway (`pip install e2b`, then [docs/E2B.md](docs/E2B.md)). Admin commands use `. /root/opendsec-ops/env`, then `opendsecctl status` and `opendsecctl --help`. To remove everything, run `deploy/quickstart.sh --uninstall` as root.
+The same `demo.env` points E2B's SDKs at the machine's E2B gateway (`pip install e2b`, then [docs/en/E2B.md](docs/en/E2B.md)). Admin commands use `. /root/opendsec-ops/env`, then `opendsecctl status` and `opendsecctl --help`. To remove everything, run `deploy/quickstart.sh --uninstall` as root.
 
 **Machines without internet access**: build an offline bundle on a machine that has it (`deploy/offline/build-bundle.sh`) and install from it with `./install.sh`, for one machine or a cluster: see [deploy/offline/README.md](deploy/offline/README.md).
 
@@ -244,7 +244,7 @@ Open only TCP 7100 (the load balancer) to callers. Keep every other port listed 
 | Maintain a node | `opendsecctl fleet node cordon <name>` … `uncordon`; `node evacuate` waits for its sandboxes to end |
 | Back up IAM | a daily timer (03:00) on each IAM node writes `/var/backups/opendsec`; `opendsecops backup` takes one into the ops machine |
 
-Before upgrading, read [CHANGELOG.md](CHANGELOG.md) and [docs/VERSIONING.md](docs/VERSIONING.md) (what stays compatible, supported upgrade paths, rollbacks). The service level objectives, how they are measured and the Prometheus rules behind them are in [docs/SLO.md](docs/SLO.md) (Chinese). [docs/OPERATIONS.md](docs/OPERATIONS.md) (Chinese) covers the rest: certificate renewal and CA rotation, replacing an IAM replica, disaster recovery, alerts and what to check for each. Component and configuration details are in [deploy/README.md](deploy/README.md). The Kubernetes manifests in `deploy/k8s` are experimental.
+Before upgrading, read [CHANGELOG.md](CHANGELOG.md) and [docs/en/VERSIONING.md](docs/en/VERSIONING.md) (what stays compatible, supported upgrade paths, rollbacks). The service level objectives, how they are measured and the Prometheus rules behind them are in [docs/SLO.md](docs/SLO.md) (Chinese). [docs/OPERATIONS.md](docs/OPERATIONS.md) (Chinese) covers the rest: certificate renewal and CA rotation, replacing an IAM replica, disaster recovery, alerts and what to check for each. Component and configuration details are in [deploy/README.md](deploy/README.md). The Kubernetes manifests in `deploy/k8s` are experimental.
 
 ### Binaries
 
@@ -271,7 +271,7 @@ python -c 'from e2b import Sandbox; print(Sandbox.create().commands.run("echo hi
 - Supported: sandboxes (create, info, list, kill, timeout, pause, connect), commands (output, exit codes, background, stdin, signals, envs, cwd), PTYs, files (read, write, list, mkdir, rename, remove), servers on other ports of a sandbox (HTTP, streamed responses, WebSocket), which E2B's code interpreter uses, fork and snapshots (`fork()`, `create_snapshot()`, `Sandbox.create(snapshot_id)`; with memory on microVMs), autoPause, and network options (`allow_internet_access`, `allow_out`, `deny_out` of all traffic, `update_network()`). E2B's Python (sync and async) and JS/TS SDKs pass the gateway's acceptance check.
 - E2B's code interpreter (`e2b_code_interpreter`) works with a template built by `deploy/e2b/build-code-interpreter.py` (Python kernel; a memory snapshot, so `Sandbox.create()` takes about 280 ms and the first `run_code` about 45 ms).
 - Not yet: watching directories, signed file URLs, unauthenticated (browser) access to sandbox ports, building templates.
-- **Moving from E2B**: [docs/E2B.md](docs/E2B.md) lists what works, what differs, and timings.
+- **Moving from E2B**: [docs/en/E2B.md](docs/en/E2B.md) lists what works, what differs, and timings.
 
 ## Develop
 

@@ -273,7 +273,7 @@ OpenDsec is running on this machine.
            python3 -m venv .venv && .venv/bin/pip install $sdk   (Ubuntu/Debian: $venv)
            .venv/bin/python sdk/python/examples/quickstart.py
   E2B:     the same demo.env sets E2B_API_URL, E2B_SANDBOX_URL and E2B_API_KEY:
-           .venv/bin/pip install $e2b, then E2B's SDK runs here (docs/E2B.md)
+           .venv/bin/pip install $e2b, then E2B's SDK runs here (docs/en/E2B.md)
   status:  $OPSCMD status
   remove:  $0 --uninstall
 The ops directory $OPS holds the admin token and the CA private key: keep it private.

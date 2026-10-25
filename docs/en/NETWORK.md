@@ -77,7 +77,7 @@ In the cluster config's `network` section ([configuration reference](CONFIGURATI
 - **Default rules** apply to every sandbox, under its own `network_rules`: for the same key, the sandbox's value wins, so callers can take a default back with `false`.
   - For internet access by default: `"default_rules": {"*": true}`.
   - The single-node install (quickstart) has no default rules: sandboxes reach nothing by default.
-  - Sandboxes created through the E2B gateway get internet access by default, as on E2B, unless the request turns it off ([Migrating from E2B](../E2B.md)).
+  - Sandboxes created through the E2B gateway get internet access by default, as on E2B, unless the request turns it off ([Migrating from E2B](E2B.md)).
 - **Upstream DNS**: the resolvers the edges' DNS proxies query; default: the host's `/etc/resolv.conf`. Set them when the internal network has its own DNS.
 
 ## 3. Enforcement

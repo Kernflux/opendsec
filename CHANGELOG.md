@@ -1,7 +1,7 @@
 # Changelog
 
 What changed in each release, for operators and callers. The compatibility
-rules behind "Breaking" are in [docs/VERSIONING.md](docs/VERSIONING.md).
+rules behind "Breaking" are in [docs/en/VERSIONING.md](docs/en/VERSIONING.md).
 
 ## 0.11.0 (unreleased)
 

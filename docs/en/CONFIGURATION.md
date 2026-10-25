@@ -302,7 +302,7 @@ Template fields:
 | `ready_port` | — | Wait for this port to listen before handing the sandbox out |
 | `ready_timeout_s` | 60 | Longest wait |
 
-More in [Migrating from E2B](../E2B.md).
+More in [Migrating from E2B](E2B.md).
 
 ## Command-line flags of the components
 

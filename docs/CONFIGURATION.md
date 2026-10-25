@@ -302,7 +302,7 @@ template 的字段：
 | `ready_port` | — | 交给调用方之前等这个端口开始监听 |
 | `ready_timeout_s` | 60 | 最多等多久 |
 
-详见[从 E2B 迁移](https://kernflux.github.io/en/docs/e2b)（英文）。
+详见[从 E2B 迁移](E2B.md)。
 
 ## 各组件的启动参数
 

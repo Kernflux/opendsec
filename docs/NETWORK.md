@@ -77,7 +77,7 @@ opendsecctl sandbox create -backend microvm -image root/py:3.12 -net '!*'
 - **默认规则**对每个 sandbox 生效，sandbox 自己的 `network_rules` 叠在上面：同一个键以 sandbox 的为准。调用方可以用 `false` 收回默认规则里的某一项。
   - 让 sandbox 默认能访问公网：`"default_rules": {"*": true}`。
   - 单机安装（quickstart）的集群没有默认规则：sandbox 默认不能访问任何地方。
-  - E2B 网关创建的 sandbox 与 E2B 一致，默认放行公网，除非请求里关闭（见[从 E2B 迁移](https://kernflux.github.io/en/docs/e2b)）。
+  - E2B 网关创建的 sandbox 与 E2B 一致，默认放行公网，除非请求里关闭（见[从 E2B 迁移](E2B.md)）。
 - **上游 DNS**：edge 上的 DNS 代理向这些服务器查询，默认用宿主机的 `/etc/resolv.conf`。内网有私有 DNS 时在这里指定。
 
 ## 3. 生效方式
