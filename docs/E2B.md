@@ -87,7 +87,7 @@ print(sbx.run_code("6 * 7").text)               # 42
 | 第一次 `run_code` | 约 40 ms |
 | `fork(count=2)` | 约 100–150 ms |
 | `create_snapshot()` | 约 40–70 ms |
-| `Sandbox.create(snapshot_id)` | 约 65–85 ms |
+| `Sandbox.create(snapshot_id)` | 约 65–85 ms；拍完快照马上创建的第一个约 0.6 s（要等快照在后台发布到镜像库） |
 
 ## 管理员
 
