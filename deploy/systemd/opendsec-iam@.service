@@ -9,6 +9,8 @@ User=opendsec
 Group=opendsec
 # A replacement replica on a new node starts once with -join (see
 # docs/OPERATIONS.md); OPENDSEC_IAM_FLAGS in /etc/opendsec/iam.env carries it.
+# Empty by default, so systemd does not warn that it is unset.
+Environment=OPENDSEC_IAM_FLAGS=
 EnvironmentFile=-/etc/opendsec/iam.env
 ExecStart=/usr/local/bin/opendsec-iam -config /etc/opendsec/opendsec.json -replica %i -metrics :9461 $OPENDSEC_IAM_FLAGS
 Restart=always
