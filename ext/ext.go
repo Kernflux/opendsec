@@ -66,6 +66,7 @@ var (
 	exts     = map[string]Extension{}
 	authns   []Authenticator
 	sinks    []AuditSink
+	after    []func() // AfterSetup's, for the component being set up
 	setupFor = map[string]bool{}
 )
 
@@ -121,10 +122,29 @@ func SetupWith(env Env, conf map[string]json.RawMessage) error {
 		ee := env
 		ee.Log = log.With("ext", name)
 		if err := e.Setup(ee, conf[name]); err != nil {
+			mu.Lock()
+			after = nil
+			mu.Unlock()
 			return fmt.Errorf("extensions.%s: %w", name, err)
 		}
 	}
+	mu.Lock()
+	fs := after
+	after = nil
+	mu.Unlock()
+	for _, f := range fs {
+		f()
+	}
 	return nil
+}
+
+// AfterSetup runs f once every extension of the component is set up (call
+// it from Setup): work that needs another extension, such as a check of
+// the license, which extensions set up earlier in name order lack.
+func AfterSetup(f func()) {
+	mu.Lock()
+	defer mu.Unlock()
+	after = append(after, f)
 }
 
 // AddAuthenticator installs an authenticator (from Setup).
