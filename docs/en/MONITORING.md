@@ -190,3 +190,5 @@ What to do: break the errors down by `reason` and `method` and find when they st
 | IAM backups | `/var/backups/opendsec` on IAM nodes |
 
 Log levels are set with each component's `-log` flag (`debug`, `info`, `warn`, `error`); the default is `info`.
+
+Under systemd each log line starts with its syslog priority (such as `<4>`), which journald records as the entry's priority, so `-p warning` finds the warnings and errors. Builds from before 2026-10-25 lack the prefix and log everything at the normal priority: use `journalctl -u 'opendsec-*' --since -1h | grep -E 'level=(WARN|ERROR)'`.

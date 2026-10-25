@@ -190,3 +190,5 @@ count by (version) (opendsec_build_info)
 | IAM 备份 | IAM 节点的 `/var/backups/opendsec` |
 
 日志级别用各组件的 `-log` 参数（`debug`、`info`、`warn`、`error`），默认 `info`。
+
+由 systemd 启动时，每行日志前带 syslog 优先级（如 `<4>`），journald 按它记录级别，所以 `-p warning` 能筛出警告和错误。2026-10-25 之前构建的版本没有这个前缀，全部记成普通级别，要用 `journalctl -u 'opendsec-*' --since -1h | grep -E 'level=(WARN|ERROR)'`。

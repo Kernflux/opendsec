@@ -151,7 +151,9 @@ deploy/prod/opendsecops upgrade <版本>       # 回滚：deploy/prod/opendsecop
 - 再执行一遍 `status` 或 `fleet nodes`；
 - 两台 edge 都健康、没有停在排空状态（看 `opendsecctl status` 里的 `healthy` 和 `draining`）；
 - 冒烟检查和压测都没有失败；
-- 看 `journalctl -u 'opendsec-*' -p warning --since <开始时间>` 有没有新的告警。
+- 看各节点有没有新的告警：`journalctl -u 'opendsec-*' -p warning --since <开始时间>`。
+  - 2026-10-25 之前构建的版本，日志全部记成普通级别，`-p warning` 什么都筛不出来，要用 `journalctl -u 'opendsec-*' --since <开始时间> | grep -E 'level=(WARN|ERROR)'`。
+  - 滚动重启期间出现的 `edge refused a creation; trying another`（edge 正在排空）是正常的。
 
 ## 6. 加机器和维护
 
