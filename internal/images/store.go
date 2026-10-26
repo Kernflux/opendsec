@@ -335,6 +335,12 @@ func (s *Store) DeleteManifest(name string) error {
 
 // List returns the manifests under project (and its subprojects).
 func (s *Store) List(project string) ([]*Manifest, error) {
+	return s.list(project, false)
+}
+
+// list is List; strict fails on a manifest it cannot read instead of
+// skipping it (GC must not miss a reference).
+func (s *Store) list(project string, strict bool) ([]*Manifest, error) {
 	base := filepath.Join(s.Root, "images", filepath.FromSlash(project))
 	var out []*Manifest
 	err := filepath.WalkDir(base, func(p string, d fs.DirEntry, err error) error {
@@ -348,8 +354,11 @@ func (s *Store) List(project string) ([]*Manifest, error) {
 			return nil
 		}
 		var m Manifest
-		if err := readJSON(p, &m); err == nil {
+		switch err := readJSON(p, &m); {
+		case err == nil:
 			out = append(out, &m)
+		case strict && !errors.Is(err, fs.ErrNotExist): // removed meanwhile: fine
+			return fmt.Errorf("image %s: %w", p, err)
 		}
 		return nil
 	})

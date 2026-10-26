@@ -7,6 +7,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/kernflux/opendsec/internal/rpcutil"
 )
 
 // Garbage collection (spec §24). Layers and snapshots stay while anything
@@ -46,6 +48,16 @@ func (s *Store) InUseHolders(prefix string) []string {
 	return out
 }
 
+// readDir is os.ReadDir for GC: a directory not made yet is empty, any other
+// error stops it.
+func readDir(dir string) ([]os.DirEntry, error) {
+	ents, err := os.ReadDir(dir)
+	if err != nil && !os.IsNotExist(err) {
+		return nil, fmt.Errorf("gc stopped, nothing removed: %w", err)
+	}
+	return ents, nil
+}
+
 // GCResult lists what GC removed (or would remove, with dryRun).
 type GCResult struct {
 	Layers, Snapshots, Partial []string
@@ -53,12 +65,14 @@ type GCResult struct {
 	Bytes                      int64
 }
 
-// GC removes what nothing references and is older than grace.
+// GC removes what nothing references and is older than grace. A reference
+// it cannot read (a shared store failing for a moment) stops it before it
+// removes anything: what it missed might be the only reference to a layer.
 func (s *Store) GC(grace time.Duration, dryRun bool) (*GCResult, error) {
 	keepLayers, keepSnaps := map[string]bool{}, map[string]bool{}
-	ms, err := s.List("")
+	ms, err := s.list("", true)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("gc stopped, nothing removed: %w", err)
 	}
 	for _, m := range ms {
 		for _, l := range m.Layers {
@@ -74,7 +88,10 @@ func (s *Store) GC(grace time.Duration, dryRun bool) (*GCResult, error) {
 		return err == nil && fi.ModTime().Before(cutoff)
 	}
 	res := &GCResult{}
-	snaps, _ := os.ReadDir(filepath.Join(s.Root, "snapshots"))
+	snaps, err := readDir(filepath.Join(s.Root, "snapshots"))
+	if err != nil {
+		return nil, err
+	}
 	for _, e := range snaps {
 		id := e.Name()
 		p := filepath.Join(s.Root, "snapshots", id)
@@ -86,6 +103,9 @@ func (s *Store) GC(grace time.Duration, dryRun bool) (*GCResult, error) {
 		}
 		snap, err := s.GetSnapshot(id)
 		if err != nil {
+			if rpcutil.Reason(err) != rpcutil.NotFound {
+				return nil, fmt.Errorf("gc stopped, nothing removed: snapshot %s: %w", id, err)
+			}
 			if old(p) { // files without a record: an interrupted snapshot
 				res.Partial = append(res.Partial, p)
 			}
@@ -100,16 +120,28 @@ func (s *Store) GC(grace time.Duration, dryRun bool) (*GCResult, error) {
 		res.Snapshots = append(res.Snapshots, id)
 		res.Bytes += du(p)
 	}
-	ents, _ := os.ReadDir(s.inuseDir())
+	ents, err := readDir(s.inuseDir())
+	if err != nil {
+		return nil, err
+	}
 	for _, e := range ents {
+		if strings.Contains(e.Name(), ".tmp-") {
+			continue // being written; the marker it becomes is read next time
+		}
 		var layers []string
-		if readJSON(filepath.Join(s.inuseDir(), e.Name()), &layers) == nil {
+		switch err := readJSON(filepath.Join(s.inuseDir(), e.Name()), &layers); {
+		case err == nil:
 			for _, l := range layers {
 				keepLayers[l] = true
 			}
+		case !os.IsNotExist(err): // released meanwhile: fine
+			return nil, fmt.Errorf("gc stopped, nothing removed: in-use marker %s: %w", e.Name(), err)
 		}
 	}
-	layers, _ := os.ReadDir(filepath.Join(s.Root, "layers"))
+	layers, err := readDir(filepath.Join(s.Root, "layers"))
+	if err != nil {
+		return nil, err
+	}
 	for _, e := range layers {
 		id := e.Name()
 		p := s.layerDir(id)

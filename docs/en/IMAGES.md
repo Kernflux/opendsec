@@ -181,7 +181,7 @@ opendsecctl image gc -store /mnt/opendsec-images             # remove layers and
 ```
 
 - `image delete` removes the image's registration only; its layers may still serve other images and are not deleted right away.
-- `image gc` removes layers and snapshots no image refers to. Anything younger than `-grace` (default 24 hours) stays, so imports in progress and fresh snapshots are safe.
+- `image gc` removes layers and snapshots no image refers to. Anything younger than `-grace` (default 24 hours) stays, so imports in progress and fresh snapshots are safe. If it cannot read a reference (the shared store failing for a moment, say), `image gc` stops with an error and removes nothing.
 - Running sandboxes are unaffected: containers use the node's local copies, microVMs the node's image disks.
 - Edges reclaim their own local copies and disk caches.
 

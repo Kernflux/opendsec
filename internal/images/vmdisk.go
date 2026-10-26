@@ -130,9 +130,11 @@ func (s *Store) gcVMDisks(keep map[string]bool, cutoff time.Time) []string {
 			out = append(out, p)
 		case strings.HasSuffix(name, ".erofs"):
 			var layers []string
-			if readJSON(strings.TrimSuffix(p, ".erofs")+".json", &layers) != nil {
-				out = append(out, p) // no record: from a build that died
-				continue
+			if err := readJSON(strings.TrimSuffix(p, ".erofs")+".json", &layers); err != nil {
+				if os.IsNotExist(err) {
+					out = append(out, p) // no record: from a build that died
+				}
+				continue // unreadable: kept, as it may be in use
 			}
 			for _, l := range layers {
 				if !keep[l] {

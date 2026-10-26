@@ -85,3 +85,57 @@ func TestGC(t *testing.T) {
 		t.Error("layer used again was collected")
 	}
 }
+
+// TestGCStopsOnUnreadable: a reference GC cannot read (a manifest, a
+// snapshot record, an in-use marker) stops it before it removes anything,
+// since what it missed may be the only reference to a layer.
+func TestGCStopsOnUnreadable(t *testing.T) {
+	for _, bad := range []string{"manifest", "snapshot", "inuse"} {
+		t.Run(bad, func(t *testing.T) {
+			st, err := NewStore(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			id := "diff-aaaaaaaaaaaaaaaa"
+			w, _, err := st.BeginLayer(id)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := w.Commit(LayerMeta{Source: "test"}); err != nil {
+				t.Fatal(err)
+			}
+			old := time.Now().Add(-48 * time.Hour)
+			os.Chtimes(filepath.Join(st.layerDir(id), "meta.json"), old, old)
+			var p string
+			switch bad {
+			case "manifest":
+				st.PutManifest(&Manifest{Name: "root/a:1", Layers: []string{id}}, false)
+				ps, _ := filepath.Glob(filepath.Join(st.Root, "images", "root", "*", "*.json"))
+				if len(ps) == 0 {
+					ps, _ = filepath.Glob(filepath.Join(st.Root, "images", "root", "*.json"))
+				}
+				if len(ps) != 1 {
+					t.Fatalf("manifest files %v", ps)
+				}
+				p = ps[0]
+			case "snapshot":
+				sid := NewSnapshotID()
+				st.SnapshotDir(sid)
+				st.PutSnapshot(&Snapshot{ID: sid, Layers: []string{id}})
+				p = filepath.Join(st.snapshotDir(sid), "snapshot.json")
+				os.Chtimes(p, old, old)
+			case "inuse":
+				st.MarkInUse("e1.container.lease", []string{id})
+				p = filepath.Join(st.inuseDir(), "e1.container.lease")
+			}
+			os.WriteFile(p, []byte("{not json"), 0o644) // as a read failing midway
+			res, err := st.GC(24*time.Hour, false)
+			if err == nil || res != nil {
+				t.Fatalf("GC = %v, %v; want it stopped", res, err)
+			}
+			if !st.HasLayer(id) {
+				t.Fatal("the layer went")
+			}
+		})
+	}
+}
