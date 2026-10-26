@@ -311,7 +311,7 @@ fleet ×3 + nodeagent（每台机器）：发布、配置、分批升级
 - **aether**（`aether/aether.go`）：每个 sandbox 一个，通常是 PID 1。
   - edge 只和它通信：容器里走 unix socket，VM 里走 vsock。
   - 它按会话 id 把调用转给负责该会话的 chronus，第一次用到时启动；会话关闭时杀掉 chronus 的整棵进程树（`proctree`）。
-  - 文件读写、目录列表和 sandbox 内发起的 HTTP 请求也一样转给会话的 chronus，所以它们以会话的用户身份执行，相对路径按会话的当前目录解析。
+  - 文件读写、目录列表和 sandbox 内发起的 HTTP 请求也一样转给会话的 chronus。文件操作以会话的用户身份执行：chronus 本身仍是 root，只在执行文件操作的线程上切换 fsuid、fsgid（`chronus/fsuser.go`）。相对路径按会话的初始工作目录解析，不跟随 shell 里的 `cd`。
   - `Watch` 流让 edge 知道它还活着。
   - **进程接口**（`procs/`，§37）由 aether 自己管理，不经过会话：每个命令是一个独立进程，按 pid 或 tag 寻址，可以写 stdin、发信号、用 PTY。流断开不影响进程，可以重新连上。用户切换和环境变量复用 chronus 的 `Environ`。E2B 网关用它实现 envd 的进程接口。
 - **chronus**（`chronus/`）：每个 shell 会话一个进程，持有一个常驻的 shell，所以 `cd`、export 的变量和函数在命令之间保留。

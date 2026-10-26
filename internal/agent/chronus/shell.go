@@ -106,6 +106,10 @@ type Shell struct {
 
 	run chan struct{} // one foreground command at a time
 
+	credOnce sync.Once
+	cred     *syscall.Credential
+	credErr  error
+
 	mu    sync.Mutex
 	proc  *exec.Cmd
 	stdin io.WriteCloser
@@ -169,6 +173,14 @@ func numericUser(u string) (uid, gid int, ok bool) {
 
 func (s *Shell) environ() ([]string, *syscall.Credential, error) {
 	return Environ(s.User, s.Env)
+}
+
+// fsCred is the identity the session's file calls run as (nil: root).
+func (s *Shell) fsCred() (*syscall.Credential, error) {
+	s.credOnce.Do(func() {
+		_, s.cred, s.credErr = Environ(s.User, nil)
+	})
+	return s.cred, s.credErr
 }
 
 // Environ is the environment and credentials of a command run as user

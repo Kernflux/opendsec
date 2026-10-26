@@ -311,7 +311,7 @@ Code in `internal/agent`. Both are statically linked; each version lives in `/op
 - **aether** (`aether/aether.go`): one per sandbox, usually PID 1.
   - The edge talks only to it: over a unix socket in containers, vsock in VMs.
   - It routes calls by session id to the chronus serving that session, starting it on first use; closing a session kills chronus's whole process tree (`proctree`).
-  - File calls, directory listings and HTTP requests made from inside the sandbox also go to the session's chronus, so they run as the session's user, with relative paths resolved against the session's current directory.
+  - File calls, directory listings and HTTP requests made from inside the sandbox also go to the session's chronus. File calls run as the session's user: chronus itself stays root and switches fsuid and fsgid only on the thread making the call (`chronus/fsuser.go`). Relative paths resolve against the session's initial working directory, not one the shell has `cd`'d to.
   - The `Watch` stream tells the edge it is alive.
   - **The process API** (`procs/`, §37) is aether's own, outside sessions: each command is a separate process, addressed by pid or tag, with stdin, signals and an optional PTY. A broken stream does not end its process, which can be reattached. User switching and environment reuse chronus's `Environ`. The E2B gateway builds envd's process API on it.
 - **chronus** (`chronus/`): one process per shell session, holding a long-lived shell, so `cd`, exported variables and functions carry over between commands.

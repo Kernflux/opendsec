@@ -151,6 +151,36 @@ func (s *Server) GetOutput(ctx context.Context, r *pb.OutputRequest) (*pb.ExecRe
 
 // ---- files ---------------------------------------------------------------------
 
+// The file calls run as the session's user (asUser).
+
+func (s *Server) ReadFile(_ context.Context, r *pb.FileRequest) (*pb.FileData, error) {
+	return asUser(s, func() (*pb.FileData, error) { return s.readFile(r) })
+}
+
+func (s *Server) WriteFile(_ context.Context, r *pb.WriteFileRequest) (*pb.FileInfo, error) {
+	return asUser(s, func() (*pb.FileInfo, error) { return s.writeFile(r) })
+}
+
+func (s *Server) ListDir(_ context.Context, r *pb.FileRequest) (*pb.DirListing, error) {
+	return asUser(s, func() (*pb.DirListing, error) { return s.listDir(r) })
+}
+
+func (s *Server) Stat(_ context.Context, r *pb.FileRequest) (*pb.FileInfo, error) {
+	return asUser(s, func() (*pb.FileInfo, error) { return s.stat(r) })
+}
+
+func (s *Server) Remove(_ context.Context, r *pb.FileRequest) (*pb.Empty, error) {
+	return asUser(s, func() (*pb.Empty, error) { return s.remove(r) })
+}
+
+func (s *Server) MakeDir(_ context.Context, r *pb.FileRequest) (*pb.FileInfo, error) {
+	return asUser(s, func() (*pb.FileInfo, error) { return s.makeDir(r) })
+}
+
+func (s *Server) Move(_ context.Context, r *pb.MoveRequest) (*pb.FileInfo, error) {
+	return asUser(s, func() (*pb.FileInfo, error) { return s.move(r) })
+}
+
 func (s *Server) path(p string) (string, error) {
 	if p == "" {
 		return "", rpcutil.Err(rpcutil.Invalid, "path required")
@@ -185,7 +215,7 @@ func info(name string, st fs.FileInfo) *pb.FileInfo {
 		Mtime: float64(st.ModTime().UnixNano()) / 1e9}
 }
 
-func (s *Server) ReadFile(_ context.Context, r *pb.FileRequest) (*pb.FileData, error) {
+func (s *Server) readFile(r *pb.FileRequest) (*pb.FileData, error) {
 	p, err := s.path(r.Path)
 	if err != nil {
 		return nil, err
@@ -206,7 +236,7 @@ func (s *Server) ReadFile(_ context.Context, r *pb.FileRequest) (*pb.FileData, e
 	return &pb.FileData{Data: b, Size: size}, nil
 }
 
-func (s *Server) WriteFile(_ context.Context, r *pb.WriteFileRequest) (*pb.FileInfo, error) {
+func (s *Server) writeFile(r *pb.WriteFileRequest) (*pb.FileInfo, error) {
 	p, err := s.path(r.Path)
 	if err != nil {
 		return nil, err
@@ -248,7 +278,7 @@ func errorsJoin(a, b error) error {
 	return b
 }
 
-func (s *Server) ListDir(_ context.Context, r *pb.FileRequest) (*pb.DirListing, error) {
+func (s *Server) listDir(r *pb.FileRequest) (*pb.DirListing, error) {
 	p, err := s.path(r.Path)
 	if err != nil {
 		return nil, err
@@ -269,7 +299,7 @@ func (s *Server) ListDir(_ context.Context, r *pb.FileRequest) (*pb.DirListing, 
 	return out, nil
 }
 
-func (s *Server) Stat(_ context.Context, r *pb.FileRequest) (*pb.FileInfo, error) {
+func (s *Server) stat(r *pb.FileRequest) (*pb.FileInfo, error) {
 	p, err := s.path(r.Path)
 	if err != nil {
 		return nil, err
@@ -281,7 +311,7 @@ func (s *Server) Stat(_ context.Context, r *pb.FileRequest) (*pb.FileInfo, error
 	return info(filepath.Base(p), st), nil
 }
 
-func (s *Server) Remove(_ context.Context, r *pb.FileRequest) (*pb.Empty, error) {
+func (s *Server) remove(r *pb.FileRequest) (*pb.Empty, error) {
 	p, err := s.path(r.Path)
 	if err != nil {
 		return nil, err
@@ -302,7 +332,7 @@ func (s *Server) Remove(_ context.Context, r *pb.FileRequest) (*pb.Empty, error)
 
 // MakeDir creates a directory and its parents; an existing directory is
 // not an error (its info is returned).
-func (s *Server) MakeDir(_ context.Context, r *pb.FileRequest) (*pb.FileInfo, error) {
+func (s *Server) makeDir(r *pb.FileRequest) (*pb.FileInfo, error) {
 	p, err := s.path(r.Path)
 	if err != nil {
 		return nil, err
@@ -318,7 +348,7 @@ func (s *Server) MakeDir(_ context.Context, r *pb.FileRequest) (*pb.FileInfo, er
 }
 
 // Move renames a file or directory (within one file system).
-func (s *Server) Move(_ context.Context, r *pb.MoveRequest) (*pb.FileInfo, error) {
+func (s *Server) move(r *pb.MoveRequest) (*pb.FileInfo, error) {
 	src, err := s.path(r.Source)
 	if err != nil {
 		return nil, err

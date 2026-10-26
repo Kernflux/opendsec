@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -368,5 +369,56 @@ func TestOutputAfterCommand(t *testing.T) {
 			t.Fatalf("later output: %v %v", o, err)
 		}
 		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+// TestFilesAsUser: a session's file calls run as its user, as its shell
+// does: they see its permissions and create files it owns, while chronus
+// itself keeps running as root on every other thread.
+func TestFilesAsUser(t *testing.T) {
+	if os.Getuid() != 0 {
+		t.Skip("needs root")
+	}
+	c, work, _ := clientWith(t, func(sh *Shell) { sh.User = "65534:65534" })
+	for p := work; p != "/"; p = filepath.Dir(p) {
+		if fi, err := os.Stat(p); err == nil {
+			os.Chmod(p, fi.Mode().Perm()|0o011)
+		}
+	}
+	os.Chmod(work, 0o777)
+	if err := os.WriteFile(filepath.Join(work, "secret"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cx := ctx(t)
+	if r := run(t, c, "id -u"); strings.TrimSpace(string(r.Stdout)) != "65534" {
+		t.Fatalf("shell runs as %q", r.Stdout)
+	}
+	for i := 0; i < 20; i++ {
+		_, err := c.ReadFile(cx, &pb.FileRequest{Path: "secret"})
+		if rpcutil.Reason(err) != rpcutil.Forbidden {
+			t.Fatalf("reading a root-only file: %v, want forbidden", err)
+		}
+		if _, err := c.WriteFile(cx, &pb.WriteFileRequest{Path: "mine.txt", Data: []byte("hi")}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var st syscall.Stat_t
+	if err := syscall.Stat(filepath.Join(work, "mine.txt"), &st); err != nil || st.Uid != 65534 || st.Gid != 65534 {
+		t.Fatalf("mine.txt owned by %d:%d (%v), want 65534:65534", st.Uid, st.Gid, err)
+	}
+	if _, err := c.Remove(cx, &pb.FileRequest{Path: "secret"}); err != nil {
+		t.Fatalf("removing from a dir it may write: %v", err) // as for its shell
+	}
+	tasks, _ := filepath.Glob("/proc/self/task/*/status")
+	for _, f := range tasks {
+		b, err := os.ReadFile(f)
+		if err != nil {
+			continue // the thread ended
+		}
+		for _, l := range strings.Split(string(b), "\n") {
+			if strings.HasPrefix(l, "Uid:") && strings.Fields(l)[4] != "0" {
+				t.Fatalf("a thread kept the session's identity: %s: %s", f, l)
+			}
+		}
 	}
 }

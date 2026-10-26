@@ -2324,9 +2324,9 @@ SDK sb.fork(count=8)
 
 - **输出上限**：命令的 stdout、stderr 不再由 shell 直接重定向到记录文件，而是写进命名管道，由 chronus 读出来记录（`record.go`）。命令结束后最多等 100 ms 让记录写完；它起的后台进程还开着输出时不等，之后写的照样记录，`GetOutput` 能取到。chronus 参数 `--max-output-mb`、`--session-output-mb` 可调。
   - 一台机器上很多 sandbox、很多会话合起来仍可能占不少空间；把容器的记录放进 sandbox 自己的可写盘（受 `disk_mb` 限制）更彻底，留作后续。
-- **会话的用户**：`ExecRequest.user`（SDK `run_shell(..., user=)`，命令行 `exec -user`）在会话第一次启动时生效，可以是用户名或 `uid[:gid]`（镜像里不需要有这个用户，家目录是 `/tmp/home-<uid>`）。会话启动后用户固定，指定另一个用户返回 `invalid`，agent 不能借评测会话提权。文件读写类接口是调用方用的，仍由 chronus 以 root 执行。
+- **会话的用户**：`ExecRequest.user`（SDK `run_shell(..., user=)`，命令行 `exec -user`）在会话第一次启动时生效，可以是用户名或 `uid[:gid]`（镜像里不需要有这个用户，家目录是 `/tmp/home-<uid>`）。会话启动后用户固定，指定另一个用户返回 `invalid`，agent 不能借评测会话提权。文件读写类接口原先由 chronus 以 root 执行；2026-10-26 起以会话的用户执行（chronus 仍是 root，只在执行文件操作的线程上切换 fsuid、fsgid 和附加组，做完再换回来）：和 shell 看到同样的权限，新建的文件归会话用户所有，这也和 E2B 按用户读写文件的语义一致。评测要读写 agent 看不到的文件，用 root 会话。
 - **调用方的责任**：评测要瞒着 agent 的东西要用严格的权限写（例如 `umask 077`）。平台不把 root 会话的 umask 改成 077：那样 root 用 pip 装的包，普通用户就 import 不了。测试时 microVM 的精简根文件系统里 `/root` 是 0755，用默认 umask 写的答案普通用户能读，就是这个原因。
-- **测试**：chronus 单元测试 `TestOutputLimit`（64 KB 上限下写 1 MB 和无限的 `yes`）、`TestSessionRecords`、`TestOutputAfterCommand`（后台进程的输出：`Exec` 不等它，之后能取到）；容器和 microVM 的 `TestSessionUsers`：uid 1000 的会话读不到 root 会话的答案和记录，连不上 socket，改不了 `/usr/bin/bash`、`/bin/sh`，会话不能换用户。Python SDK 测试、e2e 都通过。
+- **测试**：chronus 单元测试 `TestFilesAsUser`（普通用户会话读不到 root 的 0600 文件，写的文件归它所有，做完后 chronus 的所有线程都回到 root）、`TestOutputLimit`（64 KB 上限下写 1 MB 和无限的 `yes`）、`TestSessionRecords`、`TestOutputAfterCommand`（后台进程的输出：`Exec` 不等它，之后能取到）；容器和 microVM 的 `TestSessionUsers`：uid 1000 的会话读不到 root 会话的答案和记录，连不上 socket，改不了 `/usr/bin/bash`、`/bin/sh`，会话不能换用户。Python SDK 测试、e2e 都通过。
 
 ### 29.4 microVM 镜像盘：在镜像库里只做一次（论文 §5.3）
 - **问题**：microVM 第一次在某台机器上用到某个镜像时，要把各层叠成 overlay、`mkfs.ext4 -d` 展平成镜像盘（§19.10）。每台机器、每个新镜像都做一遍，镜像越大越慢；论文 §4 指出 RL 任务的镜像种类多、每个镜像用得少，这个代价会被反复支付。
