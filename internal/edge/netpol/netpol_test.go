@@ -487,3 +487,42 @@ func TestParseLimitedSet(t *testing.T) {
 		t.Error("isLimitedSet(a5p2, 6)")
 	}
 }
+
+// TestRulesRefused: rules the kernel refuses change nothing: the DNS proxy
+// keeps the policy the kernel still enforces, and what it learned.
+func TestRulesRefused(t *testing.T) {
+	if os.Getenv("OPENDSEC_NET_TESTS") == "" || os.Geteuid() != 0 {
+		t.Skip("set OPENDSEC_NET_TESTS=1 (as root)")
+	}
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	ec := config.EdgeNetwork{Enabled: true, Subnet: "10.88.0.0/24", DNSPort: 15398}
+	m, err := New("t-ref", ec, testPolicy, t.TempDir(), log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { m.Cleanup(); m.Close() })
+	a, err := m.Allocate("cccccccccccccccccccccccccc", map[string]bool{"pypi": true}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := a.Setup(0, 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.learn("pypi.org", []net.IP{net.ParseIP("151.101.0.223")}, time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	before := a.current()
+	nft(fmt.Sprintf("delete table inet %s\n", m.table)) // the kernel now refuses any update
+	if err := a.Rules(map[string]bool{AllowAll: true}); err == nil {
+		t.Fatal("rules applied without their table")
+	}
+	if a.current() != before {
+		t.Fatal("the DNS proxy's policy changed though the kernel's did not")
+	}
+	a.mu.Lock()
+	n := len(a.learned)
+	a.mu.Unlock()
+	if n != 1 {
+		t.Fatalf("learned %d addresses, want the 1 kept", n)
+	}
+}

@@ -254,7 +254,9 @@ func (a *Attachment) Setup(pid, tapUID int) error {
 
 // Rules replaces the sandbox's rules: denials apply at once, to new
 // connections and DNS lookups; addresses learned for domains still allowed
-// stay reachable.
+// stay reachable. The kernel goes first, in one transaction: if it refuses
+// the rules, nothing changes, and the DNS proxy keeps answering under the
+// rules the kernel still enforces.
 func (a *Attachment) Rules(rules map[string]bool) error {
 	p, err := compile(a.m.policy, rules)
 	if err != nil {
@@ -265,7 +267,6 @@ func (a *Attachment) Rules(rules map[string]bool) error {
 	for ip, l := range a.learned {
 		anyPort, ks := p.learnSets(l.name)
 		if !anyPort && len(ks) == 0 {
-			delete(a.learned, ip)
 			continue
 		}
 		if anyPort {
@@ -278,9 +279,19 @@ func (a *Attachment) Rules(rules map[string]bool) error {
 			keep[k][ip] = l.exp
 		}
 	}
+	a.mu.Unlock()
+	if err := a.m.nl.setSlot(a, p, learnedSets(keep), false); err != nil {
+		return err
+	}
+	a.mu.Lock()
+	for ip, l := range a.learned { // those learned meanwhile included
+		if anyPort, ks := p.learnSets(l.name); !anyPort && len(ks) == 0 {
+			delete(a.learned, ip)
+		}
+	}
 	a.pol = p
 	a.mu.Unlock()
-	return a.m.nl.setSlot(a, p, learnedSets(keep), false)
+	return nil
 }
 
 func learnedSets(m map[int]map[string]time.Time) []learnedSet {

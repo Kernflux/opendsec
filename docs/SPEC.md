@@ -1456,7 +1456,7 @@ SDK sb.fork(count=8)
 
 ### 20.1 接口
 - `SandboxSpec.network_rules`（论文示例里的字段，原先被忽略）：键是规则集名（集群配置 `network.rule_sets`）、域名（同时覆盖它的子域名）、IPv4 地址或网段，或 `"*"`（所有公网地址），后面可以加 `:端口[/协议]`（§29.2）；`true` 放行，`false` 撤销集群默认规则 `network.default_rules` 里的一项。未知的规则名在创建时返回 `invalid`。
-- `OpenDsec.UpdateNetwork(sandbox_id, rules, replace)`：合并或替换规则，需要 `sandbox.operate`。撤销立即生效，已建立的连接也会被切断（见 20.2）。SDK `Sandbox.update_network`，命令行 `opendsecctl sandbox network <id> pypi !npm`，创建时 `-net`。
+- `OpenDsec.UpdateNetwork(sandbox_id, rules, replace)`：合并或替换规则，需要 `sandbox.operate`。撤销立即生效，已建立的连接也会被切断（见 20.2）。先在一个 nftables 事务里下发，成功后 DNS 代理才换用新规则（2026-10-26）：内核拒绝时什么都不变，不会出现 DNS 按新规则、内核按旧规则的情况。SDK `Sandbox.update_network`，命令行 `opendsecctl sandbox network <id> pypi !npm`，创建时 `-net`。
 - edge 配置 `network: {enabled, subnet, dns_port}`，默认关闭（关闭时和以前一样只有 lo）。同一台机器上的多个 edge 需要不同的网段和端口。
 
 ### 20.2 实现
