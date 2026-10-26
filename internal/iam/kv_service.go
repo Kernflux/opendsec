@@ -47,7 +47,7 @@ func (s *Service) KVPut(ctx context.Context, r *pb.KVPutRequest) (*pb.KVEntry, e
 		}
 		return c.KVPut(ctx, r)
 	}
-	e, err := s.IAM.KVPut(r.Key, r.Value, r.Check, r.ExpectRev)
+	e, err := s.IAM.KVPutFenced(r.Key, r.Value, r.Check, r.ExpectRev, fenceOf(r.Fence))
 	if err != nil {
 		return nil, err
 	}
@@ -61,5 +61,5 @@ func (s *Service) KVDelete(ctx context.Context, r *pb.KVDeleteRequest) (*pb.Empt
 		}
 		return c.KVDelete(ctx, r)
 	}
-	return &pb.Empty{}, s.IAM.KVDelete(r.Key, r.Check, r.ExpectRev)
+	return &pb.Empty{}, s.IAM.KVDeleteFenced(r.Key, r.Check, r.ExpectRev, fenceOf(r.Fence))
 }

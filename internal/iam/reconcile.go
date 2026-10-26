@@ -20,9 +20,16 @@ type ReconcileResult struct {
 // steady-state reconcile writes nothing. Leases younger than minAge are never
 // released (their sandbox may still be being created).
 func (m *IAM) ReconcileEdge(edge string, live []LiveLease, minAge time.Duration) (ReconcileResult, error) {
+	return m.ReconcileEdgeFenced(edge, live, minAge, nil)
+}
+
+// ReconcileEdgeFenced is ReconcileEdge applied only while f's holder holds
+// its lock: a watcher that lost the reconcile lock cannot release leases
+// from what an edge reported before.
+func (m *IAM) ReconcileEdgeFenced(edge string, live []LiveLease, minAge time.Duration, f *Fence) (ReconcileResult, error) {
 	now := unix(m.now())
 	cutoff := now - minAge.Seconds()
-	c := &Command{Op: opReconcileEdge, Edge: edge, Now: now}
+	c := (&Command{Op: opReconcileEdge, Edge: edge, Now: now}).fence(f)
 	var res ReconcileResult
 	m.mu.RLock()
 	seen := make(map[string]bool, len(live))
@@ -84,9 +91,15 @@ func (m *IAM) applyReconcileEdgeLocked(c *Command) ReconcileResult {
 // SweepUnbound releases leases that no edge has claimed for maxAge: their
 // creation failed and the release was lost.
 func (m *IAM) SweepUnbound(maxAge time.Duration) (int, error) {
+	return m.SweepUnboundFenced(maxAge, nil)
+}
+
+// SweepUnboundFenced is SweepUnbound applied only while f's holder holds
+// its lock.
+func (m *IAM) SweepUnboundFenced(maxAge time.Duration, f *Fence) (int, error) {
 	now := unix(m.now())
 	cutoff := now - maxAge.Seconds()
-	c := &Command{Op: opReleaseUnbound, Now: now}
+	c := (&Command{Op: opReleaseUnbound, Now: now}).fence(f)
 	m.mu.RLock()
 	for lease, r := range m.reservations {
 		if r.Edge == "" && r.At < cutoff {

@@ -41,12 +41,25 @@ func (k IAMKV) List(ctx context.Context, prefix string) ([]*pb.KVEntry, error) {
 }
 
 func (k IAMKV) Put(ctx context.Context, key string, value []byte, check bool, rev uint64) (*pb.KVEntry, error) {
-	return k.C.KVPut(ctx, &pb.KVPutRequest{Key: key, Value: value, Check: check, ExpectRev: rev})
+	return k.C.KVPut(ctx, &pb.KVPutRequest{Key: key, Value: value, Check: check, ExpectRev: rev, Fence: fenceOf(ctx)})
 }
 
 func (k IAMKV) Delete(ctx context.Context, key string, check bool, rev uint64) error {
-	_, err := k.C.KVDelete(ctx, &pb.KVDeleteRequest{Key: key, Check: check, ExpectRev: rev})
+	_, err := k.C.KVDelete(ctx, &pb.KVDeleteRequest{Key: key, Check: check, ExpectRev: rev, Fence: fenceOf(ctx)})
 	return err
+}
+
+type fenceKey struct{}
+
+// WithFence makes the IAM writes made with ctx apply only while f's holder
+// holds its lock (spec §16.1).
+func WithFence(ctx context.Context, f *pb.Fence) context.Context {
+	return context.WithValue(ctx, fenceKey{}, f)
+}
+
+func fenceOf(ctx context.Context) *pb.Fence {
+	f, _ := ctx.Value(fenceKey{}).(*pb.Fence)
+	return f
 }
 
 // Key layout.

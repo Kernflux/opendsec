@@ -15,6 +15,7 @@ import (
 	"github.com/kernflux/opendsec/internal/edge/backend"
 	"github.com/kernflux/opendsec/internal/edge/host"
 	"github.com/kernflux/opendsec/internal/ids"
+	"github.com/kernflux/opendsec/internal/images"
 	"github.com/kernflux/opendsec/internal/rpcutil"
 )
 
@@ -625,3 +626,57 @@ func TestUnsavedRecord(t *testing.T) {
 		t.Fatalf("record after the sweep: %v", r)
 	}
 }
+
+// TestMoveSurvivesRestart: a sandbox frozen for a move stays frozen across
+// a restart of the edge it leaves (the edge it moves to may already run
+// it), and that edge's EndMove still completes the move.
+func TestMoveSurvivesRestart(t *testing.T) {
+	dir := t.TempDir()
+	f := newFixture(t, 10)
+	f.e.EnableStore(dir)
+	ctx := context.Background()
+	sb, err := f.create(t, &pb.SandboxSpec{Resources: cpu(1)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.e.Pause(ctx, sb.Id); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.e.BeginMove(ctx, sb.Id, images.NewSnapshotID()); err != nil {
+		t.Fatal(err)
+	}
+
+	f2 := newFixture(t, 10) // restarted mid-move
+	f2.e.EnableStore(dir)
+	f2.clk.t = f.clk.now()
+	if st := f2.e.Recover(ctx); st.Adopted != 1 {
+		t.Fatalf("recover: %+v", st)
+	}
+	if _, err := f2.e.Resume(ctx, sb.Id); rpcutil.Reason(err) != rpcutil.Unavailable {
+		t.Fatalf("resuming a sandbox that is moving: %v", err)
+	}
+	if err := f2.e.EndMove(ctx, sb.Id, "e2"); err != nil {
+		t.Fatalf("EndMove after the restart: %v", err)
+	}
+	if _, l, _ := ids.Parse(sb.Id); fileExists(filepath.Join(dir, l+".moving")) || fileExists(filepath.Join(dir, l+".json")) {
+		t.Fatal("the moved sandbox left files behind")
+	}
+
+	// An aborted move, or one that timed out, unfreezes it for good.
+	sb2, _ := f2.create(t, &pb.SandboxSpec{Resources: cpu(1)})
+	f2.e.Pause(ctx, sb2.Id)
+	_, l2, _ := ids.Parse(sb2.Id)
+	f2.e.BeginMove(ctx, sb2.Id, images.NewSnapshotID())
+	f2.e.EndMove(ctx, sb2.Id, "")
+	if fileExists(filepath.Join(dir, l2+".moving")) {
+		t.Fatal("an aborted move kept its marker")
+	}
+	f2.e.BeginMove(ctx, sb2.Id, images.NewSnapshotID())
+	f2.clk.add(moveTimeout + time.Second)
+	f2.e.Sweep(ctx)
+	if fileExists(filepath.Join(dir, l2+".moving")) {
+		t.Fatal("a timed-out move kept its marker")
+	}
+}
+
+func fileExists(p string) bool { _, err := os.Stat(p); return err == nil }

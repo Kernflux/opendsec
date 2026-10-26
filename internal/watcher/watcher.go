@@ -144,6 +144,16 @@ func (w *Watcher) Run(ctx context.Context) {
 	}
 }
 
+// fence makes IAM apply a reconcile only while this instance holds the
+// reconcile lock: one paused past its lease, with an old view of an edge,
+// must not release what the new leader keeps (spec §16.1).
+func (w *Watcher) fence() *pb.Fence {
+	if w.Holder == "" {
+		return nil
+	}
+	return &pb.Fence{Lock: ReconcileLock, Holder: w.Holder}
+}
+
 // IsLeader reports whether this instance may reconcile now.
 func (w *Watcher) IsLeader() bool {
 	if w.Holder == "" {
@@ -310,7 +320,7 @@ func (w *Watcher) Reconcile(ctx context.Context) {
 			}
 			cctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 			defer cancel()
-			r, err := w.iam.ReconcileEdge(cctx, &pb.ReconcileEdgeRequest{Edge: e.id, Live: live, MinAgeS: minAge})
+			r, err := w.iam.ReconcileEdge(cctx, &pb.ReconcileEdgeRequest{Edge: e.id, Live: live, MinAgeS: minAge, Fence: w.fence()})
 			if err != nil {
 				w.log.Warn("reconcile edge failed", "edge", e.id, "err", err)
 				return
@@ -324,7 +334,7 @@ func (w *Watcher) Reconcile(ctx context.Context) {
 	wg.Wait()
 	cctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	if r, err := w.iam.SweepUnbound(cctx, &pb.SweepUnboundRequest{MaxAgeS: w.cfg.UnboundMaxAge}); err != nil {
+	if r, err := w.iam.SweepUnbound(cctx, &pb.SweepUnboundRequest{MaxAgeS: w.cfg.UnboundMaxAge, Fence: w.fence()}); err != nil {
 		w.log.Warn("sweep unbound leases failed", "err", err)
 	} else if r.Released > 0 {
 		w.log.Info("released leases no edge claimed", "count", r.Released)

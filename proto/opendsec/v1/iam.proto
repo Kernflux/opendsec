@@ -86,17 +86,27 @@ message KVEntries {
 // With check, the write applies only if the key's current revision is
 // expect_rev (0: the key must not exist); otherwise it fails with reason
 // "conflict".
+// Fence makes a write apply only while holder holds the IAM lock lock: a
+// component that lost its leadership (a long pause, a lost renewal) can no
+// longer write once another one took over.
+message Fence {
+  string lock = 1;
+  string holder = 2;
+}
+
 message KVPutRequest {
   string key = 1;
   bytes value = 2;
   bool check = 3;
   uint64 expect_rev = 4;
+  Fence fence = 5;
 }
 
 message KVDeleteRequest {
   string key = 1;
   bool check = 2;
   uint64 expect_rev = 3;
+  Fence fence = 4;
 }
 
 message LockRequest {
@@ -180,6 +190,7 @@ message ReconcileEdgeRequest {
   string edge = 1;
   repeated LeaseInfo live = 2;         // every live lease on this edge
   double min_age_s = 3;                // younger leases are never released
+  Fence fence = 4;
 }
 
 message ReconcileEdgeResponse {
@@ -191,6 +202,7 @@ message ReconcileEdgeResponse {
 
 message SweepUnboundRequest {
   double max_age_s = 1;                // release leases no edge claimed for this long
+  Fence fence = 2;
 }
 
 message SweepUnboundResponse {

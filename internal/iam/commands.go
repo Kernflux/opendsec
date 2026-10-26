@@ -57,6 +57,32 @@ type Command struct {
 	Value     []byte `json:"value,omitempty"`
 	Check     bool   `json:"check,omitempty"`
 	ExpectRev uint64 `json:"expect_rev,omitempty"`
+
+	// The command applies only while FenceHolder holds lock FenceLock.
+	FenceLock   string `json:"fence_lock,omitempty"`
+	FenceHolder string `json:"fence_holder,omitempty"`
+}
+
+// Fence is a lock a command's proposer must hold when it applies (spec §16.1).
+type Fence struct{ Lock, Holder string }
+
+func (c *Command) fence(f *Fence) *Command {
+	if f != nil {
+		c.FenceLock, c.FenceHolder = f.Lock, f.Holder
+	}
+	return c
+}
+
+// fencedLocked refuses c if it is fenced by a lock its proposer no longer
+// holds, judged at the command's own time, so every replica agrees.
+func (m *IAM) fencedLocked(c *Command) error {
+	if c.FenceLock == "" {
+		return nil
+	}
+	if l := m.locks[c.FenceLock]; l == nil || l.Holder != c.FenceHolder || l.Expires <= c.Now {
+		return rpcutil.Err(rpcutil.Conflict, "%s does not hold lock %s", c.FenceHolder, c.FenceLock)
+	}
+	return nil
 }
 
 const (
@@ -132,6 +158,9 @@ func (m *IAM) propose(c *Command) (any, error) {
 // apply executes c against the state; the caller holds m.mu. It must be
 // deterministic: same state + same command => same result on every replica.
 func (m *IAM) apply(c *Command) (any, error) {
+	if err := m.fencedLocked(c); err != nil {
+		return nil, err
+	}
 	switch c.Op {
 	case opBootstrap:
 		return nil, m.bootstrapLocked(c)

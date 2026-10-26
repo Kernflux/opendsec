@@ -224,19 +224,75 @@ func (x *KVEntries) GetEntries() []*KVEntry {
 // With check, the write applies only if the key's current revision is
 // expect_rev (0: the key must not exist); otherwise it fails with reason
 // "conflict".
+// Fence makes a write apply only while holder holds the IAM lock lock: a
+// component that lost its leadership (a long pause, a lost renewal) can no
+// longer write once another one took over.
+type Fence struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Lock          string                 `protobuf:"bytes,1,opt,name=lock,proto3" json:"lock,omitempty"`
+	Holder        string                 `protobuf:"bytes,2,opt,name=holder,proto3" json:"holder,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Fence) Reset() {
+	*x = Fence{}
+	mi := &file_opendsec_v1_iam_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Fence) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Fence) ProtoMessage() {}
+
+func (x *Fence) ProtoReflect() protoreflect.Message {
+	mi := &file_opendsec_v1_iam_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Fence.ProtoReflect.Descriptor instead.
+func (*Fence) Descriptor() ([]byte, []int) {
+	return file_opendsec_v1_iam_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *Fence) GetLock() string {
+	if x != nil {
+		return x.Lock
+	}
+	return ""
+}
+
+func (x *Fence) GetHolder() string {
+	if x != nil {
+		return x.Holder
+	}
+	return ""
+}
+
 type KVPutRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
 	Value         []byte                 `protobuf:"bytes,2,opt,name=value,proto3" json:"value,omitempty"`
 	Check         bool                   `protobuf:"varint,3,opt,name=check,proto3" json:"check,omitempty"`
 	ExpectRev     uint64                 `protobuf:"varint,4,opt,name=expect_rev,json=expectRev,proto3" json:"expect_rev,omitempty"`
+	Fence         *Fence                 `protobuf:"bytes,5,opt,name=fence,proto3" json:"fence,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *KVPutRequest) Reset() {
 	*x = KVPutRequest{}
-	mi := &file_opendsec_v1_iam_proto_msgTypes[4]
+	mi := &file_opendsec_v1_iam_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -248,7 +304,7 @@ func (x *KVPutRequest) String() string {
 func (*KVPutRequest) ProtoMessage() {}
 
 func (x *KVPutRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_opendsec_v1_iam_proto_msgTypes[4]
+	mi := &file_opendsec_v1_iam_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -261,7 +317,7 @@ func (x *KVPutRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use KVPutRequest.ProtoReflect.Descriptor instead.
 func (*KVPutRequest) Descriptor() ([]byte, []int) {
-	return file_opendsec_v1_iam_proto_rawDescGZIP(), []int{4}
+	return file_opendsec_v1_iam_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *KVPutRequest) GetKey() string {
@@ -292,18 +348,26 @@ func (x *KVPutRequest) GetExpectRev() uint64 {
 	return 0
 }
 
+func (x *KVPutRequest) GetFence() *Fence {
+	if x != nil {
+		return x.Fence
+	}
+	return nil
+}
+
 type KVDeleteRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
 	Check         bool                   `protobuf:"varint,2,opt,name=check,proto3" json:"check,omitempty"`
 	ExpectRev     uint64                 `protobuf:"varint,3,opt,name=expect_rev,json=expectRev,proto3" json:"expect_rev,omitempty"`
+	Fence         *Fence                 `protobuf:"bytes,4,opt,name=fence,proto3" json:"fence,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *KVDeleteRequest) Reset() {
 	*x = KVDeleteRequest{}
-	mi := &file_opendsec_v1_iam_proto_msgTypes[5]
+	mi := &file_opendsec_v1_iam_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -315,7 +379,7 @@ func (x *KVDeleteRequest) String() string {
 func (*KVDeleteRequest) ProtoMessage() {}
 
 func (x *KVDeleteRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_opendsec_v1_iam_proto_msgTypes[5]
+	mi := &file_opendsec_v1_iam_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -328,7 +392,7 @@ func (x *KVDeleteRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use KVDeleteRequest.ProtoReflect.Descriptor instead.
 func (*KVDeleteRequest) Descriptor() ([]byte, []int) {
-	return file_opendsec_v1_iam_proto_rawDescGZIP(), []int{5}
+	return file_opendsec_v1_iam_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *KVDeleteRequest) GetKey() string {
@@ -352,6 +416,13 @@ func (x *KVDeleteRequest) GetExpectRev() uint64 {
 	return 0
 }
 
+func (x *KVDeleteRequest) GetFence() *Fence {
+	if x != nil {
+		return x.Fence
+	}
+	return nil
+}
+
 type LockRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
@@ -363,7 +434,7 @@ type LockRequest struct {
 
 func (x *LockRequest) Reset() {
 	*x = LockRequest{}
-	mi := &file_opendsec_v1_iam_proto_msgTypes[6]
+	mi := &file_opendsec_v1_iam_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -375,7 +446,7 @@ func (x *LockRequest) String() string {
 func (*LockRequest) ProtoMessage() {}
 
 func (x *LockRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_opendsec_v1_iam_proto_msgTypes[6]
+	mi := &file_opendsec_v1_iam_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -388,7 +459,7 @@ func (x *LockRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LockRequest.ProtoReflect.Descriptor instead.
 func (*LockRequest) Descriptor() ([]byte, []int) {
-	return file_opendsec_v1_iam_proto_rawDescGZIP(), []int{6}
+	return file_opendsec_v1_iam_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *LockRequest) GetName() string {
@@ -424,7 +495,7 @@ type LockState struct {
 
 func (x *LockState) Reset() {
 	*x = LockState{}
-	mi := &file_opendsec_v1_iam_proto_msgTypes[7]
+	mi := &file_opendsec_v1_iam_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -436,7 +507,7 @@ func (x *LockState) String() string {
 func (*LockState) ProtoMessage() {}
 
 func (x *LockState) ProtoReflect() protoreflect.Message {
-	mi := &file_opendsec_v1_iam_proto_msgTypes[7]
+	mi := &file_opendsec_v1_iam_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -449,7 +520,7 @@ func (x *LockState) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LockState.ProtoReflect.Descriptor instead.
 func (*LockState) Descriptor() ([]byte, []int) {
-	return file_opendsec_v1_iam_proto_rawDescGZIP(), []int{7}
+	return file_opendsec_v1_iam_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *LockState) GetName() string {
@@ -491,7 +562,7 @@ type Principal struct {
 
 func (x *Principal) Reset() {
 	*x = Principal{}
-	mi := &file_opendsec_v1_iam_proto_msgTypes[8]
+	mi := &file_opendsec_v1_iam_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -503,7 +574,7 @@ func (x *Principal) String() string {
 func (*Principal) ProtoMessage() {}
 
 func (x *Principal) ProtoReflect() protoreflect.Message {
-	mi := &file_opendsec_v1_iam_proto_msgTypes[8]
+	mi := &file_opendsec_v1_iam_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -516,7 +587,7 @@ func (x *Principal) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Principal.ProtoReflect.Descriptor instead.
 func (*Principal) Descriptor() ([]byte, []int) {
-	return file_opendsec_v1_iam_proto_rawDescGZIP(), []int{8}
+	return file_opendsec_v1_iam_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *Principal) GetId() string {
@@ -560,7 +631,7 @@ type AdmitRequest struct {
 
 func (x *AdmitRequest) Reset() {
 	*x = AdmitRequest{}
-	mi := &file_opendsec_v1_iam_proto_msgTypes[9]
+	mi := &file_opendsec_v1_iam_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -572,7 +643,7 @@ func (x *AdmitRequest) String() string {
 func (*AdmitRequest) ProtoMessage() {}
 
 func (x *AdmitRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_opendsec_v1_iam_proto_msgTypes[9]
+	mi := &file_opendsec_v1_iam_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -585,7 +656,7 @@ func (x *AdmitRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AdmitRequest.ProtoReflect.Descriptor instead.
 func (*AdmitRequest) Descriptor() ([]byte, []int) {
-	return file_opendsec_v1_iam_proto_rawDescGZIP(), []int{9}
+	return file_opendsec_v1_iam_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *AdmitRequest) GetToken() string {
@@ -653,7 +724,7 @@ type AdmitResponse struct {
 
 func (x *AdmitResponse) Reset() {
 	*x = AdmitResponse{}
-	mi := &file_opendsec_v1_iam_proto_msgTypes[10]
+	mi := &file_opendsec_v1_iam_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -665,7 +736,7 @@ func (x *AdmitResponse) String() string {
 func (*AdmitResponse) ProtoMessage() {}
 
 func (x *AdmitResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_opendsec_v1_iam_proto_msgTypes[10]
+	mi := &file_opendsec_v1_iam_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -678,7 +749,7 @@ func (x *AdmitResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AdmitResponse.ProtoReflect.Descriptor instead.
 func (*AdmitResponse) Descriptor() ([]byte, []int) {
-	return file_opendsec_v1_iam_proto_rawDescGZIP(), []int{10}
+	return file_opendsec_v1_iam_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *AdmitResponse) GetPrincipal() string {
@@ -697,7 +768,7 @@ type AuthenticateRequest struct {
 
 func (x *AuthenticateRequest) Reset() {
 	*x = AuthenticateRequest{}
-	mi := &file_opendsec_v1_iam_proto_msgTypes[11]
+	mi := &file_opendsec_v1_iam_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -709,7 +780,7 @@ func (x *AuthenticateRequest) String() string {
 func (*AuthenticateRequest) ProtoMessage() {}
 
 func (x *AuthenticateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_opendsec_v1_iam_proto_msgTypes[11]
+	mi := &file_opendsec_v1_iam_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -722,7 +793,7 @@ func (x *AuthenticateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AuthenticateRequest.ProtoReflect.Descriptor instead.
 func (*AuthenticateRequest) Descriptor() ([]byte, []int) {
-	return file_opendsec_v1_iam_proto_rawDescGZIP(), []int{11}
+	return file_opendsec_v1_iam_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *AuthenticateRequest) GetToken() string {
@@ -743,7 +814,7 @@ type AuthorizeRequest struct {
 
 func (x *AuthorizeRequest) Reset() {
 	*x = AuthorizeRequest{}
-	mi := &file_opendsec_v1_iam_proto_msgTypes[12]
+	mi := &file_opendsec_v1_iam_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -755,7 +826,7 @@ func (x *AuthorizeRequest) String() string {
 func (*AuthorizeRequest) ProtoMessage() {}
 
 func (x *AuthorizeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_opendsec_v1_iam_proto_msgTypes[12]
+	mi := &file_opendsec_v1_iam_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -768,7 +839,7 @@ func (x *AuthorizeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AuthorizeRequest.ProtoReflect.Descriptor instead.
 func (*AuthorizeRequest) Descriptor() ([]byte, []int) {
-	return file_opendsec_v1_iam_proto_rawDescGZIP(), []int{12}
+	return file_opendsec_v1_iam_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *AuthorizeRequest) GetPrincipal() string {
@@ -804,7 +875,7 @@ type ReleaseRequest struct {
 
 func (x *ReleaseRequest) Reset() {
 	*x = ReleaseRequest{}
-	mi := &file_opendsec_v1_iam_proto_msgTypes[13]
+	mi := &file_opendsec_v1_iam_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -816,7 +887,7 @@ func (x *ReleaseRequest) String() string {
 func (*ReleaseRequest) ProtoMessage() {}
 
 func (x *ReleaseRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_opendsec_v1_iam_proto_msgTypes[13]
+	mi := &file_opendsec_v1_iam_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -829,7 +900,7 @@ func (x *ReleaseRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReleaseRequest.ProtoReflect.Descriptor instead.
 func (*ReleaseRequest) Descriptor() ([]byte, []int) {
-	return file_opendsec_v1_iam_proto_rawDescGZIP(), []int{13}
+	return file_opendsec_v1_iam_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *ReleaseRequest) GetLease() string {
@@ -855,7 +926,7 @@ type ReleaseResponse struct {
 
 func (x *ReleaseResponse) Reset() {
 	*x = ReleaseResponse{}
-	mi := &file_opendsec_v1_iam_proto_msgTypes[14]
+	mi := &file_opendsec_v1_iam_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -867,7 +938,7 @@ func (x *ReleaseResponse) String() string {
 func (*ReleaseResponse) ProtoMessage() {}
 
 func (x *ReleaseResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_opendsec_v1_iam_proto_msgTypes[14]
+	mi := &file_opendsec_v1_iam_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -880,7 +951,7 @@ func (x *ReleaseResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReleaseResponse.ProtoReflect.Descriptor instead.
 func (*ReleaseResponse) Descriptor() ([]byte, []int) {
-	return file_opendsec_v1_iam_proto_rawDescGZIP(), []int{14}
+	return file_opendsec_v1_iam_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *ReleaseResponse) GetReleased() bool {
@@ -900,7 +971,7 @@ type ReleaseLeasesRequest struct {
 
 func (x *ReleaseLeasesRequest) Reset() {
 	*x = ReleaseLeasesRequest{}
-	mi := &file_opendsec_v1_iam_proto_msgTypes[15]
+	mi := &file_opendsec_v1_iam_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -912,7 +983,7 @@ func (x *ReleaseLeasesRequest) String() string {
 func (*ReleaseLeasesRequest) ProtoMessage() {}
 
 func (x *ReleaseLeasesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_opendsec_v1_iam_proto_msgTypes[15]
+	mi := &file_opendsec_v1_iam_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -925,7 +996,7 @@ func (x *ReleaseLeasesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReleaseLeasesRequest.ProtoReflect.Descriptor instead.
 func (*ReleaseLeasesRequest) Descriptor() ([]byte, []int) {
-	return file_opendsec_v1_iam_proto_rawDescGZIP(), []int{15}
+	return file_opendsec_v1_iam_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *ReleaseLeasesRequest) GetLeases() []string {
@@ -951,7 +1022,7 @@ type LeaseEdgeRequest struct {
 
 func (x *LeaseEdgeRequest) Reset() {
 	*x = LeaseEdgeRequest{}
-	mi := &file_opendsec_v1_iam_proto_msgTypes[16]
+	mi := &file_opendsec_v1_iam_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -963,7 +1034,7 @@ func (x *LeaseEdgeRequest) String() string {
 func (*LeaseEdgeRequest) ProtoMessage() {}
 
 func (x *LeaseEdgeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_opendsec_v1_iam_proto_msgTypes[16]
+	mi := &file_opendsec_v1_iam_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -976,7 +1047,7 @@ func (x *LeaseEdgeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LeaseEdgeRequest.ProtoReflect.Descriptor instead.
 func (*LeaseEdgeRequest) Descriptor() ([]byte, []int) {
-	return file_opendsec_v1_iam_proto_rawDescGZIP(), []int{16}
+	return file_opendsec_v1_iam_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *LeaseEdgeRequest) GetLease() string {
@@ -996,7 +1067,7 @@ type LeaseEdgeResponse struct {
 
 func (x *LeaseEdgeResponse) Reset() {
 	*x = LeaseEdgeResponse{}
-	mi := &file_opendsec_v1_iam_proto_msgTypes[17]
+	mi := &file_opendsec_v1_iam_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1008,7 +1079,7 @@ func (x *LeaseEdgeResponse) String() string {
 func (*LeaseEdgeResponse) ProtoMessage() {}
 
 func (x *LeaseEdgeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_opendsec_v1_iam_proto_msgTypes[17]
+	mi := &file_opendsec_v1_iam_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1021,7 +1092,7 @@ func (x *LeaseEdgeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LeaseEdgeResponse.ProtoReflect.Descriptor instead.
 func (*LeaseEdgeResponse) Descriptor() ([]byte, []int) {
-	return file_opendsec_v1_iam_proto_rawDescGZIP(), []int{17}
+	return file_opendsec_v1_iam_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *LeaseEdgeResponse) GetHeld() bool {
@@ -1047,7 +1118,7 @@ type ReleaseLeasesResponse struct {
 
 func (x *ReleaseLeasesResponse) Reset() {
 	*x = ReleaseLeasesResponse{}
-	mi := &file_opendsec_v1_iam_proto_msgTypes[18]
+	mi := &file_opendsec_v1_iam_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1059,7 +1130,7 @@ func (x *ReleaseLeasesResponse) String() string {
 func (*ReleaseLeasesResponse) ProtoMessage() {}
 
 func (x *ReleaseLeasesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_opendsec_v1_iam_proto_msgTypes[18]
+	mi := &file_opendsec_v1_iam_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1072,7 +1143,7 @@ func (x *ReleaseLeasesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReleaseLeasesResponse.ProtoReflect.Descriptor instead.
 func (*ReleaseLeasesResponse) Descriptor() ([]byte, []int) {
-	return file_opendsec_v1_iam_proto_rawDescGZIP(), []int{18}
+	return file_opendsec_v1_iam_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *ReleaseLeasesResponse) GetReleased() int32 {
@@ -1087,13 +1158,14 @@ type ReconcileEdgeRequest struct {
 	Edge          string                 `protobuf:"bytes,1,opt,name=edge,proto3" json:"edge,omitempty"`
 	Live          []*LeaseInfo           `protobuf:"bytes,2,rep,name=live,proto3" json:"live,omitempty"`                          // every live lease on this edge
 	MinAgeS       float64                `protobuf:"fixed64,3,opt,name=min_age_s,json=minAgeS,proto3" json:"min_age_s,omitempty"` // younger leases are never released
+	Fence         *Fence                 `protobuf:"bytes,4,opt,name=fence,proto3" json:"fence,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ReconcileEdgeRequest) Reset() {
 	*x = ReconcileEdgeRequest{}
-	mi := &file_opendsec_v1_iam_proto_msgTypes[19]
+	mi := &file_opendsec_v1_iam_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1105,7 +1177,7 @@ func (x *ReconcileEdgeRequest) String() string {
 func (*ReconcileEdgeRequest) ProtoMessage() {}
 
 func (x *ReconcileEdgeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_opendsec_v1_iam_proto_msgTypes[19]
+	mi := &file_opendsec_v1_iam_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1118,7 +1190,7 @@ func (x *ReconcileEdgeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReconcileEdgeRequest.ProtoReflect.Descriptor instead.
 func (*ReconcileEdgeRequest) Descriptor() ([]byte, []int) {
-	return file_opendsec_v1_iam_proto_rawDescGZIP(), []int{19}
+	return file_opendsec_v1_iam_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *ReconcileEdgeRequest) GetEdge() string {
@@ -1142,6 +1214,13 @@ func (x *ReconcileEdgeRequest) GetMinAgeS() float64 {
 	return 0
 }
 
+func (x *ReconcileEdgeRequest) GetFence() *Fence {
+	if x != nil {
+		return x.Fence
+	}
+	return nil
+}
+
 type ReconcileEdgeResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Adopted       int32                  `protobuf:"varint,1,opt,name=adopted,proto3" json:"adopted,omitempty"`     // live leases IAM did not know about
@@ -1154,7 +1233,7 @@ type ReconcileEdgeResponse struct {
 
 func (x *ReconcileEdgeResponse) Reset() {
 	*x = ReconcileEdgeResponse{}
-	mi := &file_opendsec_v1_iam_proto_msgTypes[20]
+	mi := &file_opendsec_v1_iam_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1166,7 +1245,7 @@ func (x *ReconcileEdgeResponse) String() string {
 func (*ReconcileEdgeResponse) ProtoMessage() {}
 
 func (x *ReconcileEdgeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_opendsec_v1_iam_proto_msgTypes[20]
+	mi := &file_opendsec_v1_iam_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1179,7 +1258,7 @@ func (x *ReconcileEdgeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReconcileEdgeResponse.ProtoReflect.Descriptor instead.
 func (*ReconcileEdgeResponse) Descriptor() ([]byte, []int) {
-	return file_opendsec_v1_iam_proto_rawDescGZIP(), []int{20}
+	return file_opendsec_v1_iam_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *ReconcileEdgeResponse) GetAdopted() int32 {
@@ -1213,13 +1292,14 @@ func (x *ReconcileEdgeResponse) GetConflicts() int32 {
 type SweepUnboundRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	MaxAgeS       float64                `protobuf:"fixed64,1,opt,name=max_age_s,json=maxAgeS,proto3" json:"max_age_s,omitempty"` // release leases no edge claimed for this long
+	Fence         *Fence                 `protobuf:"bytes,2,opt,name=fence,proto3" json:"fence,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *SweepUnboundRequest) Reset() {
 	*x = SweepUnboundRequest{}
-	mi := &file_opendsec_v1_iam_proto_msgTypes[21]
+	mi := &file_opendsec_v1_iam_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1231,7 +1311,7 @@ func (x *SweepUnboundRequest) String() string {
 func (*SweepUnboundRequest) ProtoMessage() {}
 
 func (x *SweepUnboundRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_opendsec_v1_iam_proto_msgTypes[21]
+	mi := &file_opendsec_v1_iam_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1244,7 +1324,7 @@ func (x *SweepUnboundRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SweepUnboundRequest.ProtoReflect.Descriptor instead.
 func (*SweepUnboundRequest) Descriptor() ([]byte, []int) {
-	return file_opendsec_v1_iam_proto_rawDescGZIP(), []int{21}
+	return file_opendsec_v1_iam_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *SweepUnboundRequest) GetMaxAgeS() float64 {
@@ -1252,6 +1332,13 @@ func (x *SweepUnboundRequest) GetMaxAgeS() float64 {
 		return x.MaxAgeS
 	}
 	return 0
+}
+
+func (x *SweepUnboundRequest) GetFence() *Fence {
+	if x != nil {
+		return x.Fence
+	}
+	return nil
 }
 
 type SweepUnboundResponse struct {
@@ -1263,7 +1350,7 @@ type SweepUnboundResponse struct {
 
 func (x *SweepUnboundResponse) Reset() {
 	*x = SweepUnboundResponse{}
-	mi := &file_opendsec_v1_iam_proto_msgTypes[22]
+	mi := &file_opendsec_v1_iam_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1275,7 +1362,7 @@ func (x *SweepUnboundResponse) String() string {
 func (*SweepUnboundResponse) ProtoMessage() {}
 
 func (x *SweepUnboundResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_opendsec_v1_iam_proto_msgTypes[22]
+	mi := &file_opendsec_v1_iam_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1288,7 +1375,7 @@ func (x *SweepUnboundResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SweepUnboundResponse.ProtoReflect.Descriptor instead.
 func (*SweepUnboundResponse) Descriptor() ([]byte, []int) {
-	return file_opendsec_v1_iam_proto_rawDescGZIP(), []int{22}
+	return file_opendsec_v1_iam_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *SweepUnboundResponse) GetReleased() int32 {
@@ -1307,7 +1394,7 @@ type Permissions struct {
 
 func (x *Permissions) Reset() {
 	*x = Permissions{}
-	mi := &file_opendsec_v1_iam_proto_msgTypes[23]
+	mi := &file_opendsec_v1_iam_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1319,7 +1406,7 @@ func (x *Permissions) String() string {
 func (*Permissions) ProtoMessage() {}
 
 func (x *Permissions) ProtoReflect() protoreflect.Message {
-	mi := &file_opendsec_v1_iam_proto_msgTypes[23]
+	mi := &file_opendsec_v1_iam_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1332,7 +1419,7 @@ func (x *Permissions) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Permissions.ProtoReflect.Descriptor instead.
 func (*Permissions) Descriptor() ([]byte, []int) {
-	return file_opendsec_v1_iam_proto_rawDescGZIP(), []int{23}
+	return file_opendsec_v1_iam_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *Permissions) GetPerms() []string {
@@ -1357,7 +1444,7 @@ type Project struct {
 
 func (x *Project) Reset() {
 	*x = Project{}
-	mi := &file_opendsec_v1_iam_proto_msgTypes[24]
+	mi := &file_opendsec_v1_iam_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1369,7 +1456,7 @@ func (x *Project) String() string {
 func (*Project) ProtoMessage() {}
 
 func (x *Project) ProtoReflect() protoreflect.Message {
-	mi := &file_opendsec_v1_iam_proto_msgTypes[24]
+	mi := &file_opendsec_v1_iam_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1382,7 +1469,7 @@ func (x *Project) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Project.ProtoReflect.Descriptor instead.
 func (*Project) Descriptor() ([]byte, []int) {
-	return file_opendsec_v1_iam_proto_rawDescGZIP(), []int{24}
+	return file_opendsec_v1_iam_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *Project) GetPath() string {
@@ -1432,7 +1519,7 @@ type CreateProjectRequest struct {
 
 func (x *CreateProjectRequest) Reset() {
 	*x = CreateProjectRequest{}
-	mi := &file_opendsec_v1_iam_proto_msgTypes[25]
+	mi := &file_opendsec_v1_iam_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1444,7 +1531,7 @@ func (x *CreateProjectRequest) String() string {
 func (*CreateProjectRequest) ProtoMessage() {}
 
 func (x *CreateProjectRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_opendsec_v1_iam_proto_msgTypes[25]
+	mi := &file_opendsec_v1_iam_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1457,7 +1544,7 @@ func (x *CreateProjectRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateProjectRequest.ProtoReflect.Descriptor instead.
 func (*CreateProjectRequest) Descriptor() ([]byte, []int) {
-	return file_opendsec_v1_iam_proto_rawDescGZIP(), []int{25}
+	return file_opendsec_v1_iam_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *CreateProjectRequest) GetActor() string {
@@ -1501,7 +1588,7 @@ type CreatePrincipalRequest struct {
 
 func (x *CreatePrincipalRequest) Reset() {
 	*x = CreatePrincipalRequest{}
-	mi := &file_opendsec_v1_iam_proto_msgTypes[26]
+	mi := &file_opendsec_v1_iam_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1513,7 +1600,7 @@ func (x *CreatePrincipalRequest) String() string {
 func (*CreatePrincipalRequest) ProtoMessage() {}
 
 func (x *CreatePrincipalRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_opendsec_v1_iam_proto_msgTypes[26]
+	mi := &file_opendsec_v1_iam_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1526,7 +1613,7 @@ func (x *CreatePrincipalRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreatePrincipalRequest.ProtoReflect.Descriptor instead.
 func (*CreatePrincipalRequest) Descriptor() ([]byte, []int) {
-	return file_opendsec_v1_iam_proto_rawDescGZIP(), []int{26}
+	return file_opendsec_v1_iam_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *CreatePrincipalRequest) GetActor() string {
@@ -1575,7 +1662,7 @@ type CreatePrincipalResponse struct {
 
 func (x *CreatePrincipalResponse) Reset() {
 	*x = CreatePrincipalResponse{}
-	mi := &file_opendsec_v1_iam_proto_msgTypes[27]
+	mi := &file_opendsec_v1_iam_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1587,7 +1674,7 @@ func (x *CreatePrincipalResponse) String() string {
 func (*CreatePrincipalResponse) ProtoMessage() {}
 
 func (x *CreatePrincipalResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_opendsec_v1_iam_proto_msgTypes[27]
+	mi := &file_opendsec_v1_iam_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1600,7 +1687,7 @@ func (x *CreatePrincipalResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreatePrincipalResponse.ProtoReflect.Descriptor instead.
 func (*CreatePrincipalResponse) Descriptor() ([]byte, []int) {
-	return file_opendsec_v1_iam_proto_rawDescGZIP(), []int{27}
+	return file_opendsec_v1_iam_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *CreatePrincipalResponse) GetId() string {
@@ -1638,7 +1725,7 @@ type TokenInfo struct {
 
 func (x *TokenInfo) Reset() {
 	*x = TokenInfo{}
-	mi := &file_opendsec_v1_iam_proto_msgTypes[28]
+	mi := &file_opendsec_v1_iam_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1650,7 +1737,7 @@ func (x *TokenInfo) String() string {
 func (*TokenInfo) ProtoMessage() {}
 
 func (x *TokenInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_opendsec_v1_iam_proto_msgTypes[28]
+	mi := &file_opendsec_v1_iam_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1663,7 +1750,7 @@ func (x *TokenInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TokenInfo.ProtoReflect.Descriptor instead.
 func (*TokenInfo) Descriptor() ([]byte, []int) {
-	return file_opendsec_v1_iam_proto_rawDescGZIP(), []int{28}
+	return file_opendsec_v1_iam_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *TokenInfo) GetId() string {
@@ -1720,7 +1807,7 @@ type CreateTokenRequest struct {
 
 func (x *CreateTokenRequest) Reset() {
 	*x = CreateTokenRequest{}
-	mi := &file_opendsec_v1_iam_proto_msgTypes[29]
+	mi := &file_opendsec_v1_iam_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1732,7 +1819,7 @@ func (x *CreateTokenRequest) String() string {
 func (*CreateTokenRequest) ProtoMessage() {}
 
 func (x *CreateTokenRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_opendsec_v1_iam_proto_msgTypes[29]
+	mi := &file_opendsec_v1_iam_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1745,7 +1832,7 @@ func (x *CreateTokenRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateTokenRequest.ProtoReflect.Descriptor instead.
 func (*CreateTokenRequest) Descriptor() ([]byte, []int) {
-	return file_opendsec_v1_iam_proto_rawDescGZIP(), []int{29}
+	return file_opendsec_v1_iam_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *CreateTokenRequest) GetActor() string {
@@ -1786,7 +1873,7 @@ type CreateTokenResponse struct {
 
 func (x *CreateTokenResponse) Reset() {
 	*x = CreateTokenResponse{}
-	mi := &file_opendsec_v1_iam_proto_msgTypes[30]
+	mi := &file_opendsec_v1_iam_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1798,7 +1885,7 @@ func (x *CreateTokenResponse) String() string {
 func (*CreateTokenResponse) ProtoMessage() {}
 
 func (x *CreateTokenResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_opendsec_v1_iam_proto_msgTypes[30]
+	mi := &file_opendsec_v1_iam_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1811,7 +1898,7 @@ func (x *CreateTokenResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateTokenResponse.ProtoReflect.Descriptor instead.
 func (*CreateTokenResponse) Descriptor() ([]byte, []int) {
-	return file_opendsec_v1_iam_proto_rawDescGZIP(), []int{30}
+	return file_opendsec_v1_iam_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *CreateTokenResponse) GetToken() string {
@@ -1838,7 +1925,7 @@ type ListTokensRequest struct {
 
 func (x *ListTokensRequest) Reset() {
 	*x = ListTokensRequest{}
-	mi := &file_opendsec_v1_iam_proto_msgTypes[31]
+	mi := &file_opendsec_v1_iam_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1850,7 +1937,7 @@ func (x *ListTokensRequest) String() string {
 func (*ListTokensRequest) ProtoMessage() {}
 
 func (x *ListTokensRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_opendsec_v1_iam_proto_msgTypes[31]
+	mi := &file_opendsec_v1_iam_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1863,7 +1950,7 @@ func (x *ListTokensRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListTokensRequest.ProtoReflect.Descriptor instead.
 func (*ListTokensRequest) Descriptor() ([]byte, []int) {
-	return file_opendsec_v1_iam_proto_rawDescGZIP(), []int{31}
+	return file_opendsec_v1_iam_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *ListTokensRequest) GetActor() string {
@@ -1889,7 +1976,7 @@ type TokenList struct {
 
 func (x *TokenList) Reset() {
 	*x = TokenList{}
-	mi := &file_opendsec_v1_iam_proto_msgTypes[32]
+	mi := &file_opendsec_v1_iam_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1901,7 +1988,7 @@ func (x *TokenList) String() string {
 func (*TokenList) ProtoMessage() {}
 
 func (x *TokenList) ProtoReflect() protoreflect.Message {
-	mi := &file_opendsec_v1_iam_proto_msgTypes[32]
+	mi := &file_opendsec_v1_iam_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1914,7 +2001,7 @@ func (x *TokenList) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TokenList.ProtoReflect.Descriptor instead.
 func (*TokenList) Descriptor() ([]byte, []int) {
-	return file_opendsec_v1_iam_proto_rawDescGZIP(), []int{32}
+	return file_opendsec_v1_iam_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *TokenList) GetTokens() []*TokenInfo {
@@ -1935,7 +2022,7 @@ type RevokeTokenRequest struct {
 
 func (x *RevokeTokenRequest) Reset() {
 	*x = RevokeTokenRequest{}
-	mi := &file_opendsec_v1_iam_proto_msgTypes[33]
+	mi := &file_opendsec_v1_iam_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1947,7 +2034,7 @@ func (x *RevokeTokenRequest) String() string {
 func (*RevokeTokenRequest) ProtoMessage() {}
 
 func (x *RevokeTokenRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_opendsec_v1_iam_proto_msgTypes[33]
+	mi := &file_opendsec_v1_iam_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1960,7 +2047,7 @@ func (x *RevokeTokenRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RevokeTokenRequest.ProtoReflect.Descriptor instead.
 func (*RevokeTokenRequest) Descriptor() ([]byte, []int) {
-	return file_opendsec_v1_iam_proto_rawDescGZIP(), []int{33}
+	return file_opendsec_v1_iam_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *RevokeTokenRequest) GetActor() string {
@@ -1994,7 +2081,7 @@ type DeletePrincipalRequest struct {
 
 func (x *DeletePrincipalRequest) Reset() {
 	*x = DeletePrincipalRequest{}
-	mi := &file_opendsec_v1_iam_proto_msgTypes[34]
+	mi := &file_opendsec_v1_iam_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2006,7 +2093,7 @@ func (x *DeletePrincipalRequest) String() string {
 func (*DeletePrincipalRequest) ProtoMessage() {}
 
 func (x *DeletePrincipalRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_opendsec_v1_iam_proto_msgTypes[34]
+	mi := &file_opendsec_v1_iam_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2019,7 +2106,7 @@ func (x *DeletePrincipalRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeletePrincipalRequest.ProtoReflect.Descriptor instead.
 func (*DeletePrincipalRequest) Descriptor() ([]byte, []int) {
-	return file_opendsec_v1_iam_proto_rawDescGZIP(), []int{34}
+	return file_opendsec_v1_iam_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *DeletePrincipalRequest) GetActor() string {
@@ -2046,7 +2133,7 @@ type DeleteProjectRequest struct {
 
 func (x *DeleteProjectRequest) Reset() {
 	*x = DeleteProjectRequest{}
-	mi := &file_opendsec_v1_iam_proto_msgTypes[35]
+	mi := &file_opendsec_v1_iam_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2058,7 +2145,7 @@ func (x *DeleteProjectRequest) String() string {
 func (*DeleteProjectRequest) ProtoMessage() {}
 
 func (x *DeleteProjectRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_opendsec_v1_iam_proto_msgTypes[35]
+	mi := &file_opendsec_v1_iam_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2071,7 +2158,7 @@ func (x *DeleteProjectRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteProjectRequest.ProtoReflect.Descriptor instead.
 func (*DeleteProjectRequest) Descriptor() ([]byte, []int) {
-	return file_opendsec_v1_iam_proto_rawDescGZIP(), []int{35}
+	return file_opendsec_v1_iam_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *DeleteProjectRequest) GetActor() string {
@@ -2097,7 +2184,7 @@ type EpochResponse struct {
 
 func (x *EpochResponse) Reset() {
 	*x = EpochResponse{}
-	mi := &file_opendsec_v1_iam_proto_msgTypes[36]
+	mi := &file_opendsec_v1_iam_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2109,7 +2196,7 @@ func (x *EpochResponse) String() string {
 func (*EpochResponse) ProtoMessage() {}
 
 func (x *EpochResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_opendsec_v1_iam_proto_msgTypes[36]
+	mi := &file_opendsec_v1_iam_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2122,7 +2209,7 @@ func (x *EpochResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EpochResponse.ProtoReflect.Descriptor instead.
 func (*EpochResponse) Descriptor() ([]byte, []int) {
-	return file_opendsec_v1_iam_proto_rawDescGZIP(), []int{36}
+	return file_opendsec_v1_iam_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *EpochResponse) GetEpoch() uint64 {
@@ -2144,7 +2231,7 @@ type GrantRequest struct {
 
 func (x *GrantRequest) Reset() {
 	*x = GrantRequest{}
-	mi := &file_opendsec_v1_iam_proto_msgTypes[37]
+	mi := &file_opendsec_v1_iam_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2156,7 +2243,7 @@ func (x *GrantRequest) String() string {
 func (*GrantRequest) ProtoMessage() {}
 
 func (x *GrantRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_opendsec_v1_iam_proto_msgTypes[37]
+	mi := &file_opendsec_v1_iam_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2169,7 +2256,7 @@ func (x *GrantRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GrantRequest.ProtoReflect.Descriptor instead.
 func (*GrantRequest) Descriptor() ([]byte, []int) {
-	return file_opendsec_v1_iam_proto_rawDescGZIP(), []int{37}
+	return file_opendsec_v1_iam_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *GrantRequest) GetActor() string {
@@ -2212,7 +2299,7 @@ type RevokeRequest struct {
 
 func (x *RevokeRequest) Reset() {
 	*x = RevokeRequest{}
-	mi := &file_opendsec_v1_iam_proto_msgTypes[38]
+	mi := &file_opendsec_v1_iam_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2224,7 +2311,7 @@ func (x *RevokeRequest) String() string {
 func (*RevokeRequest) ProtoMessage() {}
 
 func (x *RevokeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_opendsec_v1_iam_proto_msgTypes[38]
+	mi := &file_opendsec_v1_iam_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2237,7 +2324,7 @@ func (x *RevokeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RevokeRequest.ProtoReflect.Descriptor instead.
 func (*RevokeRequest) Descriptor() ([]byte, []int) {
-	return file_opendsec_v1_iam_proto_rawDescGZIP(), []int{38}
+	return file_opendsec_v1_iam_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *RevokeRequest) GetActor() string {
@@ -2279,7 +2366,7 @@ type SetQuotaRequest struct {
 
 func (x *SetQuotaRequest) Reset() {
 	*x = SetQuotaRequest{}
-	mi := &file_opendsec_v1_iam_proto_msgTypes[39]
+	mi := &file_opendsec_v1_iam_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2291,7 +2378,7 @@ func (x *SetQuotaRequest) String() string {
 func (*SetQuotaRequest) ProtoMessage() {}
 
 func (x *SetQuotaRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_opendsec_v1_iam_proto_msgTypes[39]
+	mi := &file_opendsec_v1_iam_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2304,7 +2391,7 @@ func (x *SetQuotaRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetQuotaRequest.ProtoReflect.Descriptor instead.
 func (*SetQuotaRequest) Descriptor() ([]byte, []int) {
-	return file_opendsec_v1_iam_proto_rawDescGZIP(), []int{39}
+	return file_opendsec_v1_iam_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *SetQuotaRequest) GetActor() string {
@@ -2342,7 +2429,7 @@ type UsageRequest struct {
 
 func (x *UsageRequest) Reset() {
 	*x = UsageRequest{}
-	mi := &file_opendsec_v1_iam_proto_msgTypes[40]
+	mi := &file_opendsec_v1_iam_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2354,7 +2441,7 @@ func (x *UsageRequest) String() string {
 func (*UsageRequest) ProtoMessage() {}
 
 func (x *UsageRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_opendsec_v1_iam_proto_msgTypes[40]
+	mi := &file_opendsec_v1_iam_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2367,7 +2454,7 @@ func (x *UsageRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UsageRequest.ProtoReflect.Descriptor instead.
 func (*UsageRequest) Descriptor() ([]byte, []int) {
-	return file_opendsec_v1_iam_proto_rawDescGZIP(), []int{40}
+	return file_opendsec_v1_iam_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *UsageRequest) GetActor() string {
@@ -2416,7 +2503,7 @@ type UsageRow struct {
 
 func (x *UsageRow) Reset() {
 	*x = UsageRow{}
-	mi := &file_opendsec_v1_iam_proto_msgTypes[41]
+	mi := &file_opendsec_v1_iam_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2428,7 +2515,7 @@ func (x *UsageRow) String() string {
 func (*UsageRow) ProtoMessage() {}
 
 func (x *UsageRow) ProtoReflect() protoreflect.Message {
-	mi := &file_opendsec_v1_iam_proto_msgTypes[41]
+	mi := &file_opendsec_v1_iam_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2441,7 +2528,7 @@ func (x *UsageRow) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UsageRow.ProtoReflect.Descriptor instead.
 func (*UsageRow) Descriptor() ([]byte, []int) {
-	return file_opendsec_v1_iam_proto_rawDescGZIP(), []int{41}
+	return file_opendsec_v1_iam_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *UsageRow) GetProject() string {
@@ -2503,7 +2590,7 @@ type UsageReport struct {
 
 func (x *UsageReport) Reset() {
 	*x = UsageReport{}
-	mi := &file_opendsec_v1_iam_proto_msgTypes[42]
+	mi := &file_opendsec_v1_iam_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2515,7 +2602,7 @@ func (x *UsageReport) String() string {
 func (*UsageReport) ProtoMessage() {}
 
 func (x *UsageReport) ProtoReflect() protoreflect.Message {
-	mi := &file_opendsec_v1_iam_proto_msgTypes[42]
+	mi := &file_opendsec_v1_iam_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2528,7 +2615,7 @@ func (x *UsageReport) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UsageReport.ProtoReflect.Descriptor instead.
 func (*UsageReport) Descriptor() ([]byte, []int) {
-	return file_opendsec_v1_iam_proto_rawDescGZIP(), []int{42}
+	return file_opendsec_v1_iam_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *UsageReport) GetRows() []*UsageRow {
@@ -2555,7 +2642,7 @@ type GetProjectRequest struct {
 
 func (x *GetProjectRequest) Reset() {
 	*x = GetProjectRequest{}
-	mi := &file_opendsec_v1_iam_proto_msgTypes[43]
+	mi := &file_opendsec_v1_iam_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2567,7 +2654,7 @@ func (x *GetProjectRequest) String() string {
 func (*GetProjectRequest) ProtoMessage() {}
 
 func (x *GetProjectRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_opendsec_v1_iam_proto_msgTypes[43]
+	mi := &file_opendsec_v1_iam_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2580,7 +2667,7 @@ func (x *GetProjectRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetProjectRequest.ProtoReflect.Descriptor instead.
 func (*GetProjectRequest) Descriptor() ([]byte, []int) {
-	return file_opendsec_v1_iam_proto_rawDescGZIP(), []int{43}
+	return file_opendsec_v1_iam_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *GetProjectRequest) GetActor() string {
@@ -2612,18 +2699,23 @@ const file_opendsec_v1_iam_proto_rawDesc = "" +
 	"\x06prefix\x18\x01 \x01(\tR\x06prefix\x12\x1b\n" +
 	"\tkeys_only\x18\x02 \x01(\bR\bkeysOnly\";\n" +
 	"\tKVEntries\x12.\n" +
-	"\aentries\x18\x01 \x03(\v2\x14.opendsec.v1.KVEntryR\aentries\"k\n" +
+	"\aentries\x18\x01 \x03(\v2\x14.opendsec.v1.KVEntryR\aentries\"3\n" +
+	"\x05Fence\x12\x12\n" +
+	"\x04lock\x18\x01 \x01(\tR\x04lock\x12\x16\n" +
+	"\x06holder\x18\x02 \x01(\tR\x06holder\"\x95\x01\n" +
 	"\fKVPutRequest\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\fR\x05value\x12\x14\n" +
 	"\x05check\x18\x03 \x01(\bR\x05check\x12\x1d\n" +
 	"\n" +
-	"expect_rev\x18\x04 \x01(\x04R\texpectRev\"X\n" +
+	"expect_rev\x18\x04 \x01(\x04R\texpectRev\x12(\n" +
+	"\x05fence\x18\x05 \x01(\v2\x12.opendsec.v1.FenceR\x05fence\"\x82\x01\n" +
 	"\x0fKVDeleteRequest\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05check\x18\x02 \x01(\bR\x05check\x12\x1d\n" +
 	"\n" +
-	"expect_rev\x18\x03 \x01(\x04R\texpectRev\"N\n" +
+	"expect_rev\x18\x03 \x01(\x04R\texpectRev\x12(\n" +
+	"\x05fence\x18\x04 \x01(\v2\x12.opendsec.v1.FenceR\x05fence\"N\n" +
 	"\vLockRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x16\n" +
 	"\x06holder\x18\x02 \x01(\tR\x06holder\x12\x13\n" +
@@ -2669,18 +2761,20 @@ const file_opendsec_v1_iam_proto_rawDesc = "" +
 	"\x04held\x18\x01 \x01(\bR\x04held\x12\x12\n" +
 	"\x04edge\x18\x02 \x01(\tR\x04edge\"3\n" +
 	"\x15ReleaseLeasesResponse\x12\x1a\n" +
-	"\breleased\x18\x01 \x01(\x05R\breleased\"r\n" +
+	"\breleased\x18\x01 \x01(\x05R\breleased\"\x9c\x01\n" +
 	"\x14ReconcileEdgeRequest\x12\x12\n" +
 	"\x04edge\x18\x01 \x01(\tR\x04edge\x12*\n" +
 	"\x04live\x18\x02 \x03(\v2\x16.opendsec.v1.LeaseInfoR\x04live\x12\x1a\n" +
-	"\tmin_age_s\x18\x03 \x01(\x01R\aminAgeS\"\x81\x01\n" +
+	"\tmin_age_s\x18\x03 \x01(\x01R\aminAgeS\x12(\n" +
+	"\x05fence\x18\x04 \x01(\v2\x12.opendsec.v1.FenceR\x05fence\"\x81\x01\n" +
 	"\x15ReconcileEdgeResponse\x12\x18\n" +
 	"\aadopted\x18\x01 \x01(\x05R\aadopted\x12\x14\n" +
 	"\x05bound\x18\x02 \x01(\x05R\x05bound\x12\x1a\n" +
 	"\breleased\x18\x03 \x01(\x05R\breleased\x12\x1c\n" +
-	"\tconflicts\x18\x04 \x01(\x05R\tconflicts\"1\n" +
+	"\tconflicts\x18\x04 \x01(\x05R\tconflicts\"[\n" +
 	"\x13SweepUnboundRequest\x12\x1a\n" +
-	"\tmax_age_s\x18\x01 \x01(\x01R\amaxAgeS\"2\n" +
+	"\tmax_age_s\x18\x01 \x01(\x01R\amaxAgeS\x12(\n" +
+	"\x05fence\x18\x02 \x01(\v2\x12.opendsec.v1.FenceR\x05fence\"2\n" +
 	"\x14SweepUnboundResponse\x12\x1a\n" +
 	"\breleased\x18\x01 \x01(\x05R\breleased\"#\n" +
 	"\vPermissions\x12\x14\n" +
@@ -2842,148 +2936,153 @@ func file_opendsec_v1_iam_proto_rawDescGZIP() []byte {
 	return file_opendsec_v1_iam_proto_rawDescData
 }
 
-var file_opendsec_v1_iam_proto_msgTypes = make([]protoimpl.MessageInfo, 49)
+var file_opendsec_v1_iam_proto_msgTypes = make([]protoimpl.MessageInfo, 50)
 var file_opendsec_v1_iam_proto_goTypes = []any{
 	(*KVEntry)(nil),                 // 0: opendsec.v1.KVEntry
 	(*KVGetRequest)(nil),            // 1: opendsec.v1.KVGetRequest
 	(*KVListRequest)(nil),           // 2: opendsec.v1.KVListRequest
 	(*KVEntries)(nil),               // 3: opendsec.v1.KVEntries
-	(*KVPutRequest)(nil),            // 4: opendsec.v1.KVPutRequest
-	(*KVDeleteRequest)(nil),         // 5: opendsec.v1.KVDeleteRequest
-	(*LockRequest)(nil),             // 6: opendsec.v1.LockRequest
-	(*LockState)(nil),               // 7: opendsec.v1.LockState
-	(*Principal)(nil),               // 8: opendsec.v1.Principal
-	(*AdmitRequest)(nil),            // 9: opendsec.v1.AdmitRequest
-	(*AdmitResponse)(nil),           // 10: opendsec.v1.AdmitResponse
-	(*AuthenticateRequest)(nil),     // 11: opendsec.v1.AuthenticateRequest
-	(*AuthorizeRequest)(nil),        // 12: opendsec.v1.AuthorizeRequest
-	(*ReleaseRequest)(nil),          // 13: opendsec.v1.ReleaseRequest
-	(*ReleaseResponse)(nil),         // 14: opendsec.v1.ReleaseResponse
-	(*ReleaseLeasesRequest)(nil),    // 15: opendsec.v1.ReleaseLeasesRequest
-	(*LeaseEdgeRequest)(nil),        // 16: opendsec.v1.LeaseEdgeRequest
-	(*LeaseEdgeResponse)(nil),       // 17: opendsec.v1.LeaseEdgeResponse
-	(*ReleaseLeasesResponse)(nil),   // 18: opendsec.v1.ReleaseLeasesResponse
-	(*ReconcileEdgeRequest)(nil),    // 19: opendsec.v1.ReconcileEdgeRequest
-	(*ReconcileEdgeResponse)(nil),   // 20: opendsec.v1.ReconcileEdgeResponse
-	(*SweepUnboundRequest)(nil),     // 21: opendsec.v1.SweepUnboundRequest
-	(*SweepUnboundResponse)(nil),    // 22: opendsec.v1.SweepUnboundResponse
-	(*Permissions)(nil),             // 23: opendsec.v1.Permissions
-	(*Project)(nil),                 // 24: opendsec.v1.Project
-	(*CreateProjectRequest)(nil),    // 25: opendsec.v1.CreateProjectRequest
-	(*CreatePrincipalRequest)(nil),  // 26: opendsec.v1.CreatePrincipalRequest
-	(*CreatePrincipalResponse)(nil), // 27: opendsec.v1.CreatePrincipalResponse
-	(*TokenInfo)(nil),               // 28: opendsec.v1.TokenInfo
-	(*CreateTokenRequest)(nil),      // 29: opendsec.v1.CreateTokenRequest
-	(*CreateTokenResponse)(nil),     // 30: opendsec.v1.CreateTokenResponse
-	(*ListTokensRequest)(nil),       // 31: opendsec.v1.ListTokensRequest
-	(*TokenList)(nil),               // 32: opendsec.v1.TokenList
-	(*RevokeTokenRequest)(nil),      // 33: opendsec.v1.RevokeTokenRequest
-	(*DeletePrincipalRequest)(nil),  // 34: opendsec.v1.DeletePrincipalRequest
-	(*DeleteProjectRequest)(nil),    // 35: opendsec.v1.DeleteProjectRequest
-	(*EpochResponse)(nil),           // 36: opendsec.v1.EpochResponse
-	(*GrantRequest)(nil),            // 37: opendsec.v1.GrantRequest
-	(*RevokeRequest)(nil),           // 38: opendsec.v1.RevokeRequest
-	(*SetQuotaRequest)(nil),         // 39: opendsec.v1.SetQuotaRequest
-	(*UsageRequest)(nil),            // 40: opendsec.v1.UsageRequest
-	(*UsageRow)(nil),                // 41: opendsec.v1.UsageRow
-	(*UsageReport)(nil),             // 42: opendsec.v1.UsageReport
-	(*GetProjectRequest)(nil),       // 43: opendsec.v1.GetProjectRequest
-	nil,                             // 44: opendsec.v1.Project.QuotaEntry
-	nil,                             // 45: opendsec.v1.Project.UsageEntry
-	nil,                             // 46: opendsec.v1.Project.PoliciesEntry
-	nil,                             // 47: opendsec.v1.CreateProjectRequest.QuotaEntry
-	nil,                             // 48: opendsec.v1.SetQuotaRequest.QuotaEntry
-	(*Resources)(nil),               // 49: opendsec.v1.Resources
-	(*LeaseInfo)(nil),               // 50: opendsec.v1.LeaseInfo
-	(*Empty)(nil),                   // 51: opendsec.v1.Empty
-	(*IAMBackupRequest)(nil),        // 52: opendsec.v1.IAMBackupRequest
-	(*BackupChunk)(nil),             // 53: opendsec.v1.BackupChunk
-	(*IAMMemberRequest)(nil),        // 54: opendsec.v1.IAMMemberRequest
-	(*IAMMemberList)(nil),           // 55: opendsec.v1.IAMMemberList
+	(*Fence)(nil),                   // 4: opendsec.v1.Fence
+	(*KVPutRequest)(nil),            // 5: opendsec.v1.KVPutRequest
+	(*KVDeleteRequest)(nil),         // 6: opendsec.v1.KVDeleteRequest
+	(*LockRequest)(nil),             // 7: opendsec.v1.LockRequest
+	(*LockState)(nil),               // 8: opendsec.v1.LockState
+	(*Principal)(nil),               // 9: opendsec.v1.Principal
+	(*AdmitRequest)(nil),            // 10: opendsec.v1.AdmitRequest
+	(*AdmitResponse)(nil),           // 11: opendsec.v1.AdmitResponse
+	(*AuthenticateRequest)(nil),     // 12: opendsec.v1.AuthenticateRequest
+	(*AuthorizeRequest)(nil),        // 13: opendsec.v1.AuthorizeRequest
+	(*ReleaseRequest)(nil),          // 14: opendsec.v1.ReleaseRequest
+	(*ReleaseResponse)(nil),         // 15: opendsec.v1.ReleaseResponse
+	(*ReleaseLeasesRequest)(nil),    // 16: opendsec.v1.ReleaseLeasesRequest
+	(*LeaseEdgeRequest)(nil),        // 17: opendsec.v1.LeaseEdgeRequest
+	(*LeaseEdgeResponse)(nil),       // 18: opendsec.v1.LeaseEdgeResponse
+	(*ReleaseLeasesResponse)(nil),   // 19: opendsec.v1.ReleaseLeasesResponse
+	(*ReconcileEdgeRequest)(nil),    // 20: opendsec.v1.ReconcileEdgeRequest
+	(*ReconcileEdgeResponse)(nil),   // 21: opendsec.v1.ReconcileEdgeResponse
+	(*SweepUnboundRequest)(nil),     // 22: opendsec.v1.SweepUnboundRequest
+	(*SweepUnboundResponse)(nil),    // 23: opendsec.v1.SweepUnboundResponse
+	(*Permissions)(nil),             // 24: opendsec.v1.Permissions
+	(*Project)(nil),                 // 25: opendsec.v1.Project
+	(*CreateProjectRequest)(nil),    // 26: opendsec.v1.CreateProjectRequest
+	(*CreatePrincipalRequest)(nil),  // 27: opendsec.v1.CreatePrincipalRequest
+	(*CreatePrincipalResponse)(nil), // 28: opendsec.v1.CreatePrincipalResponse
+	(*TokenInfo)(nil),               // 29: opendsec.v1.TokenInfo
+	(*CreateTokenRequest)(nil),      // 30: opendsec.v1.CreateTokenRequest
+	(*CreateTokenResponse)(nil),     // 31: opendsec.v1.CreateTokenResponse
+	(*ListTokensRequest)(nil),       // 32: opendsec.v1.ListTokensRequest
+	(*TokenList)(nil),               // 33: opendsec.v1.TokenList
+	(*RevokeTokenRequest)(nil),      // 34: opendsec.v1.RevokeTokenRequest
+	(*DeletePrincipalRequest)(nil),  // 35: opendsec.v1.DeletePrincipalRequest
+	(*DeleteProjectRequest)(nil),    // 36: opendsec.v1.DeleteProjectRequest
+	(*EpochResponse)(nil),           // 37: opendsec.v1.EpochResponse
+	(*GrantRequest)(nil),            // 38: opendsec.v1.GrantRequest
+	(*RevokeRequest)(nil),           // 39: opendsec.v1.RevokeRequest
+	(*SetQuotaRequest)(nil),         // 40: opendsec.v1.SetQuotaRequest
+	(*UsageRequest)(nil),            // 41: opendsec.v1.UsageRequest
+	(*UsageRow)(nil),                // 42: opendsec.v1.UsageRow
+	(*UsageReport)(nil),             // 43: opendsec.v1.UsageReport
+	(*GetProjectRequest)(nil),       // 44: opendsec.v1.GetProjectRequest
+	nil,                             // 45: opendsec.v1.Project.QuotaEntry
+	nil,                             // 46: opendsec.v1.Project.UsageEntry
+	nil,                             // 47: opendsec.v1.Project.PoliciesEntry
+	nil,                             // 48: opendsec.v1.CreateProjectRequest.QuotaEntry
+	nil,                             // 49: opendsec.v1.SetQuotaRequest.QuotaEntry
+	(*Resources)(nil),               // 50: opendsec.v1.Resources
+	(*LeaseInfo)(nil),               // 51: opendsec.v1.LeaseInfo
+	(*Empty)(nil),                   // 52: opendsec.v1.Empty
+	(*IAMBackupRequest)(nil),        // 53: opendsec.v1.IAMBackupRequest
+	(*BackupChunk)(nil),             // 54: opendsec.v1.BackupChunk
+	(*IAMMemberRequest)(nil),        // 55: opendsec.v1.IAMMemberRequest
+	(*IAMMemberList)(nil),           // 56: opendsec.v1.IAMMemberList
 }
 var file_opendsec_v1_iam_proto_depIdxs = []int32{
 	0,  // 0: opendsec.v1.KVEntries.entries:type_name -> opendsec.v1.KVEntry
-	49, // 1: opendsec.v1.AdmitRequest.resources:type_name -> opendsec.v1.Resources
-	50, // 2: opendsec.v1.ReconcileEdgeRequest.live:type_name -> opendsec.v1.LeaseInfo
-	44, // 3: opendsec.v1.Project.quota:type_name -> opendsec.v1.Project.QuotaEntry
-	45, // 4: opendsec.v1.Project.usage:type_name -> opendsec.v1.Project.UsageEntry
-	46, // 5: opendsec.v1.Project.policies:type_name -> opendsec.v1.Project.PoliciesEntry
-	47, // 6: opendsec.v1.CreateProjectRequest.quota:type_name -> opendsec.v1.CreateProjectRequest.QuotaEntry
-	28, // 7: opendsec.v1.CreatePrincipalResponse.token_info:type_name -> opendsec.v1.TokenInfo
-	28, // 8: opendsec.v1.CreateTokenResponse.info:type_name -> opendsec.v1.TokenInfo
-	28, // 9: opendsec.v1.TokenList.tokens:type_name -> opendsec.v1.TokenInfo
-	48, // 10: opendsec.v1.SetQuotaRequest.quota:type_name -> opendsec.v1.SetQuotaRequest.QuotaEntry
-	41, // 11: opendsec.v1.UsageReport.rows:type_name -> opendsec.v1.UsageRow
-	23, // 12: opendsec.v1.Project.PoliciesEntry.value:type_name -> opendsec.v1.Permissions
-	9,  // 13: opendsec.v1.IAM.Admit:input_type -> opendsec.v1.AdmitRequest
-	11, // 14: opendsec.v1.IAM.Authenticate:input_type -> opendsec.v1.AuthenticateRequest
-	12, // 15: opendsec.v1.IAM.Authorize:input_type -> opendsec.v1.AuthorizeRequest
-	13, // 16: opendsec.v1.IAM.Release:input_type -> opendsec.v1.ReleaseRequest
-	15, // 17: opendsec.v1.IAM.ReleaseLeases:input_type -> opendsec.v1.ReleaseLeasesRequest
-	16, // 18: opendsec.v1.IAM.LeaseEdge:input_type -> opendsec.v1.LeaseEdgeRequest
-	19, // 19: opendsec.v1.IAM.ReconcileEdge:input_type -> opendsec.v1.ReconcileEdgeRequest
-	21, // 20: opendsec.v1.IAM.SweepUnbound:input_type -> opendsec.v1.SweepUnboundRequest
-	25, // 21: opendsec.v1.IAM.CreateProject:input_type -> opendsec.v1.CreateProjectRequest
-	26, // 22: opendsec.v1.IAM.CreatePrincipal:input_type -> opendsec.v1.CreatePrincipalRequest
-	37, // 23: opendsec.v1.IAM.Grant:input_type -> opendsec.v1.GrantRequest
-	38, // 24: opendsec.v1.IAM.Revoke:input_type -> opendsec.v1.RevokeRequest
-	39, // 25: opendsec.v1.IAM.SetQuota:input_type -> opendsec.v1.SetQuotaRequest
-	43, // 26: opendsec.v1.IAM.GetProject:input_type -> opendsec.v1.GetProjectRequest
-	40, // 27: opendsec.v1.IAM.GetUsage:input_type -> opendsec.v1.UsageRequest
-	29, // 28: opendsec.v1.IAM.CreateToken:input_type -> opendsec.v1.CreateTokenRequest
-	31, // 29: opendsec.v1.IAM.ListTokens:input_type -> opendsec.v1.ListTokensRequest
-	33, // 30: opendsec.v1.IAM.RevokeToken:input_type -> opendsec.v1.RevokeTokenRequest
-	34, // 31: opendsec.v1.IAM.DeletePrincipal:input_type -> opendsec.v1.DeletePrincipalRequest
-	35, // 32: opendsec.v1.IAM.DeleteProject:input_type -> opendsec.v1.DeleteProjectRequest
-	51, // 33: opendsec.v1.IAM.SecurityEpoch:input_type -> opendsec.v1.Empty
-	6,  // 34: opendsec.v1.IAM.AcquireLock:input_type -> opendsec.v1.LockRequest
-	6,  // 35: opendsec.v1.IAM.ReleaseLock:input_type -> opendsec.v1.LockRequest
-	52, // 36: opendsec.v1.IAM.Backup:input_type -> opendsec.v1.IAMBackupRequest
-	53, // 37: opendsec.v1.IAM.Restore:input_type -> opendsec.v1.BackupChunk
-	54, // 38: opendsec.v1.IAM.Members:input_type -> opendsec.v1.IAMMemberRequest
-	54, // 39: opendsec.v1.IAM.AddMember:input_type -> opendsec.v1.IAMMemberRequest
-	54, // 40: opendsec.v1.IAM.RemoveMember:input_type -> opendsec.v1.IAMMemberRequest
-	1,  // 41: opendsec.v1.IAM.KVGet:input_type -> opendsec.v1.KVGetRequest
-	2,  // 42: opendsec.v1.IAM.KVList:input_type -> opendsec.v1.KVListRequest
-	4,  // 43: opendsec.v1.IAM.KVPut:input_type -> opendsec.v1.KVPutRequest
-	5,  // 44: opendsec.v1.IAM.KVDelete:input_type -> opendsec.v1.KVDeleteRequest
-	10, // 45: opendsec.v1.IAM.Admit:output_type -> opendsec.v1.AdmitResponse
-	8,  // 46: opendsec.v1.IAM.Authenticate:output_type -> opendsec.v1.Principal
-	51, // 47: opendsec.v1.IAM.Authorize:output_type -> opendsec.v1.Empty
-	14, // 48: opendsec.v1.IAM.Release:output_type -> opendsec.v1.ReleaseResponse
-	18, // 49: opendsec.v1.IAM.ReleaseLeases:output_type -> opendsec.v1.ReleaseLeasesResponse
-	17, // 50: opendsec.v1.IAM.LeaseEdge:output_type -> opendsec.v1.LeaseEdgeResponse
-	20, // 51: opendsec.v1.IAM.ReconcileEdge:output_type -> opendsec.v1.ReconcileEdgeResponse
-	22, // 52: opendsec.v1.IAM.SweepUnbound:output_type -> opendsec.v1.SweepUnboundResponse
-	24, // 53: opendsec.v1.IAM.CreateProject:output_type -> opendsec.v1.Project
-	27, // 54: opendsec.v1.IAM.CreatePrincipal:output_type -> opendsec.v1.CreatePrincipalResponse
-	24, // 55: opendsec.v1.IAM.Grant:output_type -> opendsec.v1.Project
-	24, // 56: opendsec.v1.IAM.Revoke:output_type -> opendsec.v1.Project
-	24, // 57: opendsec.v1.IAM.SetQuota:output_type -> opendsec.v1.Project
-	24, // 58: opendsec.v1.IAM.GetProject:output_type -> opendsec.v1.Project
-	42, // 59: opendsec.v1.IAM.GetUsage:output_type -> opendsec.v1.UsageReport
-	30, // 60: opendsec.v1.IAM.CreateToken:output_type -> opendsec.v1.CreateTokenResponse
-	32, // 61: opendsec.v1.IAM.ListTokens:output_type -> opendsec.v1.TokenList
-	51, // 62: opendsec.v1.IAM.RevokeToken:output_type -> opendsec.v1.Empty
-	51, // 63: opendsec.v1.IAM.DeletePrincipal:output_type -> opendsec.v1.Empty
-	51, // 64: opendsec.v1.IAM.DeleteProject:output_type -> opendsec.v1.Empty
-	36, // 65: opendsec.v1.IAM.SecurityEpoch:output_type -> opendsec.v1.EpochResponse
-	7,  // 66: opendsec.v1.IAM.AcquireLock:output_type -> opendsec.v1.LockState
-	51, // 67: opendsec.v1.IAM.ReleaseLock:output_type -> opendsec.v1.Empty
-	53, // 68: opendsec.v1.IAM.Backup:output_type -> opendsec.v1.BackupChunk
-	51, // 69: opendsec.v1.IAM.Restore:output_type -> opendsec.v1.Empty
-	55, // 70: opendsec.v1.IAM.Members:output_type -> opendsec.v1.IAMMemberList
-	55, // 71: opendsec.v1.IAM.AddMember:output_type -> opendsec.v1.IAMMemberList
-	55, // 72: opendsec.v1.IAM.RemoveMember:output_type -> opendsec.v1.IAMMemberList
-	0,  // 73: opendsec.v1.IAM.KVGet:output_type -> opendsec.v1.KVEntry
-	3,  // 74: opendsec.v1.IAM.KVList:output_type -> opendsec.v1.KVEntries
-	0,  // 75: opendsec.v1.IAM.KVPut:output_type -> opendsec.v1.KVEntry
-	51, // 76: opendsec.v1.IAM.KVDelete:output_type -> opendsec.v1.Empty
-	45, // [45:77] is the sub-list for method output_type
-	13, // [13:45] is the sub-list for method input_type
-	13, // [13:13] is the sub-list for extension type_name
-	13, // [13:13] is the sub-list for extension extendee
-	0,  // [0:13] is the sub-list for field type_name
+	4,  // 1: opendsec.v1.KVPutRequest.fence:type_name -> opendsec.v1.Fence
+	4,  // 2: opendsec.v1.KVDeleteRequest.fence:type_name -> opendsec.v1.Fence
+	50, // 3: opendsec.v1.AdmitRequest.resources:type_name -> opendsec.v1.Resources
+	51, // 4: opendsec.v1.ReconcileEdgeRequest.live:type_name -> opendsec.v1.LeaseInfo
+	4,  // 5: opendsec.v1.ReconcileEdgeRequest.fence:type_name -> opendsec.v1.Fence
+	4,  // 6: opendsec.v1.SweepUnboundRequest.fence:type_name -> opendsec.v1.Fence
+	45, // 7: opendsec.v1.Project.quota:type_name -> opendsec.v1.Project.QuotaEntry
+	46, // 8: opendsec.v1.Project.usage:type_name -> opendsec.v1.Project.UsageEntry
+	47, // 9: opendsec.v1.Project.policies:type_name -> opendsec.v1.Project.PoliciesEntry
+	48, // 10: opendsec.v1.CreateProjectRequest.quota:type_name -> opendsec.v1.CreateProjectRequest.QuotaEntry
+	29, // 11: opendsec.v1.CreatePrincipalResponse.token_info:type_name -> opendsec.v1.TokenInfo
+	29, // 12: opendsec.v1.CreateTokenResponse.info:type_name -> opendsec.v1.TokenInfo
+	29, // 13: opendsec.v1.TokenList.tokens:type_name -> opendsec.v1.TokenInfo
+	49, // 14: opendsec.v1.SetQuotaRequest.quota:type_name -> opendsec.v1.SetQuotaRequest.QuotaEntry
+	42, // 15: opendsec.v1.UsageReport.rows:type_name -> opendsec.v1.UsageRow
+	24, // 16: opendsec.v1.Project.PoliciesEntry.value:type_name -> opendsec.v1.Permissions
+	10, // 17: opendsec.v1.IAM.Admit:input_type -> opendsec.v1.AdmitRequest
+	12, // 18: opendsec.v1.IAM.Authenticate:input_type -> opendsec.v1.AuthenticateRequest
+	13, // 19: opendsec.v1.IAM.Authorize:input_type -> opendsec.v1.AuthorizeRequest
+	14, // 20: opendsec.v1.IAM.Release:input_type -> opendsec.v1.ReleaseRequest
+	16, // 21: opendsec.v1.IAM.ReleaseLeases:input_type -> opendsec.v1.ReleaseLeasesRequest
+	17, // 22: opendsec.v1.IAM.LeaseEdge:input_type -> opendsec.v1.LeaseEdgeRequest
+	20, // 23: opendsec.v1.IAM.ReconcileEdge:input_type -> opendsec.v1.ReconcileEdgeRequest
+	22, // 24: opendsec.v1.IAM.SweepUnbound:input_type -> opendsec.v1.SweepUnboundRequest
+	26, // 25: opendsec.v1.IAM.CreateProject:input_type -> opendsec.v1.CreateProjectRequest
+	27, // 26: opendsec.v1.IAM.CreatePrincipal:input_type -> opendsec.v1.CreatePrincipalRequest
+	38, // 27: opendsec.v1.IAM.Grant:input_type -> opendsec.v1.GrantRequest
+	39, // 28: opendsec.v1.IAM.Revoke:input_type -> opendsec.v1.RevokeRequest
+	40, // 29: opendsec.v1.IAM.SetQuota:input_type -> opendsec.v1.SetQuotaRequest
+	44, // 30: opendsec.v1.IAM.GetProject:input_type -> opendsec.v1.GetProjectRequest
+	41, // 31: opendsec.v1.IAM.GetUsage:input_type -> opendsec.v1.UsageRequest
+	30, // 32: opendsec.v1.IAM.CreateToken:input_type -> opendsec.v1.CreateTokenRequest
+	32, // 33: opendsec.v1.IAM.ListTokens:input_type -> opendsec.v1.ListTokensRequest
+	34, // 34: opendsec.v1.IAM.RevokeToken:input_type -> opendsec.v1.RevokeTokenRequest
+	35, // 35: opendsec.v1.IAM.DeletePrincipal:input_type -> opendsec.v1.DeletePrincipalRequest
+	36, // 36: opendsec.v1.IAM.DeleteProject:input_type -> opendsec.v1.DeleteProjectRequest
+	52, // 37: opendsec.v1.IAM.SecurityEpoch:input_type -> opendsec.v1.Empty
+	7,  // 38: opendsec.v1.IAM.AcquireLock:input_type -> opendsec.v1.LockRequest
+	7,  // 39: opendsec.v1.IAM.ReleaseLock:input_type -> opendsec.v1.LockRequest
+	53, // 40: opendsec.v1.IAM.Backup:input_type -> opendsec.v1.IAMBackupRequest
+	54, // 41: opendsec.v1.IAM.Restore:input_type -> opendsec.v1.BackupChunk
+	55, // 42: opendsec.v1.IAM.Members:input_type -> opendsec.v1.IAMMemberRequest
+	55, // 43: opendsec.v1.IAM.AddMember:input_type -> opendsec.v1.IAMMemberRequest
+	55, // 44: opendsec.v1.IAM.RemoveMember:input_type -> opendsec.v1.IAMMemberRequest
+	1,  // 45: opendsec.v1.IAM.KVGet:input_type -> opendsec.v1.KVGetRequest
+	2,  // 46: opendsec.v1.IAM.KVList:input_type -> opendsec.v1.KVListRequest
+	5,  // 47: opendsec.v1.IAM.KVPut:input_type -> opendsec.v1.KVPutRequest
+	6,  // 48: opendsec.v1.IAM.KVDelete:input_type -> opendsec.v1.KVDeleteRequest
+	11, // 49: opendsec.v1.IAM.Admit:output_type -> opendsec.v1.AdmitResponse
+	9,  // 50: opendsec.v1.IAM.Authenticate:output_type -> opendsec.v1.Principal
+	52, // 51: opendsec.v1.IAM.Authorize:output_type -> opendsec.v1.Empty
+	15, // 52: opendsec.v1.IAM.Release:output_type -> opendsec.v1.ReleaseResponse
+	19, // 53: opendsec.v1.IAM.ReleaseLeases:output_type -> opendsec.v1.ReleaseLeasesResponse
+	18, // 54: opendsec.v1.IAM.LeaseEdge:output_type -> opendsec.v1.LeaseEdgeResponse
+	21, // 55: opendsec.v1.IAM.ReconcileEdge:output_type -> opendsec.v1.ReconcileEdgeResponse
+	23, // 56: opendsec.v1.IAM.SweepUnbound:output_type -> opendsec.v1.SweepUnboundResponse
+	25, // 57: opendsec.v1.IAM.CreateProject:output_type -> opendsec.v1.Project
+	28, // 58: opendsec.v1.IAM.CreatePrincipal:output_type -> opendsec.v1.CreatePrincipalResponse
+	25, // 59: opendsec.v1.IAM.Grant:output_type -> opendsec.v1.Project
+	25, // 60: opendsec.v1.IAM.Revoke:output_type -> opendsec.v1.Project
+	25, // 61: opendsec.v1.IAM.SetQuota:output_type -> opendsec.v1.Project
+	25, // 62: opendsec.v1.IAM.GetProject:output_type -> opendsec.v1.Project
+	43, // 63: opendsec.v1.IAM.GetUsage:output_type -> opendsec.v1.UsageReport
+	31, // 64: opendsec.v1.IAM.CreateToken:output_type -> opendsec.v1.CreateTokenResponse
+	33, // 65: opendsec.v1.IAM.ListTokens:output_type -> opendsec.v1.TokenList
+	52, // 66: opendsec.v1.IAM.RevokeToken:output_type -> opendsec.v1.Empty
+	52, // 67: opendsec.v1.IAM.DeletePrincipal:output_type -> opendsec.v1.Empty
+	52, // 68: opendsec.v1.IAM.DeleteProject:output_type -> opendsec.v1.Empty
+	37, // 69: opendsec.v1.IAM.SecurityEpoch:output_type -> opendsec.v1.EpochResponse
+	8,  // 70: opendsec.v1.IAM.AcquireLock:output_type -> opendsec.v1.LockState
+	52, // 71: opendsec.v1.IAM.ReleaseLock:output_type -> opendsec.v1.Empty
+	54, // 72: opendsec.v1.IAM.Backup:output_type -> opendsec.v1.BackupChunk
+	52, // 73: opendsec.v1.IAM.Restore:output_type -> opendsec.v1.Empty
+	56, // 74: opendsec.v1.IAM.Members:output_type -> opendsec.v1.IAMMemberList
+	56, // 75: opendsec.v1.IAM.AddMember:output_type -> opendsec.v1.IAMMemberList
+	56, // 76: opendsec.v1.IAM.RemoveMember:output_type -> opendsec.v1.IAMMemberList
+	0,  // 77: opendsec.v1.IAM.KVGet:output_type -> opendsec.v1.KVEntry
+	3,  // 78: opendsec.v1.IAM.KVList:output_type -> opendsec.v1.KVEntries
+	0,  // 79: opendsec.v1.IAM.KVPut:output_type -> opendsec.v1.KVEntry
+	52, // 80: opendsec.v1.IAM.KVDelete:output_type -> opendsec.v1.Empty
+	49, // [49:81] is the sub-list for method output_type
+	17, // [17:49] is the sub-list for method input_type
+	17, // [17:17] is the sub-list for extension type_name
+	17, // [17:17] is the sub-list for extension extendee
+	0,  // [0:17] is the sub-list for field type_name
 }
 
 func init() { file_opendsec_v1_iam_proto_init() }
@@ -2998,7 +3097,7 @@ func file_opendsec_v1_iam_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_opendsec_v1_iam_proto_rawDesc), len(file_opendsec_v1_iam_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   49,
+			NumMessages:   50,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

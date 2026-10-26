@@ -3,6 +3,7 @@ package iam
 import (
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/kernflux/opendsec/internal/rpcutil"
 )
@@ -259,5 +260,47 @@ func TestLeaseReuse(t *testing.T) {
 	}
 	if v, _ := m.GetProject("admin", "root/b"); v.Usage[QSandboxes] != 0 {
 		t.Fatalf("root/b usage %v", v.Usage)
+	}
+}
+
+// TestFence: a fenced write applies only while its holder holds the lock;
+// once the lock expired and another holder took it, the old holder's
+// writes and reconciles are refused (spec §16.1).
+func TestFence(t *testing.T) {
+	m, _ := setup(t)
+	now := time.Unix(1000, 0)
+	m.now = func() time.Time { return now }
+	m.CreateProject("admin", "root", "rl", nil)
+	old := &Fence{Lock: "ctl", Holder: "a"}
+	if _, err := m.KVPutFenced("fleet/x", []byte("1"), false, 0, old); rpcutil.Reason(err) != rpcutil.Conflict {
+		t.Fatalf("write fenced by a lock nobody holds: %v", err)
+	}
+	if r, err := m.AcquireLock("ctl", "a", 10*time.Second); err != nil || !r.Acquired {
+		t.Fatal(r, err)
+	}
+	if _, err := m.KVPutFenced("fleet/x", []byte("1"), false, 0, old); err != nil {
+		t.Fatal(err)
+	}
+	m.ReserveOn("l1", "root/rl", map[string]float64{QSandboxes: 1}, "e1")
+	now = now.Add(11 * time.Second) // a's lease ran out; b takes over
+	if r, err := m.AcquireLock("ctl", "b", 10*time.Second); err != nil || !r.Acquired {
+		t.Fatal(r, err)
+	}
+	_, err := m.KVPutFenced("fleet/x", []byte("2"), false, 0, old)
+	wantReason(t, err, rpcutil.Conflict)
+	wantReason(t, m.KVDeleteFenced("fleet/x", false, 0, old), rpcutil.Conflict)
+	_, err = m.ReconcileEdgeFenced("e1", nil, 0, old) // a's stale view: e1 has nothing
+	wantReason(t, err, rpcutil.Conflict)
+	if held, _ := m.LeaseEdge("l1"); !held {
+		t.Fatal("a stale reconcile released a lease")
+	}
+	if e := m.KVGet("fleet/x"); string(e.Value) != "1" {
+		t.Fatalf("value %q", e.Value)
+	}
+	if _, err := m.KVPutFenced("fleet/x", []byte("3"), false, 0, &Fence{Lock: "ctl", Holder: "b"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.KVPut("fleet/y", []byte("1"), false, 0); err != nil { // unfenced writes as before
+		t.Fatal(err)
 	}
 }

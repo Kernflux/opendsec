@@ -1045,7 +1045,7 @@ func (e *Edge) Sweep(ctx context.Context) {
 		msg string
 	}
 	var expire, pause, probe []job
-	var unsaved []*record
+	var unsaved, abandoned []*record
 	e.mu.Lock()
 	for id, m := range e.moved {
 		if now.Sub(m.at) > movedRetention {
@@ -1069,6 +1069,7 @@ func (e *Edge) Sweep(ctx context.Context) {
 		if !r.moving.IsZero() {
 			if now.Sub(r.moving) > moveTimeout { // the move was abandoned
 				r.moving = time.Time{}
+				abandoned = append(abandoned, r)
 			}
 			continue
 		}
@@ -1095,6 +1096,9 @@ func (e *Edge) Sweep(ctx context.Context) {
 
 	for _, r := range unsaved {
 		e.persist(r)
+	}
+	for _, r := range abandoned {
+		e.clearMoving(r)
 	}
 	for _, j := range expire {
 		go e.stop(context.WithoutCancel(ctx), j.r, j.msg)

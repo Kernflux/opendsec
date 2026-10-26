@@ -137,6 +137,14 @@ func (e *Edge) recoverOne(ctx context.Context, lease string, sb *pb.Sandbox) err
 		lastActive: now, // not persisted: give every adopted sandbox a fresh idle window
 		op:         make(chan struct{}, 1),
 	}
+	// Frozen for a move when the edge stopped: still frozen, so it does not
+	// run here too while the edge it moves to starts it; that edge's EndMove
+	// completes the move, or the move times out.
+	if t := e.store.moving(lease); !t.IsZero() && now.Sub(t) < moveTimeout {
+		r.moving = t
+	} else if !t.IsZero() {
+		e.store.setMoving(lease, time.Time{})
+	}
 	e.mu.Lock()
 	e.sbs[sb.Id] = r
 	e.chargeLocked(sb.Spec, 1)

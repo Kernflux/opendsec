@@ -704,6 +704,7 @@ edge 处理每个运行时请求时：先透明 resume（如果 sandbox 处于�
   - watcher 每 `ttl/3` 续期一次（默认 ttl 为 10 秒）。只有在「本地记录的获锁时刻 + ttl − 2 秒」之前，才认为自己仍是 leader：用自己的单调时钟计时，不受各机器之间时钟偏差的影响。
   - 正常退出时主动 `ReleaseLock`，让其他实例立即接任，不必等租约过期。
   - leader 失效后，最迟约一个 ttl 内由其他实例接任；这期间只是暂停对账，不影响创建和其他操作。
+  - **fencing**（2026-10-26）：本地判断只在每轮开始时做，一个实例如果在一轮中间停顿超过租约（GC、宿主机卡顿、续期的回复丢了），醒来后仍会按旧的 edge 视图发出对账。所以 `ReconcileEdge` 和 `SweepUnbound` 带上 `Fence{lock, holder}`，IAM 在 Raft 里应用这条命令时检查：锁仍由这个 holder 持有并且没过期，否则返回 `conflict`，什么都不改。判断用命令自带的时间（提议它的 IAM leader 的时钟），各副本结论一致。fleet 用同一个机制：controller 每一轮的 KV 写入都带上 leader 锁的 fence；节点操作只在步骤记录写入成功后才下发，所以失去 leader 身份的副本既改不了记录，也发不出操作。不带 fence 的写入（运维命令、任何副本都能接收的发布包登记）照旧只靠版本号做条件写。
 - 配置：`"watcher": {"replicas": [{"id": "0", "addr": "..."}, ...]}`；单个 `addr` 的写法继续兼容。证书按实例签发：`watcher-<id>`。
 
 ### 16.2 动态 edge（Kubernetes / 大规模节点）
@@ -1714,7 +1715,7 @@ SDK sb.fork(count=8)
   1. apiserver 调原 edge 的 `BeginMove`。原 edge 在 sandbox 的操作锁内把暂停快照做成临时快照（只是硬链接暂停文件，再复制可写盘），并冻结这个 sandbox，其他调用都返回 `unavailable`。
   2. 选目标节点：排除原节点，优先缓存了该快照的节点。IAM 把同一个配额 lease 改绑到目标 edge；对已有的 lease 调用 Admit 只改绑定，不重复计费。
   3. 目标 edge 用同一个 id 创建（`move=true`，保留创建时间），从原 edge 拉取快照并恢复，然后调原 edge 的 `EndMove`。原 edge 随即删除这个 sandbox，但不释放 lease；之后 10 分钟内，对这个 id 的调用都会收到"已迁到某 edge"的回复。
-  4. 失败时，apiserver 调 `EndMove` 撤销：sandbox 在原节点照旧暂停，lease 绑回原 edge。如果撤销时发现迁移其实已经完成（只是回复丢了），就按完成处理。被放弃的迁移，6 分钟后自动解除冻结。
+  4. 失败时，apiserver 调 `EndMove` 撤销：sandbox 在原节点照旧暂停，lease 绑回原 edge。如果撤销时发现迁移其实已经完成（只是回复丢了），就按完成处理。被放弃的迁移，6 分钟后自动解除冻结。冻结状态写在记录旁的 `<lease>.moving` 文件里（2026-10-26）：原 edge 在迁移中途重启后，sandbox 仍然冻结，不会在目标 edge 已经运行它的时候又在原节点被恢复；目标 edge 之后的 `EndMove` 照常完成迁移。此前冻结只在内存里，重启后就解除了。
 - **id 不变**，id 里的 edge 是创建时的节点。路由方式：
   - edge 的状态里新增 `moved_in`，列出 id 指向别的 edge 的 sandbox，apiserver 据此路由；
   - 发起迁移的 apiserver 立刻知道新位置；其他 apiserver 去原 edge 会收到"已迁到 X"（`unavailable`，ErrorInfo 里带 `moved_to`），随即转到 X；不认识这个元数据的客户端，按 `unavailable` 重试即可；

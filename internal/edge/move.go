@@ -95,8 +95,14 @@ func (e *Edge) BeginMove(ctx context.Context, id, snapID string) (*pb.EdgeSnapsh
 	if err != nil {
 		return nil, err
 	}
+	since := e.now()
+	if e.store != nil {
+		if err := e.store.setMoving(r.lease, since); err != nil {
+			return nil, rpcutil.Err(rpcutil.Internal, "record the move of %s: %v", id, err)
+		}
+	}
 	e.mu.Lock()
-	r.moving = e.now()
+	r.moving = since
 	e.mu.Unlock()
 	return &pb.EdgeSnapshotResponse{SnapshotId: snap.ID, Memory: true, SizeBytes: snap.Size, Held: true}, nil
 }
@@ -122,6 +128,7 @@ func (e *Edge) EndMove(ctx context.Context, id, to string) error {
 	if to == "" {
 		r.moving = time.Time{}
 		e.mu.Unlock()
+		e.clearMoving(r)
 		return nil
 	}
 	r.handedOff = true
@@ -136,6 +143,14 @@ func (e *Edge) EndMove(ctx context.Context, id, to string) error {
 	e.backends[r.sb.Spec.Backend].Stop(context.WithoutCancel(ctx), e.bsb(r))
 	e.terminate(r, pb.SandboxState_STOPPED, "moved to edge "+to)
 	return nil
+}
+
+// clearMoving drops r's move marker; one left behind only keeps r frozen
+// after a restart until the move times out.
+func (e *Edge) clearMoving(r *record) {
+	if e.store != nil {
+		e.store.setMoving(r.lease, time.Time{})
+	}
 }
 
 // endMove has the edge a sandbox moved from let go of it, retrying briefly.

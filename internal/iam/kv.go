@@ -73,13 +73,18 @@ func (m *IAM) KVList(prefix string, keysOnly bool) []*KVEntry {
 // KVPut writes key. With check, it applies only if the key's revision is
 // expectRev (0: the key must not exist), else it fails with Conflict.
 func (m *IAM) KVPut(key string, value []byte, check bool, expectRev uint64) (*KVEntry, error) {
+	return m.KVPutFenced(key, value, check, expectRev, nil)
+}
+
+// KVPutFenced is KVPut applied only while f's holder holds its lock.
+func (m *IAM) KVPutFenced(key string, value []byte, check bool, expectRev uint64, f *Fence) (*KVEntry, error) {
 	if err := checkKVKey(key); err != nil {
 		return nil, err
 	}
 	if len(value) > maxKVValue {
 		return nil, rpcutil.Err(rpcutil.Invalid, "value of %s is %d bytes, the limit is %d", key, len(value), maxKVValue)
 	}
-	v, err := m.propose(&Command{Op: opKVPut, Key: key, Value: value, Check: check, ExpectRev: expectRev})
+	v, err := m.propose((&Command{Op: opKVPut, Key: key, Value: value, Check: check, ExpectRev: expectRev}).fence(f))
 	if err != nil {
 		return nil, err
 	}
@@ -88,10 +93,15 @@ func (m *IAM) KVPut(key string, value []byte, check bool, expectRev uint64) (*KV
 
 // KVDelete removes key (no-op if absent, unless check requires a revision).
 func (m *IAM) KVDelete(key string, check bool, expectRev uint64) error {
+	return m.KVDeleteFenced(key, check, expectRev, nil)
+}
+
+// KVDeleteFenced is KVDelete applied only while f's holder holds its lock.
+func (m *IAM) KVDeleteFenced(key string, check bool, expectRev uint64, f *Fence) error {
 	if err := checkKVKey(key); err != nil {
 		return err
 	}
-	_, err := m.propose(&Command{Op: opKVDelete, Key: key, Check: check, ExpectRev: expectRev})
+	_, err := m.propose((&Command{Op: opKVDelete, Key: key, Check: check, ExpectRev: expectRev}).fence(f))
 	return err
 }
 

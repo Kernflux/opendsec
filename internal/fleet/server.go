@@ -147,7 +147,10 @@ func (s *Server) Run(ctx context.Context) {
 		if s.IsLeader() {
 			tctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 			s.ctl.Lock()
-			s.tick(tctx)
+			// The round's writes apply only while this replica still
+			// holds the leader lock: one paused past its lease cannot
+			// overwrite the new leader's records or hand out operations.
+			s.tick(WithFence(tctx, &pb.Fence{Lock: LeaderLock, Holder: s.holder()}))
 			s.ctl.Unlock()
 			cancel()
 		}

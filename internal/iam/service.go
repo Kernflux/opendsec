@@ -157,6 +157,13 @@ func (s *Service) LeaseEdge(ctx context.Context, r *pb.LeaseEdgeRequest) (*pb.Le
 	return &pb.LeaseEdgeResponse{Held: held, Edge: edge}, nil
 }
 
+func fenceOf(f *pb.Fence) *Fence {
+	if f == nil || f.Lock == "" {
+		return nil
+	}
+	return &Fence{Lock: f.Lock, Holder: f.Holder}
+}
+
 func liveLeases(ls []*pb.LeaseInfo) []LiveLease {
 	out := make([]LiveLease, 0, len(ls))
 	for _, l := range ls {
@@ -175,7 +182,7 @@ func (s *Service) ReconcileEdge(ctx context.Context, r *pb.ReconcileEdgeRequest)
 	if r.Edge == "" {
 		return nil, rpcutil.Err(rpcutil.Invalid, "edge required")
 	}
-	res, err := s.IAM.ReconcileEdge(r.Edge, liveLeases(r.Live), seconds(r.MinAgeS))
+	res, err := s.IAM.ReconcileEdgeFenced(r.Edge, liveLeases(r.Live), seconds(r.MinAgeS), fenceOf(r.Fence))
 	if err != nil {
 		return nil, err
 	}
@@ -190,7 +197,7 @@ func (s *Service) SweepUnbound(ctx context.Context, r *pb.SweepUnboundRequest) (
 		}
 		return c.SweepUnbound(ctx, r)
 	}
-	n, err := s.IAM.SweepUnbound(seconds(r.MaxAgeS))
+	n, err := s.IAM.SweepUnboundFenced(seconds(r.MaxAgeS), fenceOf(r.Fence))
 	if err != nil {
 		return nil, err
 	}
