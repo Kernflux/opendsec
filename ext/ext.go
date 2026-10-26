@@ -74,13 +74,15 @@ var (
 )
 
 var (
-	mu       sync.Mutex
-	dir      Directory
-	exts     = map[string]Extension{}
-	authns   []Authenticator
-	sinks    []AuditSink
-	after    []func() // AfterSetup's, for the component being set up
-	setupFor = map[string]bool{}
+	mu          sync.Mutex
+	dir         Directory
+	exts        = map[string]Extension{}
+	authns      []Authenticator
+	sinks       []AuditSink
+	after       []func() // AfterSetup's, for the component being set up
+	notices     []func() string
+	clusterCPUs func() int
+	setupFor    = map[string]bool{}
 )
 
 // Register adds an extension to the build; call it from init().
@@ -158,6 +160,49 @@ func AfterSetup(f func()) {
 	mu.Lock()
 	defer mu.Unlock()
 	after = append(after, f)
+}
+
+// AddNotice adds a line the apiserver's ClusterStatus reports (from
+// Setup): f is called each time; "" adds nothing.
+func AddNotice(f func() string) {
+	mu.Lock()
+	defer mu.Unlock()
+	notices = append(notices, f)
+}
+
+// Notices returns the extensions' lines, for ClusterStatus.
+func Notices() []string {
+	mu.Lock()
+	fs := notices
+	mu.Unlock()
+	var out []string
+	for _, f := range fs {
+		if s := f(); s != "" {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// SetClusterCPUs installs how to count the cluster's CPU threads (the
+// apiserver does: its edges' hosts, each counted once).
+func SetClusterCPUs(f func() int) {
+	mu.Lock()
+	defer mu.Unlock()
+	clusterCPUs = f
+}
+
+// ClusterCPUs counts the cluster's CPU threads; false in a process with
+// no apiserver, or before any edge has reported.
+func ClusterCPUs() (int, bool) {
+	mu.Lock()
+	f := clusterCPUs
+	mu.Unlock()
+	if f == nil {
+		return 0, false
+	}
+	n := f()
+	return n, n > 0
 }
 
 // AddAuthenticator installs an authenticator (from Setup).

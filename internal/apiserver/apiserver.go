@@ -882,7 +882,29 @@ func (s *Server) ClusterStatus(ctx context.Context, _ *pb.Empty) (*pb.Snapshot, 
 	if _, err := s.principal(ctx); err != nil {
 		return nil, err
 	}
-	return s.Engine.Snapshot(), nil
+	snap := s.Engine.Snapshot()
+	if n := ext.Notices(); len(n) > 0 { // a copy: the snapshot is shared
+		snap = &pb.Snapshot{Version: snap.Version, TakenAt: snap.TakenAt, Edges: snap.Edges, Notices: n}
+	}
+	return snap, nil
+}
+
+// HostCPUs counts the CPU threads of the hosts the cluster's edges run on,
+// each host once.
+func (s *Server) HostCPUs() int {
+	hosts := map[string]int32{}
+	for _, e := range s.Engine.Snapshot().GetEdges() {
+		h := e.HostId
+		if h == "" {
+			h = "edge/" + e.Id
+		}
+		hosts[h] = max(hosts[h], e.HostCpus)
+	}
+	n := 0
+	for _, c := range hosts {
+		n += int(c)
+	}
+	return n
 }
 
 // DrainEdge stops or resumes placement on an edge (maintenance). Cluster

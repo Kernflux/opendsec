@@ -162,6 +162,10 @@ message EdgeState {
   double cpu_used = 24;
   double mem_used = 25;
   double cpu_pressure = 26;
+  // The host's CPU threads, and its /etc/machine-id: edges on one host
+  // count its CPUs once (the cluster's size for an enterprise license).
+  int32 host_cpus = 27;
+  string host_id = 28;
 }
 
 message ImageList {

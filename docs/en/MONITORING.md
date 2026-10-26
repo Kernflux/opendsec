@@ -131,7 +131,7 @@ count by (version) (opendsec_build_info)
 
 ## 4. Alerts
 
-The rules are in `deploy/monitoring/alerts.yml`, 25 of them. Severities: `critical` needs action now, `warning` the same day, `info` is worth a look.
+The rules are in `deploy/monitoring/alerts.yml`, 27 of them. Severities: `critical` needs action now, `warning` the same day, `info` is worth a look.
 
 ### Control plane
 
@@ -168,6 +168,15 @@ The rules are in `deploy/monitoring/alerts.yml`, 25 of them. Severities: `critic
 | `OpenDsecFleetNodeSilent` | warning | 2m | A node agent has not reported for a while | `opendsecctl fleet nodes` shows which; `systemctl status opendsec-nodeagent` |
 | `OpenDsecFleetRolloutPaused` | warning | 30m | A rollout has been paused for 30 minutes | `opendsecctl fleet rollout status -steps` for the reason, then resume, roll back or abort |
 | `OpenDsecFleetDrift` | info | 10m | Machines run different releases while no rollout is active | Pinned machines, or one out of sync: `fleet node sync <name>` |
+
+### Enterprise edition
+
+Only enterprise apiservers export the metrics these two use; the open-source edition never fires them.
+
+| Alert | Severity | For | Meaning | What to do |
+|---|---|---|---|---|
+| `OpenDsecLicenseExpiringSoon` | warning | 1h | The enterprise license expires within 30 days; past it, SSO and audit export turn off and the cluster keeps running | Renew: replace the license file on every apiserver; it takes effect within a minute, with no restart |
+| `OpenDsecLicenseVCPUsExceeded` | info | 1h | The edge hosts' CPU threads exceed the license's `max_vcpus`; nothing is turned off | Get a license for the larger cluster; `opendsecctl status` shows the numbers under `notices` |
 
 ### SLO
 

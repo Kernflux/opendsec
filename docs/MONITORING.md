@@ -131,7 +131,7 @@ count by (version) (opendsec_build_info)
 
 ## 4. 告警
 
-规则在 `deploy/monitoring/alerts.yml`，共 25 条。严重程度：`critical` 需要立即处理，`warning` 当天处理，`info` 留意即可。
+规则在 `deploy/monitoring/alerts.yml`，共 27 条。严重程度：`critical` 需要立即处理，`warning` 当天处理，`info` 留意即可。
 
 ### 管控面
 
@@ -168,6 +168,15 @@ count by (version) (opendsec_build_info)
 | `OpenDsecFleetNodeSilent` | warning | 2m | 有节点代理一段时间没有上报 | `opendsecctl fleet nodes` 看是哪台；`systemctl status opendsec-nodeagent` |
 | `OpenDsecFleetRolloutPaused` | warning | 30m | rollout 暂停了 30 分钟 | `opendsecctl fleet rollout status -steps` 看原因，然后 resume、rollback 或 abort |
 | `OpenDsecFleetDrift` | info | 10m | 没有进行中的 rollout，但机器运行的版本不一致 | 有锁定（pinned）的机器，或某台没同步：`fleet node sync <名字>` |
+
+### 企业版
+
+只有企业版的 apiserver 导出这两条用到的指标，开源版不会触发。
+
+| 告警 | 级别 | 持续 | 含义 | 处理 |
+|---|---|---|---|---|
+| `OpenDsecLicenseExpiringSoon` | warning | 1h | 企业版 license 30 天内到期；过期后 SSO 和审计导出关闭，集群照常运行 | 续期：换掉各 apiserver 上的 license 文件，一分钟内生效，不用重启 |
+| `OpenDsecLicenseVCPUsExceeded` | info | 1h | 集群 edge 节点的 CPU 线程数超过 license 的 `max_vcpus`；功能不受影响 | 联系续签扩容的 license；`opendsecctl status` 的 `notices` 里有当前数字 |
 
 ### SLO
 

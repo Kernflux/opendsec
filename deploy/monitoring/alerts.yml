@@ -143,6 +143,22 @@ groups:
     annotations:
       summary: "Nodes run different releases while no rollout is active (pinned nodes, or a node out of sync)"
 
+# Enterprise edition: its apiservers export these (no data otherwise).
+- name: opendsec-enterprise
+  rules:
+  - alert: OpenDsecLicenseExpiringSoon
+    expr: opendsec_ee_license_expiry_timestamp_seconds > 0 and opendsec_ee_license_expiry_timestamp_seconds - time() < 30 * 86400
+    for: 1h
+    labels: {severity: warning}
+    annotations:
+      summary: "The enterprise license expires in {{ $value | humanizeDuration }}; past it, SSO and audit export turn off (the cluster keeps running)"
+  - alert: OpenDsecLicenseVCPUsExceeded
+    expr: opendsec_ee_license_max_vcpus > 0 and opendsec_ee_license_vcpus > opendsec_ee_license_max_vcpus
+    for: 1h
+    labels: {severity: info}
+    annotations:
+      summary: "The cluster has {{ $value }} CPU threads, more than the enterprise license covers (nothing is turned off)"
+
 # SLO (docs/SLO.md): error ratios over several windows, and multi-window
 # burn-rate alerts. Targets: creations 99.9%, runtime calls 99.95%.
 - name: opendsec-slo

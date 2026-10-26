@@ -3077,6 +3077,12 @@ E2B 的 `sandbox.fork()`、`create_snapshot()`、`Sandbox.create(snapshot_id)` �
 - **校验工具** `opendsec-audit verify FILE...`：按 apiserver 分组，报告范围、缺失的序号段、断开的链接、`_gap` 记录和 `_oversize` 占位记录。有记录缺失或被改动时退出码为 1。
 - **许可证**：要覆盖 `audit_export` 功能。在导出循环里检查，没有就每 2 秒再查一次，错误只记一条日志。
   - 许可证文件每分钟检查一次，换了（续期）就重新加载，不用重启；新文件验证不过时记错误、保留原来的。**[2026-10-26 修订]** 原来只在启动时读一次：续期后不重启，到旧的到期时间 SSO 和审计导出照样被关掉。测试 `TestReload`。
+  - **vCPU 上限**（许可证的 `max_vcpus`，0 为不限）：只提醒，不限制，和「许可证从不让运行中的集群停下」一致。**[2026-10-26]** 原来签进了许可证，但没有任何地方读它。
+    - 计数：集群里 edge 所在机器的 CPU 线程数之和（`runtime.NumCPU()`），同一台机器上的多个 edge 只算一次。为此 `EdgeState` 新增 `host_cpus`、`host_id`（`/etc/machine-id`），apiserver 从 watcher 的快照汇总，经 `ext.SetClusterCPUs` 交给扩展。按线程而不是物理核或 `capacity.cpu_cores` 计：后者是配置的可分配量，乘过超卖系数。
+    - 超出时：apiserver 每小时记一条 ERROR；指标 `opendsec_ee_license_vcpus`、`opendsec_ee_license_max_vcpus`（只在 apiserver 上导出），告警 `OpenDsecLicenseVCPUsExceeded`（info）；SSO、审计导出照常。
+    - `opendsecctl status` 的 `notices` 显示许可证：客户、版本（`edition`，例如 `trial`）、到期日和状态、vCPU 已用和上限。开源版这边是 `ext.AddNotice`，`Snapshot` 新增 `notices`（只有 ClusterStatus 填）。
+    - 同时新增告警 `OpenDsecLicenseExpiringSoon`：30 天内到期。
+    - 测试：`TestVCPUs`（超出、未超、不限、还没有 edge 上报时的状态行和指标，功能一直可用）；`TestSSOCluster` 检查本地集群的 `status` 里有许可证这一行，两个 edge 在同一台机器上，只算一次 CPU。
   - 发现的问题：`ext` 按名字顺序设置扩展，`audit_export` 排在 `license` 前面，所以在设置时检查许可证一定失败，导出永远不会开始。SSO 因为名字排在 `license` 后面，侥幸没有遇到这个问题。
   - 2026-10-25 线上试跑时发现，改成在导出循环里检查之后仍有问题：导出协程在 `license` 加载前就开始跑，每次启动先报一条「没有有效授权」的 ERROR，2 秒后才正常导出。修复：`ext` 新增 `AfterSetup(f)`，扩展在 Setup 里登记，等这个组件的所有扩展都设置完再执行；导出循环和 SSO 的授权检查都改用它。
 - **测试**：

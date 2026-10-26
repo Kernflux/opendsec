@@ -18,6 +18,9 @@ message Snapshot {
   int64 version = 1;
   double taken_at = 2;
   repeated EdgeState edges = 3;
+  // Lines the apiserver's extensions report (the enterprise license);
+  // ClusterStatus only.
+  repeated string notices = 4;
 }
 
 message RegisterEdgeRequest {

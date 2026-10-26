@@ -930,9 +930,13 @@ type EdgeState struct {
 	// both in [0, 1]. cpu_pressure: PSI "some" avg10 of /proc/pressure/cpu, in
 	// percent (time some runnable task waited for a CPU); with the edge's
 	// cpu_pressure_limit set, above it the edge is under pressure ("cpu").
-	CpuUsed       float64 `protobuf:"fixed64,24,opt,name=cpu_used,json=cpuUsed,proto3" json:"cpu_used,omitempty"`
-	MemUsed       float64 `protobuf:"fixed64,25,opt,name=mem_used,json=memUsed,proto3" json:"mem_used,omitempty"`
-	CpuPressure   float64 `protobuf:"fixed64,26,opt,name=cpu_pressure,json=cpuPressure,proto3" json:"cpu_pressure,omitempty"`
+	CpuUsed     float64 `protobuf:"fixed64,24,opt,name=cpu_used,json=cpuUsed,proto3" json:"cpu_used,omitempty"`
+	MemUsed     float64 `protobuf:"fixed64,25,opt,name=mem_used,json=memUsed,proto3" json:"mem_used,omitempty"`
+	CpuPressure float64 `protobuf:"fixed64,26,opt,name=cpu_pressure,json=cpuPressure,proto3" json:"cpu_pressure,omitempty"`
+	// The host's CPU threads, and its /etc/machine-id: edges on one host
+	// count its CPUs once (the cluster's size for an enterprise license).
+	HostCpus      int32  `protobuf:"varint,27,opt,name=host_cpus,json=hostCpus,proto3" json:"host_cpus,omitempty"`
+	HostId        string `protobuf:"bytes,28,opt,name=host_id,json=hostId,proto3" json:"host_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1147,6 +1151,20 @@ func (x *EdgeState) GetCpuPressure() float64 {
 		return x.CpuPressure
 	}
 	return 0
+}
+
+func (x *EdgeState) GetHostCpus() int32 {
+	if x != nil {
+		return x.HostCpus
+	}
+	return 0
+}
+
+func (x *EdgeState) GetHostId() string {
+	if x != nil {
+		return x.HostId
+	}
+	return ""
 }
 
 type ImageList struct {
@@ -1748,7 +1766,7 @@ const file_opendsec_v1_types_proto_rawDesc = "" +
 	"\x05value\x18\x02 \x01(\x05R\x05value:\x028\x01\x1a@\n" +
 	"\x12DefaultDiskMbEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\x03R\x05value:\x028\x01\"\xfc\v\n" +
+	"\x05value\x18\x02 \x01(\x03R\x05value:\x028\x01\"\xb2\f\n" +
 	"\tEdgeState\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04addr\x18\x02 \x01(\tR\x04addr\x12\x12\n" +
@@ -1777,7 +1795,9 @@ const file_opendsec_v1_types_proto_rawDesc = "" +
 	"\x10runtime_versions\x18\x17 \x03(\v2+.opendsec.v1.EdgeState.RuntimeVersionsEntryR\x0fruntimeVersions\x12\x19\n" +
 	"\bcpu_used\x18\x18 \x01(\x01R\acpuUsed\x12\x19\n" +
 	"\bmem_used\x18\x19 \x01(\x01R\amemUsed\x12!\n" +
-	"\fcpu_pressure\x18\x1a \x01(\x01R\vcpuPressure\x1aA\n" +
+	"\fcpu_pressure\x18\x1a \x01(\x01R\vcpuPressure\x12\x1b\n" +
+	"\thost_cpus\x18\x1b \x01(\x05R\bhostCpus\x12\x17\n" +
+	"\ahost_id\x18\x1c \x01(\tR\x06hostId\x1aA\n" +
 	"\x13CountByBackendEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\x05R\x05value:\x028\x01\x1a9\n" +

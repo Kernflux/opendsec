@@ -318,6 +318,7 @@ func StartAPIServer(cfg *config.Cluster, i int, log *slog.Logger) (*Component, *
 	ac := cfg.APIServers[i]
 	a := apiserver.New(ac, cfg.Placement, pb.NewIAMClient(ic), pb.NewWatcherClient(wc), pool, log.With("c", "apiserver"))
 	ext.SetDirectory(a.Directory())
+	ext.SetClusterCPUs(a.HostCPUs)
 	a.SetAdmission(cfg.Admission)
 	if cfg.ImageStore.Root != "" {
 		if a.Images, err = images.NewStore(cfg.ImageStore.Root); err != nil {

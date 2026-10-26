@@ -22,10 +22,13 @@ const (
 )
 
 type Snapshot struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Version       int64                  `protobuf:"varint,1,opt,name=version,proto3" json:"version,omitempty"`
-	TakenAt       float64                `protobuf:"fixed64,2,opt,name=taken_at,json=takenAt,proto3" json:"taken_at,omitempty"`
-	Edges         []*EdgeState           `protobuf:"bytes,3,rep,name=edges,proto3" json:"edges,omitempty"`
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Version int64                  `protobuf:"varint,1,opt,name=version,proto3" json:"version,omitempty"`
+	TakenAt float64                `protobuf:"fixed64,2,opt,name=taken_at,json=takenAt,proto3" json:"taken_at,omitempty"`
+	Edges   []*EdgeState           `protobuf:"bytes,3,rep,name=edges,proto3" json:"edges,omitempty"`
+	// Lines the apiserver's extensions report (the enterprise license);
+	// ClusterStatus only.
+	Notices       []string `protobuf:"bytes,4,rep,name=notices,proto3" json:"notices,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -77,6 +80,13 @@ func (x *Snapshot) GetTakenAt() float64 {
 func (x *Snapshot) GetEdges() []*EdgeState {
 	if x != nil {
 		return x.Edges
+	}
+	return nil
+}
+
+func (x *Snapshot) GetNotices() []string {
+	if x != nil {
+		return x.Notices
 	}
 	return nil
 }
@@ -978,11 +988,12 @@ var File_opendsec_v1_cluster_proto protoreflect.FileDescriptor
 
 const file_opendsec_v1_cluster_proto_rawDesc = "" +
 	"\n" +
-	"\x19opendsec/v1/cluster.proto\x12\vopendsec.v1\x1a\x17opendsec/v1/types.proto\x1a\x19opendsec/v1/runtime.proto\"m\n" +
+	"\x19opendsec/v1/cluster.proto\x12\vopendsec.v1\x1a\x17opendsec/v1/types.proto\x1a\x19opendsec/v1/runtime.proto\"\x87\x01\n" +
 	"\bSnapshot\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\x03R\aversion\x12\x19\n" +
 	"\btaken_at\x18\x02 \x01(\x01R\atakenAt\x12,\n" +
-	"\x05edges\x18\x03 \x03(\v2\x16.opendsec.v1.EdgeStateR\x05edges\"M\n" +
+	"\x05edges\x18\x03 \x03(\v2\x16.opendsec.v1.EdgeStateR\x05edges\x12\x18\n" +
+	"\anotices\x18\x04 \x03(\tR\anotices\"M\n" +
 	"\x13RegisterEdgeRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04addr\x18\x02 \x01(\tR\x04addr\x12\x12\n" +

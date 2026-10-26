@@ -7,6 +7,8 @@ package edge
 import (
 	"context"
 	"log/slog"
+	"os"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -932,6 +934,15 @@ func (e *Edge) cpuPressure() (float64, bool) {
 	return psi, psi > e.CPUPressureLimit
 }
 
+// The host's CPU threads and identity, reported with the edge's state.
+var (
+	hostCPUs = int32(runtime.NumCPU())
+	hostID   = func() string {
+		b, _ := os.ReadFile("/etc/machine-id")
+		return strings.TrimSpace(string(b))
+	}()
+)
+
 // Status reports scheduling state; leases are included for IAM reconcile.
 func (e *Edge) Status(includeLeases bool) *pb.EdgeStatusResponse {
 	e.mu.Lock()
@@ -943,6 +954,7 @@ func (e *Edge) Status(includeLeases bool) *pb.EdgeStatusResponse {
 		CountByBackend: map[string]int32{},
 		ByTask:         map[string]int32{}, ByProject: map[string]int32{}, ByPrincipal: map[string]int32{},
 		TotalCreated: e.totalCreated, TotalRejected: e.totalRejected,
+		HostCpus: hostCPUs, HostId: hostID,
 	}
 	for name, b := range e.backends {
 		st.Backends = append(st.Backends, name)

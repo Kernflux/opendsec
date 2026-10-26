@@ -26,7 +26,7 @@ from opendsec._pb.opendsec.v1 import types_pb2 as opendsec_dot_v1_dot_types__pb2
 from opendsec._pb.opendsec.v1 import runtime_pb2 as opendsec_dot_v1_dot_runtime__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x19opendsec/v1/cluster.proto\x12\x0bopendsec.v1\x1a\x17opendsec/v1/types.proto\x1a\x19opendsec/v1/runtime.proto\"T\n\x08Snapshot\x12\x0f\n\x07version\x18\x01 \x01(\x03\x12\x10\n\x08taken_at\x18\x02 \x01(\x01\x12%\n\x05\x65\x64ges\x18\x03 \x03(\x0b\x32\x16.opendsec.v1.EdgeState\"=\n\x13RegisterEdgeRequest\x12\n\n\x02id\x18\x01 \x01(\t\x12\x0c\n\x04\x61\x64\x64r\x18\x02 \x01(\t\x12\x0c\n\x04zone\x18\x03 \x01(\t\"9\n\x14\x46\x65tchSnapshotRequest\x12\x13\n\x0bsnapshot_id\x18\x01 \x01(\t\x12\x0c\n\x04\x66ile\x18\x02 \x01(\t\"O\n\rSnapshotChunk\x12\x0c\n\x04size\x18\x01 \x01(\x03\x12\x12\n\ncontent_id\x18\x02 \x01(\t\x12\x0e\n\x06offset\x18\x03 \x01(\x03\x12\x0c\n\x04\x64\x61ta\x18\x04 \x01(\x0c\";\n\x10\x42\x65ginMoveRequest\x12\x12\n\nsandbox_id\x18\x01 \x01(\t\x12\x13\n\x0bsnapshot_id\x18\x02 \x01(\t\"5\n\x0e\x45ndMoveRequest\x12\x12\n\nsandbox_id\x18\x01 \x01(\t\x12\x0f\n\x07to_edge\x18\x02 \x01(\t\"$\n\x08\x45\x64gePeer\x12\n\n\x02id\x18\x01 \x01(\t\x12\x0c\n\x04\x61\x64\x64r\x18\x02 \x01(\t\"x\n\x13\x45\x64geSnapshotRequest\x12\x12\n\nsandbox_id\x18\x01 \x01(\t\x12\x13\n\x0bsnapshot_id\x18\x02 \x01(\t\x12\x0e\n\x06memory\x18\x03 \x01(\x08\x12\x15\n\rprefer_memory\x18\x04 \x01(\x08\x12\x11\n\tephemeral\x18\x05 \x01(\x08\"]\n\x14\x45\x64geSnapshotResponse\x12\x13\n\x0bsnapshot_id\x18\x01 \x01(\t\x12\x0e\n\x06memory\x18\x02 \x01(\x08\x12\x12\n\nsize_bytes\x18\x03 \x01(\x03\x12\x0c\n\x04held\x18\x04 \x01(\x08\"J\n\x13\x45\x64gePackDiffRequest\x12\x12\n\nsandbox_id\x18\x01 \x01(\t\x12\x10\n\x08layer_id\x18\x02 \x01(\t\x12\r\n\x05scrub\x18\x03 \x03(\t\"<\n\x14\x45\x64gePackDiffResponse\x12\x10\n\x08layer_id\x18\x01 \x01(\t\x12\x12\n\nsize_bytes\x18\x02 \x01(\x03\"+\n\x11\x45\x64geStatusRequest\x12\x16\n\x0einclude_leases\x18\x01 \x01(\x08\"c\n\x12\x45\x64geStatusResponse\x12%\n\x05state\x18\x01 \x01(\x0b\x32\x16.opendsec.v1.EdgeState\x12&\n\x06leases\x18\x02 \x03(\x0b\x32\x16.opendsec.v1.LeaseInfo\"\xbb\x01\n\x11\x45\x64geCreateRequest\x12\n\n\x02id\x18\x01 \x01(\t\x12\x0f\n\x07project\x18\x02 \x01(\t\x12\x11\n\tprincipal\x18\x03 \x01(\t\x12&\n\x04spec\x18\x04 \x01(\x0b\x32\x18.opendsec.v1.SandboxSpec\x12,\n\rsnapshot_peer\x18\x05 \x01(\x0b\x32\x15.opendsec.v1.EdgePeer\x12\x0c\n\x04move\x18\x06 \x01(\x08\x12\x12\n\ncreated_at\x18\x07 \x01(\x01\"b\n\x15\x45\x64geTaskActionRequest\x12\x0f\n\x07project\x18\x01 \x01(\t\x12\x0f\n\x07task_id\x18\x02 \x01(\t\x12\'\n\x06\x61\x63tion\x18\x03 \x01(\x0e\x32\x17.opendsec.v1.TaskAction\" \n\x0c\x44rainRequest\x12\x10\n\x08\x64raining\x18\x01 \x01(\x08\x32\x85\x01\n\x07Watcher\x12\x38\n\x0bGetSnapshot\x12\x12.opendsec.v1.Empty\x1a\x15.opendsec.v1.Snapshot\x12@\n\x08Register\x12 .opendsec.v1.RegisterEdgeRequest\x1a\x12.opendsec.v1.Empty2\xfd\x13\n\x04\x45\x64ge\x12I\n\x06Status\x12\x1e.opendsec.v1.EdgeStatusRequest\x1a\x1f.opendsec.v1.EdgeStatusResponse\x12\x45\n\rCreateSandbox\x12\x1e.opendsec.v1.EdgeCreateRequest\x1a\x14.opendsec.v1.Sandbox\x12;\n\nGetSandbox\x12\x17.opendsec.v1.SandboxRef\x1a\x14.opendsec.v1.Sandbox\x12\x45\n\rListSandboxes\x12\x1a.opendsec.v1.SandboxFilter\x1a\x18.opendsec.v1.SandboxList\x12<\n\x0bStopSandbox\x12\x17.opendsec.v1.SandboxRef\x1a\x14.opendsec.v1.Sandbox\x12=\n\x0cPauseSandbox\x12\x17.opendsec.v1.SandboxRef\x1a\x14.opendsec.v1.Sandbox\x12>\n\rResumeSandbox\x12\x17.opendsec.v1.SandboxRef\x1a\x14.opendsec.v1.Sandbox\x12=\n\x0cTouchSandbox\x12\x17.opendsec.v1.SandboxRef\x1a\x14.opendsec.v1.Sandbox\x12I\n\x11SetSandboxTimeout\x12\x1e.opendsec.v1.SetTimeoutRequest\x1a\x14.opendsec.v1.Sandbox\x12T\n\x0f\x41pplyTaskAction\x12\".opendsec.v1.EdgeTaskActionRequest\x1a\x1d.opendsec.v1.TaskActionResult\x12\x36\n\x05\x44rain\x12\x19.opendsec.v1.DrainRequest\x1a\x12.opendsec.v1.Empty\x12\x39\n\x04\x45xec\x12\x18.opendsec.v1.ExecRequest\x1a\x17.opendsec.v1.ExecResult\x12@\n\nExecStream\x12\x18.opendsec.v1.ExecRequest\x1a\x16.opendsec.v1.ExecEvent0\x01\x12@\n\tGetOutput\x12\x1a.opendsec.v1.OutputRequest\x1a\x17.opendsec.v1.ExecResult\x12;\n\x08ReadFile\x12\x18.opendsec.v1.FileRequest\x1a\x15.opendsec.v1.FileData\x12\x41\n\tWriteFile\x12\x1d.opendsec.v1.WriteFileRequest\x1a\x15.opendsec.v1.FileInfo\x12<\n\x07ListDir\x12\x18.opendsec.v1.FileRequest\x1a\x17.opendsec.v1.DirListing\x12\x37\n\x04Stat\x12\x18.opendsec.v1.FileRequest\x1a\x15.opendsec.v1.FileInfo\x12\x36\n\x06Remove\x12\x18.opendsec.v1.FileRequest\x1a\x12.opendsec.v1.Empty\x12;\n\x04Http\x12\x18.opendsec.v1.HttpRequest\x1a\x19.opendsec.v1.HttpResponse\x12\x41\n\x0cListSessions\x12\x17.opendsec.v1.SessionRef\x1a\x18.opendsec.v1.SessionList\x12;\n\x0c\x43loseSession\x12\x17.opendsec.v1.SessionRef\x1a\x12.opendsec.v1.Empty\x12:\n\x07MakeDir\x12\x18.opendsec.v1.FileRequest\x1a\x15.opendsec.v1.FileInfo\x12\x37\n\x04Move\x12\x18.opendsec.v1.MoveRequest\x1a\x15.opendsec.v1.FileInfo\x12M\n\x0cStartProcess\x12 .opendsec.v1.StartProcessRequest\x1a\x19.opendsec.v1.ProcessEvent0\x01\x12\x46\n\x0e\x43onnectProcess\x12\x17.opendsec.v1.ProcessRef\x1a\x19.opendsec.v1.ProcessEvent0\x01\x12\x42\n\rListProcesses\x12\x17.opendsec.v1.ProcessRef\x1a\x18.opendsec.v1.ProcessList\x12\x41\n\x10SendProcessInput\x12\x19.opendsec.v1.ProcessInput\x1a\x12.opendsec.v1.Empty\x12@\n\x11\x43loseProcessStdin\x12\x17.opendsec.v1.ProcessRef\x1a\x12.opendsec.v1.Empty\x12?\n\rSignalProcess\x12\x1a.opendsec.v1.ProcessSignal\x1a\x12.opendsec.v1.Empty\x12?\n\rResizeProcess\x12\x1a.opendsec.v1.ProcessResize\x1a\x12.opendsec.v1.Empty\x12?\n\x0b\x43onnectPort\x12\x15.opendsec.v1.PortData\x1a\x15.opendsec.v1.PortData(\x01\x30\x01\x12O\n\x08PackDiff\x12 .opendsec.v1.EdgePackDiffRequest\x1a!.opendsec.v1.EdgePackDiffResponse\x12O\n\x08Snapshot\x12 .opendsec.v1.EdgeSnapshotRequest\x1a!.opendsec.v1.EdgeSnapshotResponse\x12H\n\rUpdateNetwork\x12!.opendsec.v1.UpdateNetworkRequest\x1a\x14.opendsec.v1.Sandbox\x12P\n\rFetchSnapshot\x12!.opendsec.v1.FetchSnapshotRequest\x1a\x1a.opendsec.v1.SnapshotChunk0\x01\x12M\n\tBeginMove\x12\x1d.opendsec.v1.BeginMoveRequest\x1a!.opendsec.v1.EdgeSnapshotResponse\x12:\n\x07\x45ndMove\x12\x1b.opendsec.v1.EndMoveRequest\x1a\x12.opendsec.v1.EmptyB<Z:github.com/kernflux/opendsec/gen/go/opendsec/v1;opendsecv1b\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x19opendsec/v1/cluster.proto\x12\x0bopendsec.v1\x1a\x17opendsec/v1/types.proto\x1a\x19opendsec/v1/runtime.proto\"e\n\x08Snapshot\x12\x0f\n\x07version\x18\x01 \x01(\x03\x12\x10\n\x08taken_at\x18\x02 \x01(\x01\x12%\n\x05\x65\x64ges\x18\x03 \x03(\x0b\x32\x16.opendsec.v1.EdgeState\x12\x0f\n\x07notices\x18\x04 \x03(\t\"=\n\x13RegisterEdgeRequest\x12\n\n\x02id\x18\x01 \x01(\t\x12\x0c\n\x04\x61\x64\x64r\x18\x02 \x01(\t\x12\x0c\n\x04zone\x18\x03 \x01(\t\"9\n\x14\x46\x65tchSnapshotRequest\x12\x13\n\x0bsnapshot_id\x18\x01 \x01(\t\x12\x0c\n\x04\x66ile\x18\x02 \x01(\t\"O\n\rSnapshotChunk\x12\x0c\n\x04size\x18\x01 \x01(\x03\x12\x12\n\ncontent_id\x18\x02 \x01(\t\x12\x0e\n\x06offset\x18\x03 \x01(\x03\x12\x0c\n\x04\x64\x61ta\x18\x04 \x01(\x0c\";\n\x10\x42\x65ginMoveRequest\x12\x12\n\nsandbox_id\x18\x01 \x01(\t\x12\x13\n\x0bsnapshot_id\x18\x02 \x01(\t\"5\n\x0e\x45ndMoveRequest\x12\x12\n\nsandbox_id\x18\x01 \x01(\t\x12\x0f\n\x07to_edge\x18\x02 \x01(\t\"$\n\x08\x45\x64gePeer\x12\n\n\x02id\x18\x01 \x01(\t\x12\x0c\n\x04\x61\x64\x64r\x18\x02 \x01(\t\"x\n\x13\x45\x64geSnapshotRequest\x12\x12\n\nsandbox_id\x18\x01 \x01(\t\x12\x13\n\x0bsnapshot_id\x18\x02 \x01(\t\x12\x0e\n\x06memory\x18\x03 \x01(\x08\x12\x15\n\rprefer_memory\x18\x04 \x01(\x08\x12\x11\n\tephemeral\x18\x05 \x01(\x08\"]\n\x14\x45\x64geSnapshotResponse\x12\x13\n\x0bsnapshot_id\x18\x01 \x01(\t\x12\x0e\n\x06memory\x18\x02 \x01(\x08\x12\x12\n\nsize_bytes\x18\x03 \x01(\x03\x12\x0c\n\x04held\x18\x04 \x01(\x08\"J\n\x13\x45\x64gePackDiffRequest\x12\x12\n\nsandbox_id\x18\x01 \x01(\t\x12\x10\n\x08layer_id\x18\x02 \x01(\t\x12\r\n\x05scrub\x18\x03 \x03(\t\"<\n\x14\x45\x64gePackDiffResponse\x12\x10\n\x08layer_id\x18\x01 \x01(\t\x12\x12\n\nsize_bytes\x18\x02 \x01(\x03\"+\n\x11\x45\x64geStatusRequest\x12\x16\n\x0einclude_leases\x18\x01 \x01(\x08\"c\n\x12\x45\x64geStatusResponse\x12%\n\x05state\x18\x01 \x01(\x0b\x32\x16.opendsec.v1.EdgeState\x12&\n\x06leases\x18\x02 \x03(\x0b\x32\x16.opendsec.v1.LeaseInfo\"\xbb\x01\n\x11\x45\x64geCreateRequest\x12\n\n\x02id\x18\x01 \x01(\t\x12\x0f\n\x07project\x18\x02 \x01(\t\x12\x11\n\tprincipal\x18\x03 \x01(\t\x12&\n\x04spec\x18\x04 \x01(\x0b\x32\x18.opendsec.v1.SandboxSpec\x12,\n\rsnapshot_peer\x18\x05 \x01(\x0b\x32\x15.opendsec.v1.EdgePeer\x12\x0c\n\x04move\x18\x06 \x01(\x08\x12\x12\n\ncreated_at\x18\x07 \x01(\x01\"b\n\x15\x45\x64geTaskActionRequest\x12\x0f\n\x07project\x18\x01 \x01(\t\x12\x0f\n\x07task_id\x18\x02 \x01(\t\x12\'\n\x06\x61\x63tion\x18\x03 \x01(\x0e\x32\x17.opendsec.v1.TaskAction\" \n\x0c\x44rainRequest\x12\x10\n\x08\x64raining\x18\x01 \x01(\x08\x32\x85\x01\n\x07Watcher\x12\x38\n\x0bGetSnapshot\x12\x12.opendsec.v1.Empty\x1a\x15.opendsec.v1.Snapshot\x12@\n\x08Register\x12 .opendsec.v1.RegisterEdgeRequest\x1a\x12.opendsec.v1.Empty2\xfd\x13\n\x04\x45\x64ge\x12I\n\x06Status\x12\x1e.opendsec.v1.EdgeStatusRequest\x1a\x1f.opendsec.v1.EdgeStatusResponse\x12\x45\n\rCreateSandbox\x12\x1e.opendsec.v1.EdgeCreateRequest\x1a\x14.opendsec.v1.Sandbox\x12;\n\nGetSandbox\x12\x17.opendsec.v1.SandboxRef\x1a\x14.opendsec.v1.Sandbox\x12\x45\n\rListSandboxes\x12\x1a.opendsec.v1.SandboxFilter\x1a\x18.opendsec.v1.SandboxList\x12<\n\x0bStopSandbox\x12\x17.opendsec.v1.SandboxRef\x1a\x14.opendsec.v1.Sandbox\x12=\n\x0cPauseSandbox\x12\x17.opendsec.v1.SandboxRef\x1a\x14.opendsec.v1.Sandbox\x12>\n\rResumeSandbox\x12\x17.opendsec.v1.SandboxRef\x1a\x14.opendsec.v1.Sandbox\x12=\n\x0cTouchSandbox\x12\x17.opendsec.v1.SandboxRef\x1a\x14.opendsec.v1.Sandbox\x12I\n\x11SetSandboxTimeout\x12\x1e.opendsec.v1.SetTimeoutRequest\x1a\x14.opendsec.v1.Sandbox\x12T\n\x0f\x41pplyTaskAction\x12\".opendsec.v1.EdgeTaskActionRequest\x1a\x1d.opendsec.v1.TaskActionResult\x12\x36\n\x05\x44rain\x12\x19.opendsec.v1.DrainRequest\x1a\x12.opendsec.v1.Empty\x12\x39\n\x04\x45xec\x12\x18.opendsec.v1.ExecRequest\x1a\x17.opendsec.v1.ExecResult\x12@\n\nExecStream\x12\x18.opendsec.v1.ExecRequest\x1a\x16.opendsec.v1.ExecEvent0\x01\x12@\n\tGetOutput\x12\x1a.opendsec.v1.OutputRequest\x1a\x17.opendsec.v1.ExecResult\x12;\n\x08ReadFile\x12\x18.opendsec.v1.FileRequest\x1a\x15.opendsec.v1.FileData\x12\x41\n\tWriteFile\x12\x1d.opendsec.v1.WriteFileRequest\x1a\x15.opendsec.v1.FileInfo\x12<\n\x07ListDir\x12\x18.opendsec.v1.FileRequest\x1a\x17.opendsec.v1.DirListing\x12\x37\n\x04Stat\x12\x18.opendsec.v1.FileRequest\x1a\x15.opendsec.v1.FileInfo\x12\x36\n\x06Remove\x12\x18.opendsec.v1.FileRequest\x1a\x12.opendsec.v1.Empty\x12;\n\x04Http\x12\x18.opendsec.v1.HttpRequest\x1a\x19.opendsec.v1.HttpResponse\x12\x41\n\x0cListSessions\x12\x17.opendsec.v1.SessionRef\x1a\x18.opendsec.v1.SessionList\x12;\n\x0c\x43loseSession\x12\x17.opendsec.v1.SessionRef\x1a\x12.opendsec.v1.Empty\x12:\n\x07MakeDir\x12\x18.opendsec.v1.FileRequest\x1a\x15.opendsec.v1.FileInfo\x12\x37\n\x04Move\x12\x18.opendsec.v1.MoveRequest\x1a\x15.opendsec.v1.FileInfo\x12M\n\x0cStartProcess\x12 .opendsec.v1.StartProcessRequest\x1a\x19.opendsec.v1.ProcessEvent0\x01\x12\x46\n\x0e\x43onnectProcess\x12\x17.opendsec.v1.ProcessRef\x1a\x19.opendsec.v1.ProcessEvent0\x01\x12\x42\n\rListProcesses\x12\x17.opendsec.v1.ProcessRef\x1a\x18.opendsec.v1.ProcessList\x12\x41\n\x10SendProcessInput\x12\x19.opendsec.v1.ProcessInput\x1a\x12.opendsec.v1.Empty\x12@\n\x11\x43loseProcessStdin\x12\x17.opendsec.v1.ProcessRef\x1a\x12.opendsec.v1.Empty\x12?\n\rSignalProcess\x12\x1a.opendsec.v1.ProcessSignal\x1a\x12.opendsec.v1.Empty\x12?\n\rResizeProcess\x12\x1a.opendsec.v1.ProcessResize\x1a\x12.opendsec.v1.Empty\x12?\n\x0b\x43onnectPort\x12\x15.opendsec.v1.PortData\x1a\x15.opendsec.v1.PortData(\x01\x30\x01\x12O\n\x08PackDiff\x12 .opendsec.v1.EdgePackDiffRequest\x1a!.opendsec.v1.EdgePackDiffResponse\x12O\n\x08Snapshot\x12 .opendsec.v1.EdgeSnapshotRequest\x1a!.opendsec.v1.EdgeSnapshotResponse\x12H\n\rUpdateNetwork\x12!.opendsec.v1.UpdateNetworkRequest\x1a\x14.opendsec.v1.Sandbox\x12P\n\rFetchSnapshot\x12!.opendsec.v1.FetchSnapshotRequest\x1a\x1a.opendsec.v1.SnapshotChunk0\x01\x12M\n\tBeginMove\x12\x1d.opendsec.v1.BeginMoveRequest\x1a!.opendsec.v1.EdgeSnapshotResponse\x12:\n\x07\x45ndMove\x12\x1b.opendsec.v1.EndMoveRequest\x1a\x12.opendsec.v1.EmptyB<Z:github.com/kernflux/opendsec/gen/go/opendsec/v1;opendsecv1b\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -35,39 +35,39 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['DESCRIPTOR']._loaded_options = None
   _globals['DESCRIPTOR']._serialized_options = b'Z:github.com/kernflux/opendsec/gen/go/opendsec/v1;opendsecv1'
   _globals['_SNAPSHOT']._serialized_start=94
-  _globals['_SNAPSHOT']._serialized_end=178
-  _globals['_REGISTEREDGEREQUEST']._serialized_start=180
-  _globals['_REGISTEREDGEREQUEST']._serialized_end=241
-  _globals['_FETCHSNAPSHOTREQUEST']._serialized_start=243
-  _globals['_FETCHSNAPSHOTREQUEST']._serialized_end=300
-  _globals['_SNAPSHOTCHUNK']._serialized_start=302
-  _globals['_SNAPSHOTCHUNK']._serialized_end=381
-  _globals['_BEGINMOVEREQUEST']._serialized_start=383
-  _globals['_BEGINMOVEREQUEST']._serialized_end=442
-  _globals['_ENDMOVEREQUEST']._serialized_start=444
-  _globals['_ENDMOVEREQUEST']._serialized_end=497
-  _globals['_EDGEPEER']._serialized_start=499
-  _globals['_EDGEPEER']._serialized_end=535
-  _globals['_EDGESNAPSHOTREQUEST']._serialized_start=537
-  _globals['_EDGESNAPSHOTREQUEST']._serialized_end=657
-  _globals['_EDGESNAPSHOTRESPONSE']._serialized_start=659
-  _globals['_EDGESNAPSHOTRESPONSE']._serialized_end=752
-  _globals['_EDGEPACKDIFFREQUEST']._serialized_start=754
-  _globals['_EDGEPACKDIFFREQUEST']._serialized_end=828
-  _globals['_EDGEPACKDIFFRESPONSE']._serialized_start=830
-  _globals['_EDGEPACKDIFFRESPONSE']._serialized_end=890
-  _globals['_EDGESTATUSREQUEST']._serialized_start=892
-  _globals['_EDGESTATUSREQUEST']._serialized_end=935
-  _globals['_EDGESTATUSRESPONSE']._serialized_start=937
-  _globals['_EDGESTATUSRESPONSE']._serialized_end=1036
-  _globals['_EDGECREATEREQUEST']._serialized_start=1039
-  _globals['_EDGECREATEREQUEST']._serialized_end=1226
-  _globals['_EDGETASKACTIONREQUEST']._serialized_start=1228
-  _globals['_EDGETASKACTIONREQUEST']._serialized_end=1326
-  _globals['_DRAINREQUEST']._serialized_start=1328
-  _globals['_DRAINREQUEST']._serialized_end=1360
-  _globals['_WATCHER']._serialized_start=1363
-  _globals['_WATCHER']._serialized_end=1496
-  _globals['_EDGE']._serialized_start=1499
-  _globals['_EDGE']._serialized_end=4056
+  _globals['_SNAPSHOT']._serialized_end=195
+  _globals['_REGISTEREDGEREQUEST']._serialized_start=197
+  _globals['_REGISTEREDGEREQUEST']._serialized_end=258
+  _globals['_FETCHSNAPSHOTREQUEST']._serialized_start=260
+  _globals['_FETCHSNAPSHOTREQUEST']._serialized_end=317
+  _globals['_SNAPSHOTCHUNK']._serialized_start=319
+  _globals['_SNAPSHOTCHUNK']._serialized_end=398
+  _globals['_BEGINMOVEREQUEST']._serialized_start=400
+  _globals['_BEGINMOVEREQUEST']._serialized_end=459
+  _globals['_ENDMOVEREQUEST']._serialized_start=461
+  _globals['_ENDMOVEREQUEST']._serialized_end=514
+  _globals['_EDGEPEER']._serialized_start=516
+  _globals['_EDGEPEER']._serialized_end=552
+  _globals['_EDGESNAPSHOTREQUEST']._serialized_start=554
+  _globals['_EDGESNAPSHOTREQUEST']._serialized_end=674
+  _globals['_EDGESNAPSHOTRESPONSE']._serialized_start=676
+  _globals['_EDGESNAPSHOTRESPONSE']._serialized_end=769
+  _globals['_EDGEPACKDIFFREQUEST']._serialized_start=771
+  _globals['_EDGEPACKDIFFREQUEST']._serialized_end=845
+  _globals['_EDGEPACKDIFFRESPONSE']._serialized_start=847
+  _globals['_EDGEPACKDIFFRESPONSE']._serialized_end=907
+  _globals['_EDGESTATUSREQUEST']._serialized_start=909
+  _globals['_EDGESTATUSREQUEST']._serialized_end=952
+  _globals['_EDGESTATUSRESPONSE']._serialized_start=954
+  _globals['_EDGESTATUSRESPONSE']._serialized_end=1053
+  _globals['_EDGECREATEREQUEST']._serialized_start=1056
+  _globals['_EDGECREATEREQUEST']._serialized_end=1243
+  _globals['_EDGETASKACTIONREQUEST']._serialized_start=1245
+  _globals['_EDGETASKACTIONREQUEST']._serialized_end=1343
+  _globals['_DRAINREQUEST']._serialized_start=1345
+  _globals['_DRAINREQUEST']._serialized_end=1377
+  _globals['_WATCHER']._serialized_start=1380
+  _globals['_WATCHER']._serialized_end=1513
+  _globals['_EDGE']._serialized_start=1516
+  _globals['_EDGE']._serialized_end=4073
 # @@protoc_insertion_point(module_scope)
