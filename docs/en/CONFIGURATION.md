@@ -266,6 +266,7 @@ The cluster management service; optional.
 | `ready_ports` | iam 9461, watcher 9462, apiserver 9463, edge 9464, fleet 9465, e2b 9467 | Each role's `/readyz` port, which node agents check after restarting a unit |
 | `prometheus_url` | — | Prometheus for rollout gates |
 | `gates` | — | Rollout gates: `[{"name", "query", "max"}]`. While a batch bakes and before each batch, each PromQL query must stay at or below `max`, or the rollout pauses; a query that cannot be read pauses it too, and no samples read as 0 |
+| `gates_up` | `up{job=~"opendsec-.*"}` | Run before the gates to make sure Prometheus is scraping OpenDsec at all: unless some sample is 1, the rollout pauses (otherwise every gate would have no samples and pass as 0). Change it if your own scrape config does not name the jobs `opendsec-<role>` |
 
 ```json
 "fleet": {

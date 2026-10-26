@@ -99,6 +99,10 @@ type Fleet struct {
 	// bakes: each query's value must stay at or below max.
 	PrometheusURL string      `json:"prometheus_url"`
 	Gates         []FleetGate `json:"gates"`
+	// GatesUp tells gates with no samples (nothing bad happened) from a
+	// Prometheus that sees no OpenDsec at all: some sample must be 1.
+	// Default up{job=~"opendsec-.*"}, the jobs opendsecops monitor writes.
+	GatesUp string `json:"gates_up"`
 }
 
 type FleetReplica struct {

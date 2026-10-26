@@ -273,7 +273,7 @@ opendsecctl fleet rollout status [-steps]
 ```
 - 顺序：先让全部目标机器下载新版本；控制面节点逐台升级，IAM leader 所在的节点最后；然后 edge 先升 1 台试点，观察结束后按批升级，每批里同一故障域最多占一半。
 - 每台 edge 升级前先暂停调度（drain），升级后等本机 `/readyz` 和 watcher 快照都正常，再恢复调度。edge 重启不影响已有的 sandbox。
-- 每批开始前检查：本次已升级的机器仍然正常，所有控制面组件就绪。配置了 `fleet.prometheus_url` 和 `fleet.gates` 时，观察期内和每批开始前还会检查这些 PromQL：超过阈值或者读不出来（Prometheus 不可达）都会暂停升级；查询没有样本按 0 处理。被闸门暂停后执行 `resume`，闸门放行到下一批开始为止。回滚不检查闸门。
+- 每批开始前检查：本次已升级的机器仍然正常，所有控制面组件就绪。配置了 `fleet.prometheus_url` 和 `fleet.gates` 时，观察期内和每批开始前还会检查这些 PromQL：超过阈值或者读不出来（Prometheus 不可达）都会暂停升级；查询没有样本按 0 处理，但前提是 Prometheus 确实在抓取 OpenDsec（`fleet.gates_up`，默认 `up{job=~"opendsec-.*"}` 至少有一个为 1），否则暂停，消息是 `gate data unavailable`。被闸门暂停后执行 `resume`，闸门放行到下一批开始为止。回滚不检查闸门。
 - **出问题时**：失败的机器自动回到原版本并被锁定（pinned），升级暂停。之后可以：
   - `opendsecctl fleet rollout resume <id>`：接受这些失败，继续升级其余机器；
   - `opendsecctl fleet rollout rollback <id>`：把已升级的机器按相反顺序分批退回原版本；

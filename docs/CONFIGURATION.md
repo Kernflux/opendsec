@@ -266,6 +266,7 @@
 | `ready_ports` | iam 9461、watcher 9462、apiserver 9463、edge 9464、fleet 9465、e2b 9467 | 各角色的 `/readyz` 端口，节点代理重启服务后用它判断就绪 |
 | `prometheus_url` | — | 发布闸门使用的 Prometheus 地址 |
 | `gates` | — | 发布闸门：`[{"name", "query", "max"}]`。观察期内和每批开始前，每个 PromQL 的值都必须不大于 `max`，否则暂停；读不出来也暂停，没有样本按 0 处理 |
+| `gates_up` | `up{job=~"opendsec-.*"}` | 检查闸门前先执行的查询，确认 Prometheus 确实在抓取 OpenDsec：没有一个样本等于 1 就暂停（否则所有闸门都没有样本、都按 0 通过）。自己写 Prometheus 抓取配置、任务名不是 `opendsec-<角色>` 时要改 |
 
 ```json
 "fleet": {

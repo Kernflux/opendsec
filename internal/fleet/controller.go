@@ -1,6 +1,7 @@
 package fleet
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -832,11 +833,27 @@ func (s *Server) gatePaused(ctx context.Context, ro *pb.FleetRollout) bool {
 	return true
 }
 
+// defaultGatesUp is the scrape check run before any gate.
+const defaultGatesUp = `up{job=~"opendsec-.*"}`
+
 // gates evaluates the configured Prometheus queries; it returns why one
 // failed ("" if all pass or none are configured). A gate that cannot be
 // read fails: an unknown state is no reason to go on. A query with no
-// samples reads as 0 (a gate counts something bad; none happened).
+// samples reads as 0 (a gate counts something bad; none happened), so
+// first Prometheus must be scraping OpenDsec at all: with no data every
+// gate would read 0 and pass.
 func (s *Server) gates(ctx context.Context) string {
+	if len(s.opt.Cfg.Gates) == 0 {
+		return ""
+	}
+	q := cmp.Or(s.opt.Cfg.GatesUp, defaultGatesUp)
+	v, err := promQuery(ctx, s.opt.Cfg.PrometheusURL, q)
+	if err != nil {
+		return fmt.Sprintf("gate data unreadable: %v", err)
+	}
+	if v < 1 {
+		return fmt.Sprintf("gate data unavailable: no target of %s is up", q)
+	}
 	for _, g := range s.opt.Cfg.Gates {
 		v, err := promQuery(ctx, s.opt.Cfg.PrometheusURL, g.Query)
 		if err != nil {
