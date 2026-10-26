@@ -265,7 +265,7 @@
 | `edge_port` | 7201 | edge 在节点私网地址上监听的端口 |
 | `ready_ports` | iam 9461、watcher 9462、apiserver 9463、edge 9464、fleet 9465、e2b 9467 | 各角色的 `/readyz` 端口，节点代理重启服务后用它判断就绪 |
 | `prometheus_url` | — | 发布闸门使用的 Prometheus 地址 |
-| `gates` | — | 发布闸门：`[{"name", "query", "max"}]`。每批的观察期内，每个 PromQL 的值都必须不大于 `max`，否则暂停 |
+| `gates` | — | 发布闸门：`[{"name", "query", "max"}]`。观察期内和每批开始前，每个 PromQL 的值都必须不大于 `max`，否则暂停；读不出来也暂停，没有样本按 0 处理 |
 
 ```json
 "fleet": {

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"sort"
@@ -691,10 +692,7 @@ func (s *Server) advance(ctx context.Context, ro *pb.FleetRollout, steps []stepR
 					wait = st.BakeS
 				}
 				if len(cur) > 0 && s.unix() < lastFinish+wait {
-					if msg := s.gates(ctx); msg != "" {
-						ro.State = rsPaused
-						ro.Message = "paused: " + msg
-						s.event(ro, "%s", ro.Message)
+					if s.gatePaused(ctx, ro) {
 						return false
 					}
 					s.waitMsg(ro, fmt.Sprintf("batch %d done; next in %.0fs", ro.Batch, lastFinish+wait-s.unix()))
@@ -724,10 +722,22 @@ func (s *Server) advance(ctx context.Context, ro *pb.FleetRollout, steps []stepR
 				s.waitMsg(ro, fmt.Sprintf("waiting before batch %d: %s", ro.Batch, why))
 				return false
 			}
+			starting := false
+			for _, i := range cur {
+				starting = starting || steps[i].V.Phase == phStaged
+			}
+			// The gates are read again as the batch starts: the bake may
+			// have ended between two reads, or have been none (pause 0).
+			if starting && s.gatePaused(ctx, ro) {
+				return false
+			}
 			for _, i := range cur {
 				if steps[i].V.Phase == phStaged {
 					s.startApply(ctx, ro, &steps[i], nodes, ops, busy, save, i)
 				}
+			}
+			if starting {
+				ro.GatesWaived = false
 			}
 			s.waitMsg(ro, fmt.Sprintf("batch %d of %d running", ro.Batch, ro.Batches-1))
 			return false
@@ -805,17 +815,34 @@ func (s *Server) clusterHealthy(steps []stepRec, nodes map[string]rec[*pb.FleetN
 	return true, ""
 }
 
+// gatePaused pauses ro if a gate fails, and says so. A rollback is never
+// stopped by them (the metrics are often why it runs), nor a rollout the
+// operator resumed after a gate paused it, until its next batch started.
+func (s *Server) gatePaused(ctx context.Context, ro *pb.FleetRollout) bool {
+	if ro.Rollback || ro.GatesWaived {
+		return false
+	}
+	msg := s.gates(ctx)
+	if msg == "" {
+		return false
+	}
+	ro.State = rsPaused
+	ro.Message = "paused: " + msg
+	s.event(ro, "%s", ro.Message)
+	return true
+}
+
 // gates evaluates the configured Prometheus queries; it returns why one
-// failed ("" if all pass or none are configured, or Prometheus is down: a
-// gate that cannot be read does not stop a rollout, but is logged).
+// failed ("" if all pass or none are configured). A gate that cannot be
+// read fails: an unknown state is no reason to go on. A query with no
+// samples reads as 0 (a gate counts something bad; none happened).
 func (s *Server) gates(ctx context.Context) string {
 	for _, g := range s.opt.Cfg.Gates {
 		v, err := promQuery(ctx, s.opt.Cfg.PrometheusURL, g.Query)
 		if err != nil {
-			s.log.Warn("rollout gate unreadable", "gate", g.Name, "err", err)
-			continue
+			return fmt.Sprintf("gate %s unreadable: %v", g.Name, err)
 		}
-		if v > g.Max {
+		if math.IsNaN(v) || v > g.Max {
 			return fmt.Sprintf("gate %s: %g > %g", g.Name, v, g.Max)
 		}
 	}

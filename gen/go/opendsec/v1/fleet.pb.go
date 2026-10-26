@@ -2004,24 +2004,27 @@ func (x *FleetEvent) GetMessage() string {
 }
 
 type FleetRollout struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Release       string                 `protobuf:"bytes,2,opt,name=release,proto3" json:"release,omitempty"`
-	ConfigGen     uint64                 `protobuf:"varint,3,opt,name=config_gen,json=configGen,proto3" json:"config_gen,omitempty"`
-	Selector      *FleetSelector         `protobuf:"bytes,4,opt,name=selector,proto3" json:"selector,omitempty"`
-	Strategy      *FleetStrategy         `protobuf:"bytes,5,opt,name=strategy,proto3" json:"strategy,omitempty"`
-	State         string                 `protobuf:"bytes,6,opt,name=state,proto3" json:"state,omitempty"` // running | paused | done | aborted | rolling_back | rolled_back
-	Message       string                 `protobuf:"bytes,7,opt,name=message,proto3" json:"message,omitempty"`
-	CreatedAt     float64                `protobuf:"fixed64,8,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	CreatedBy     string                 `protobuf:"bytes,9,opt,name=created_by,json=createdBy,proto3" json:"created_by,omitempty"`
-	FinishedAt    float64                `protobuf:"fixed64,10,opt,name=finished_at,json=finishedAt,proto3" json:"finished_at,omitempty"`
-	Batches       int32                  `protobuf:"varint,11,opt,name=batches,proto3" json:"batches,omitempty"`
-	Batch         int32                  `protobuf:"varint,12,opt,name=batch,proto3" json:"batch,omitempty"` // current edge batch (-1 control plane)
-	Note          string                 `protobuf:"bytes,13,opt,name=note,proto3" json:"note,omitempty"`
-	Rollback      bool                   `protobuf:"varint,14,opt,name=rollback,proto3" json:"rollback,omitempty"`                                                                       // this rollout puts nodes back (ControlRollout rollback)
-	Steps         []*FleetStep           `protobuf:"bytes,15,rep,name=steps,proto3" json:"steps,omitempty"`                                                                              // GetRollout only
-	Events        []*FleetEvent          `protobuf:"bytes,16,rep,name=events,proto3" json:"events,omitempty"`                                                                            // newest last
-	Phases        map[string]int32       `protobuf:"bytes,17,rep,name=phases,proto3" json:"phases,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"varint,2,opt,name=value"` // phase -> nodes
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	Id         string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Release    string                 `protobuf:"bytes,2,opt,name=release,proto3" json:"release,omitempty"`
+	ConfigGen  uint64                 `protobuf:"varint,3,opt,name=config_gen,json=configGen,proto3" json:"config_gen,omitempty"`
+	Selector   *FleetSelector         `protobuf:"bytes,4,opt,name=selector,proto3" json:"selector,omitempty"`
+	Strategy   *FleetStrategy         `protobuf:"bytes,5,opt,name=strategy,proto3" json:"strategy,omitempty"`
+	State      string                 `protobuf:"bytes,6,opt,name=state,proto3" json:"state,omitempty"` // running | paused | done | aborted | rolling_back | rolled_back
+	Message    string                 `protobuf:"bytes,7,opt,name=message,proto3" json:"message,omitempty"`
+	CreatedAt  float64                `protobuf:"fixed64,8,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	CreatedBy  string                 `protobuf:"bytes,9,opt,name=created_by,json=createdBy,proto3" json:"created_by,omitempty"`
+	FinishedAt float64                `protobuf:"fixed64,10,opt,name=finished_at,json=finishedAt,proto3" json:"finished_at,omitempty"`
+	Batches    int32                  `protobuf:"varint,11,opt,name=batches,proto3" json:"batches,omitempty"`
+	Batch      int32                  `protobuf:"varint,12,opt,name=batch,proto3" json:"batch,omitempty"` // current edge batch (-1 control plane)
+	Note       string                 `protobuf:"bytes,13,opt,name=note,proto3" json:"note,omitempty"`
+	Rollback   bool                   `protobuf:"varint,14,opt,name=rollback,proto3" json:"rollback,omitempty"`                                                                       // this rollout puts nodes back (ControlRollout rollback)
+	Steps      []*FleetStep           `protobuf:"bytes,15,rep,name=steps,proto3" json:"steps,omitempty"`                                                                              // GetRollout only
+	Events     []*FleetEvent          `protobuf:"bytes,16,rep,name=events,proto3" json:"events,omitempty"`                                                                            // newest last
+	Phases     map[string]int32       `protobuf:"bytes,17,rep,name=phases,proto3" json:"phases,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"varint,2,opt,name=value"` // phase -> nodes
+	// Resumed after a gate paused it: the gates are passed until the next
+	// edge batch has started.
+	GatesWaived   bool `protobuf:"varint,18,opt,name=gates_waived,json=gatesWaived,proto3" json:"gates_waived,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2173,6 +2176,13 @@ func (x *FleetRollout) GetPhases() map[string]int32 {
 		return x.Phases
 	}
 	return nil
+}
+
+func (x *FleetRollout) GetGatesWaived() bool {
+	if x != nil {
+		return x.GatesWaived
+	}
+	return false
 }
 
 type FleetRolloutList struct {
@@ -2520,7 +2530,7 @@ const file_opendsec_v1_fleet_proto_rawDesc = "" +
 	"\n" +
 	"FleetEvent\x12\x0e\n" +
 	"\x02at\x18\x01 \x01(\x01R\x02at\x12\x18\n" +
-	"\amessage\x18\x02 \x01(\tR\amessage\"\x8f\x05\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage\"\xb2\x05\n" +
 	"\fFleetRollout\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x18\n" +
 	"\arelease\x18\x02 \x01(\tR\arelease\x12\x1d\n" +
@@ -2543,7 +2553,8 @@ const file_opendsec_v1_fleet_proto_rawDesc = "" +
 	"\brollback\x18\x0e \x01(\bR\brollback\x12,\n" +
 	"\x05steps\x18\x0f \x03(\v2\x16.opendsec.v1.FleetStepR\x05steps\x12/\n" +
 	"\x06events\x18\x10 \x03(\v2\x17.opendsec.v1.FleetEventR\x06events\x12=\n" +
-	"\x06phases\x18\x11 \x03(\v2%.opendsec.v1.FleetRollout.PhasesEntryR\x06phases\x1a9\n" +
+	"\x06phases\x18\x11 \x03(\v2%.opendsec.v1.FleetRollout.PhasesEntryR\x06phases\x12!\n" +
+	"\fgates_waived\x18\x12 \x01(\bR\vgatesWaived\x1a9\n" +
 	"\vPhasesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\x05R\x05value:\x028\x01\"I\n" +

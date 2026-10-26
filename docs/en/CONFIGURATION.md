@@ -265,7 +265,7 @@ The cluster management service; optional.
 | `edge_port` | 7201 | Port edges listen on at the node's private address |
 | `ready_ports` | iam 9461, watcher 9462, apiserver 9463, edge 9464, fleet 9465, e2b 9467 | Each role's `/readyz` port, which node agents check after restarting a unit |
 | `prometheus_url` | — | Prometheus for rollout gates |
-| `gates` | — | Rollout gates: `[{"name", "query", "max"}]`. While a batch bakes, each PromQL query must stay at or below `max`, or the rollout pauses |
+| `gates` | — | Rollout gates: `[{"name", "query", "max"}]`. While a batch bakes and before each batch, each PromQL query must stay at or below `max`, or the rollout pauses; a query that cannot be read pauses it too, and no samples read as 0 |
 
 ```json
 "fleet": {

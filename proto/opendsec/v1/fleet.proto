@@ -291,6 +291,9 @@ message FleetRollout {
   repeated FleetStep steps = 15;       // GetRollout only
   repeated FleetEvent events = 16;     // newest last
   map<string, int32> phases = 17;      // phase -> nodes
+  // Resumed after a gate paused it: the gates are passed until the next
+  // edge batch has started.
+  bool gates_waived = 18;
 }
 
 message FleetRolloutList {

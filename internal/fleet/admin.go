@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"google.golang.org/protobuf/proto"
@@ -534,6 +535,9 @@ func (s *Server) ControlRollout(ctx context.Context, r *pb.FleetControlRolloutRe
 		if ro.State != rsPaused {
 			return nil, rpcutil.Err(rpcutil.Invalid, "rollout %s is %s", ro.Id, ro.State)
 		}
+		// Paused by a gate: resuming accepts what it read, up to the next
+		// batch (spec §28).
+		ro.GatesWaived = strings.HasPrefix(ro.Message, "paused: gate ")
 		ro.State, ro.Message = rsRunning, "resumed by "+actor
 		// Failures so far are accepted by resuming: raise the budget past them.
 		steps, err := s.store.Steps(ctx, ro.Id)
