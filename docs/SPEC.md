@@ -485,11 +485,12 @@ edge 处理每个运行时请求时：先透明 resume（如果 sandbox 处于�
 - 这是滚动升级 edge 的前提（RL sandbox 寿命的 p99 超过 3 小时 **[论文]**）。
 
 ### 13.2 持久化
-- 位置：`<state_dir>/<edge_id>/records/<lease>.json`，每个 sandbox 一个文件，用「临时文件 + fsync + rename」原子写入。
+- 位置：`<state_dir>/<edge_id>/records/<lease>.json`，每个 sandbox 一个文件，用「临时文件 + fsync + rename」原子写入，rename 之后再 fsync 记录所在的目录，断电后 rename 也不会丢（2026-10-26 补上）。
 - 内容：sandbox 记录（id、project、principal、spec、state、created_at）。
 - 写入时机：
   - 进入 CREATING 时**先写**，这样崩溃发生在创建中途时，重启后也知道这个 sandbox 存在，可以清理并释放它。
   - 状态稳定后（RUNNING / PAUSED）再写一次。
+  - 写入失败（2026-10-26）：创建完成时的那次写不进去，创建按失败处理（停掉 sandbox，返回 `internal`），因为磁盘上还是 CREATING，重启后会被清理，不能把它报告为成功；迁移进来的 sandbox 例外（源 edge 已经放手）。其他时候写入失败只记日志，把记录标为未保存，由每轮巡检（Sweep）重写，否则重启后会回到旧的状态、网络规则和超时设置。
   - 进入终态时删除文件。
 - **不持久化** `last_active`：恢复时重置为恢复时刻，相当于给每个 sandbox 一个新的空闲窗口，只会推迟回收，不会误回收。**[决定]**
 - 开关 `persist_state`：有 linux 运行时的 edge 默认开启；sim 默认关闭（sim 没有真实资源需要恢复）。
@@ -516,7 +517,7 @@ edge 处理每个运行时请求时：先透明 resume（如果 sandbox 处于�
 - edge 重启期间：apiserver 发给该 edge 的请求返回 `unavailable`；对客户端而言，进行中的流式调用会断开。但 sandbox 内的命令继续执行，输出照常记录，重连后可以按 `cmd_id` 用 `GetOutput` 取回。
 
 ### 13.6 测试
-- edge-core（sim + 持久化）：模拟崩溃后恢复，RUNNING / PAUSED 状态和分配量都正确；CREATING 状态的记录被清理，lease 被释放。
+- edge-core（sim + 持久化）：模拟崩溃后恢复，RUNNING / PAUSED 状态和分配量都正确；CREATING 状态的记录被清理，lease 被释放。`TestUnsavedRecord`：创建完成时记录写不进去，创建失败；之后写失败的记录由巡检重写。
 - container 后端：不经关闭流程直接丢弃 backend 对象来模拟崩溃 → 新 backend 接管 → 同一个 shell 会话里之前 `export` 的变量还在，崩溃前启动的后台命令输出可以取回；崩溃期间 aether 死掉的 sandbox 接管失败并被清理；PAUSED 的 sandbox 恢复后仍是 PAUSED。
 - e2e：在不停 sandbox 的情况下重启 edge 组件 → GetSandbox、exec 正常，配额不变，没有资源残留。
 

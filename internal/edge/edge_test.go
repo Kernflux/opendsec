@@ -566,3 +566,62 @@ func TestAbandonedCreation(t *testing.T) {
 		})
 	}
 }
+
+// TestUnsavedRecord: a creation whose RUNNING record cannot be written is
+// not reported (a restart would find it CREATING and remove it); a record
+// that falls behind later is written again by the sweep.
+func TestUnsavedRecord(t *testing.T) {
+	dir := t.TempDir()
+	f := newFixture(t, 10)
+	if err := f.e.EnableStore(dir); err != nil {
+		t.Fatal(err)
+	}
+	f.e.backends["sim"] = backend.NewSim("sim", config.Backend{CreateLatencyMs: 300})
+	lease := ids.NewLease()
+	path := filepath.Join(dir, lease+".json")
+	broke := make(chan error, 1)
+	go func() { // while the backend creates: the record can no longer be replaced
+		for end := time.Now().Add(5 * time.Second); time.Now().Before(end); time.Sleep(5 * time.Millisecond) {
+			if _, err := os.Stat(path); err == nil {
+				os.Remove(path)
+				os.MkdirAll(filepath.Join(path, "x"), 0o755)
+				broke <- nil
+				return
+			}
+		}
+		broke <- os.ErrNotExist
+	}()
+	_, err := f.e.Create(context.Background(), &pb.EdgeCreateRequest{
+		Id: ids.Sandbox("e1", lease), Project: "root/rl", Principal: "p", Spec: &pb.SandboxSpec{Backend: "sim", Resources: cpu(1)}})
+	if err := <-broke; err != nil {
+		t.Fatal("no CREATING record was written")
+	}
+	if rpcutil.Reason(err) != rpcutil.Internal {
+		t.Fatalf("create with an unwritable record: %v, want internal", err)
+	}
+	if s, _ := f.e.Get(ids.Sandbox("e1", lease)); s == nil || s.State != pb.SandboxState_FAILED {
+		t.Fatalf("sandbox %v, want failed", s)
+	}
+	os.RemoveAll(path)
+
+	// Later: a failed write is retried by the sweep.
+	f.e.backends["sim"] = f.sim
+	sb, err := f.create(t, &pb.SandboxSpec{Resources: cpu(1)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, l, _ := ids.Parse(sb.Id)
+	path = filepath.Join(dir, l+".json")
+	os.Remove(path)
+	os.MkdirAll(filepath.Join(path, "x"), 0o755)
+	if _, err := f.e.Pause(context.Background(), sb.Id); err != nil {
+		t.Fatal(err)
+	}
+	os.RemoveAll(path)
+	f.e.Sweep(context.Background())
+	st, _ := newStore(dir)
+	recs, _ := st.load()
+	if r := recs[l]; r == nil || r.State != pb.SandboxState_PAUSED {
+		t.Fatalf("record after the sweep: %v", r)
+	}
+}

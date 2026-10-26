@@ -46,7 +46,16 @@ func (s *store) save(lease string, sb *pb.Sandbox) error {
 	if err := f.Close(); err != nil {
 		return err
 	}
-	return os.Rename(tmp, s.path(lease))
+	if err := os.Rename(tmp, s.path(lease)); err != nil {
+		return err
+	}
+	// The rename is durable once the directory is.
+	d, err := os.Open(filepath.Dir(s.path(lease)))
+	if err != nil {
+		return err
+	}
+	defer d.Close()
+	return d.Sync()
 }
 
 func (s *store) remove(lease string) {

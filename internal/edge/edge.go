@@ -6,6 +6,7 @@ package edge
 
 import (
 	"context"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -46,6 +47,7 @@ type record struct {
 	// quota lease: ending it here must not release the lease.
 	handedOff bool
 	peer      backend.SnapshotPeer // holds Spec.Snapshot's files, while creating
+	unsaved   bool                 // its record on disk is behind (persist failed); guarded by Edge.mu
 }
 
 func (r *record) ended() bool {
@@ -413,10 +415,21 @@ func (e *Edge) create(ctx context.Context, req *pb.EdgeCreateRequest) (*pb.Sandb
 	r.peer = nil
 	r.sb.State = pb.SandboxState_RUNNING
 	r.lastActive = e.now()
+	e.mu.Unlock()
+	// Restarted with the record still saying CREATING, the edge would
+	// remove the sandbox: do not report one that would not survive that.
+	// A moved one is kept (the edge it came from let go of it); its record
+	// is saved again by the sweep.
+	if err := e.persist(r); err != nil && !req.Move {
+		be.Stop(context.WithoutCancel(ctx), e.bsb(r))
+		e.terminate(r, pb.SandboxState_FAILED, "persist record: "+err.Error())
+		<-r.op
+		return nil, rpcutil.Err(rpcutil.Internal, "persist %s: %v", req.Id, err)
+	}
+	e.mu.Lock()
 	e.totalCreated++
 	out := e.cloneLocked(r)
 	e.mu.Unlock()
-	e.persist(r)
 	<-r.op
 	return out, nil
 }
@@ -498,7 +511,10 @@ func (e *Edge) terminate(r *record, state pb.SandboxState, msg string) {
 	}
 }
 
-// persist writes r's current record if persistence is enabled.
+// persist writes r's current record if persistence is enabled. A record
+// that could not be written is marked unsaved, and the sweep writes it
+// again: in memory it is right, on disk it is behind (a restart would
+// bring back its old state, rules and timeouts).
 func (e *Edge) persist(r *record) error {
 	if e.store == nil {
 		return nil
@@ -510,7 +526,14 @@ func (e *Edge) persist(r *record) error {
 	if ended {
 		return nil
 	}
-	return e.store.save(r.lease, sb)
+	err := e.store.save(r.lease, sb)
+	e.mu.Lock()
+	r.unsaved = err != nil
+	e.mu.Unlock()
+	if err != nil {
+		slog.Warn("saving a sandbox record failed; the sweep retries it", "sandbox", sb.Id, "err", err)
+	}
+	return err
 }
 
 // ---- lifecycle operations ---------------------------------------------------------
@@ -1022,6 +1045,7 @@ func (e *Edge) Sweep(ctx context.Context) {
 		msg string
 	}
 	var expire, pause, probe []job
+	var unsaved []*record
 	e.mu.Lock()
 	for id, m := range e.moved {
 		if now.Sub(m.at) > movedRetention {
@@ -1034,6 +1058,9 @@ func (e *Edge) Sweep(ctx context.Context) {
 				delete(e.sbs, id)
 			}
 			continue
+		}
+		if r.unsaved {
+			unsaved = append(unsaved, r)
 		}
 		spec := r.sb.Spec
 		if r.sb.State == pb.SandboxState_STOPPING {
@@ -1066,6 +1093,9 @@ func (e *Edge) Sweep(ctx context.Context) {
 	}
 	e.mu.Unlock()
 
+	for _, r := range unsaved {
+		e.persist(r)
+	}
 	for _, j := range expire {
 		go e.stop(context.WithoutCancel(ctx), j.r, j.msg)
 	}
