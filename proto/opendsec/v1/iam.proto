@@ -128,6 +128,9 @@ message AdmitRequest {
   // Instead of token: a principal the apiserver authenticated itself (a
   // token of an extension's authenticator, which IAM does not know).
   string principal = 7;
+  // The lease must not be held yet: the first attempt of a create that is
+  // not a retry. A held lease is refused instead of being rebound.
+  bool fresh = 8;
 }
 
 message AdmitResponse {

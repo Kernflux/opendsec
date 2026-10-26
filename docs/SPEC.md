@@ -1852,6 +1852,7 @@ SDK sb.fork(count=8)
     - 它已经结束：返回 `invalid`。
     - 没找到：照常创建。
   - 只有重试才需要这次查找，正常创建的路径不变。
+  - IAM 校验 lease 的复用（2026-10-26）：已经持有的 lease 只认同一个项目、同样的资源，否则返回 `conflict`；不是重试的请求（`retry=false`）第一次 Admit 时带 `fresh`，lease 已被持有也返回 `conflict`。此前复用 lease 只会把它改绑到新 edge，可以跑一个不计配额的 sandbox，甚至借用别的项目的 lease（sandbox id 里就带着 lease）。同一次调用里换 edge 重试的后几次 Admit 不带 `fresh`，照常改绑。
 - 限制：如果第一次请求所在的 apiserver 被强制关闭时，edge 上的创建还没有完成，重试可能会在另一个 edge 上再创建一个。优雅下线会等进行中的请求最多 30 秒完成，所以这种情况只会在强制杀进程时出现。
 - 测试：pytest 覆盖了三种情况：用同一个 lease 重试，返回同一个 sandbox；重试一个从未到达的请求，正常创建；sandbox 已经结束后再重试，返回 `invalid`。
 

@@ -227,3 +227,37 @@ func TestReleaseFromEdge(t *testing.T) {
 		t.Fatal("released lease still held")
 	}
 }
+
+// TestLeaseReuse: a held lease is an idempotency key for one project and
+// one set of resources. Reusing it otherwise is refused, as is a first
+// attempt (fresh) that finds it held; a retry with the same request moves
+// the binding without charging twice.
+func TestLeaseReuse(t *testing.T) {
+	m, _ := setup(t)
+	m.CreateProject("admin", "root", "a", nil)
+	m.CreateProject("admin", "root", "b", nil)
+	res := map[string]float64{QSandboxes: 1, QCPU: 2}
+	if err := m.ReserveFresh("l1", "root/a", res, "e1"); err != nil {
+		t.Fatal(err)
+	}
+	wantReason(t, m.ReserveOn("l1", "root/b", res, "e2"), rpcutil.Conflict)
+	wantReason(t, m.ReserveOn("l1", "root/a", map[string]float64{QSandboxes: 1, QCPU: 64}, "e2"), rpcutil.Conflict)
+	wantReason(t, m.ReserveFresh("l1", "root/a", res, "e2"), rpcutil.Conflict)
+	if held, edge := m.LeaseEdge("l1"); !held || edge != "e1" {
+		t.Fatalf("a refused reuse moved the lease: %v %q", held, edge)
+	}
+	if err := m.ReserveOn("l1", "root/a", map[string]float64{QCPU: 2, QSandboxes: 1, QGPUs: 0}, "e2"); err != nil {
+		t.Fatalf("retry: %v", err)
+	}
+	if held, edge := m.LeaseEdge("l1"); !held || edge != "e2" {
+		t.Fatalf("LeaseEdge = %v %q", held, edge)
+	}
+	for _, p := range []string{"root", "root/a"} {
+		if v, _ := m.GetProject("admin", p); v.Usage[QSandboxes] != 1 || v.Usage[QCPU] != 2 {
+			t.Fatalf("%s usage %v", p, v.Usage)
+		}
+	}
+	if v, _ := m.GetProject("admin", "root/b"); v.Usage[QSandboxes] != 0 {
+		t.Fatalf("root/b usage %v", v.Usage)
+	}
+}

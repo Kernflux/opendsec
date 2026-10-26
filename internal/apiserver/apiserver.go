@@ -438,7 +438,7 @@ func (s *Server) CreateSandbox(ctx context.Context, r *pb.CreateSandboxRequest) 
 			lease = ids.NewLease()
 		}
 	}
-	return s.create(ctx, rpcutil.BearerToken(ctx), r.Project, r.Spec, lease, false, "", nil)
+	return s.create(ctx, rpcutil.BearerToken(ctx), r.Project, r.Spec, lease, r.Retry, false, "", nil)
 }
 
 // findRetried looks for the sandbox an earlier attempt of a create with this
@@ -485,18 +485,19 @@ func (s *Server) findRetried(ctx context.Context, project, lease string) (*pb.Sa
 
 // create runs the creation flow: rate limit -> placement -> IAM admit
 // (authn + authz + quota) -> edge admission, retrying other edges on
-// rejection. inBatch paces the creation instead of rejecting it when the
+// rejection. retry says the call retries one that may have gone through,
+// so its lease may be held already. inBatch paces the creation instead of rejecting it when the
 // caller is over its creation rate; prefer is an edge to place on if it can;
 // peer, if set, holds the files of spec.snapshot (spec §26.1).
-func (s *Server) create(ctx context.Context, token, project string, spec *pb.SandboxSpec, lease string, inBatch bool,
+func (s *Server) create(ctx context.Context, token, project string, spec *pb.SandboxSpec, lease string, retry, inBatch bool,
 	prefer string, peer *pb.EdgePeer) (*pb.Sandbox, error) {
 	t0 := time.Now()
-	sb, err := s.place(ctx, token, project, spec, lease, inBatch, prefer, peer)
+	sb, err := s.place(ctx, token, project, spec, lease, retry, inBatch, prefer, peer)
 	metrics.APICreate(spec.Backend, rpcutil.ReasonOf(err), time.Since(t0))
 	return sb, err
 }
 
-func (s *Server) place(ctx context.Context, token, project string, spec *pb.SandboxSpec, lease string, inBatch bool,
+func (s *Server) place(ctx context.Context, token, project string, spec *pb.SandboxSpec, lease string, retry, inBatch bool,
 	prefer string, peer *pb.EdgePeer) (*pb.Sandbox, error) {
 	if token == "" {
 		return nil, rpcutil.Err(rpcutil.Unauthenticated, "missing bearer token")
@@ -539,8 +540,10 @@ func (s *Server) place(ctx context.Context, token, project string, spec *pb.Sand
 			}
 			break
 		}
+		// Only a retry may find its lease held (by the attempt it retries);
+		// later attempts of this call move the binding.
 		adm, err := s.admit(ctx, token, &pb.AdmitRequest{Project: project,
-			Perms: []string{iam.SandboxCreate}, Lease: lease, Resources: spec.Resources, Edge: d.Edge.Id})
+			Perms: []string{iam.SandboxCreate}, Lease: lease, Resources: spec.Resources, Edge: d.Edge.Id, Fresh: !retry && !admitted})
 		if err != nil {
 			s.Engine.Cancel(d)
 			if admitted {
@@ -630,6 +633,7 @@ func (s *Server) CreateSandboxes(r *pb.CreateSandboxesRequest, stream pb.DSec_Cr
 type batch struct {
 	count int32
 	key   string
+	retry bool // a retry of a keyed call: an item's lease may be held already
 	done  map[int32]*pb.Sandbox
 	redo  map[int32]bool
 }
@@ -644,7 +648,7 @@ func (b *batch) lease(i int32) string {
 }
 
 func (s *Server) newBatch(ctx context.Context, project, key string, retry bool, count int32) (*batch, error) {
-	b := &batch{count: count, key: key}
+	b := &batch{count: count, key: key, retry: retry}
 	if key == "" {
 		return b, nil
 	}
@@ -731,7 +735,7 @@ func (s *Server) createMany(ctx context.Context, send func(*pb.CreateSandboxResu
 		wg.Add(1)
 		go func(i int32) {
 			defer func() { <-sem; wg.Done() }()
-			sb, err := s.create(ctx, token, project, spec, b.lease(i), true, prefer, peer)
+			sb, err := s.create(ctx, token, project, spec, b.lease(i), b.retry, true, prefer, peer)
 			res := &pb.CreateSandboxResult{Index: i, Sandbox: sb}
 			if err != nil {
 				res.ErrorReason, res.ErrorMessage = rpcutil.Reason(err), rpcutil.Message(err)

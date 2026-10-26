@@ -113,3 +113,28 @@ func TestBatchRetry(t *testing.T) {
 		t.Fatalf("bad request_id: %v", err)
 	}
 }
+
+// TestLeaseReuse: a create naming a lease that is held is refused unless it
+// is a retry, which returns the sandbox the lease made; nothing is created
+// or charged twice.
+func TestLeaseReuse(t *testing.T) {
+	_, admin := start(t, 2, 1000)
+	cx := ctx(t)
+	lease := ids.NewLease()
+	sb, err := admin.CreateSandbox(cx, &pb.CreateSandboxRequest{Project: "root", Spec: spec, Lease: lease})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = admin.CreateSandbox(cx, &pb.CreateSandboxRequest{Project: "root", Spec: spec, Lease: lease})
+	if rpcutil.Reason(err) != rpcutil.Conflict {
+		t.Fatalf("reusing a held lease: %v, want conflict", err)
+	}
+	again, err := admin.CreateSandbox(cx, &pb.CreateSandboxRequest{Project: "root", Spec: spec, Lease: lease, Retry: true})
+	if err != nil || again.Id != sb.Id {
+		t.Fatalf("retry = %v, %v; want %s", again.GetId(), err, sb.Id)
+	}
+	l, err := admin.ListSandboxes(cx, &pb.SandboxFilter{Project: "root"})
+	if err != nil || len(l.Sandboxes) != 1 {
+		t.Fatalf("%d sandboxes, %v; want 1", len(l.GetSandboxes()), err)
+	}
+}

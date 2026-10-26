@@ -72,7 +72,11 @@ func (s *Service) Admit(ctx context.Context, r *pb.AdmitRequest) (*pb.AdmitRespo
 		}
 	}
 	if r.Lease != "" {
-		if err := s.IAM.ReserveOn(r.Lease, r.Project, ResourceMap(r.Resources), r.Edge); err != nil {
+		reserve := s.IAM.ReserveOn
+		if r.Fresh {
+			reserve = s.IAM.ReserveFresh
+		}
+		if err := reserve(r.Lease, r.Project, ResourceMap(r.Resources), r.Edge); err != nil {
 			return nil, err
 		}
 	}

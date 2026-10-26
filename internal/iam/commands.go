@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 	"time"
@@ -43,6 +44,7 @@ type Command struct {
 	Leases  []string           `json:"leases,omitempty"` // opReleaseLeases
 	Res     map[string]float64 `json:"res,omitempty"`
 	Edge    string             `json:"edge,omitempty"`
+	Fresh   bool               `json:"fresh,omitempty"` // opReserve: the lease must not be held yet
 	Adopt   []*Reservation     `json:"adopt,omitempty"`
 	Bind    []string           `json:"bind,omitempty"`
 	Release []string           `json:"release,omitempty"`
@@ -309,7 +311,17 @@ func (m *IAM) Reserve(lease, project string, res map[string]float64) error {
 // sandbox, so a crash of that edge releases it even before the first
 // reconcile. Re-reserving on another edge (placement retry) moves the binding.
 func (m *IAM) ReserveOn(lease, project string, res map[string]float64, edge string) error {
-	_, err := m.propose(&Command{Op: opReserve, Lease: lease, Project: project, Res: res, Edge: edge})
+	return m.reserve(lease, project, res, edge, false)
+}
+
+// ReserveFresh is ReserveOn for the first attempt of a create: a lease
+// already held is refused rather than rebound.
+func (m *IAM) ReserveFresh(lease, project string, res map[string]float64, edge string) error {
+	return m.reserve(lease, project, res, edge, true)
+}
+
+func (m *IAM) reserve(lease, project string, res map[string]float64, edge string, fresh bool) error {
+	_, err := m.propose(&Command{Op: opReserve, Lease: lease, Project: project, Res: res, Edge: edge, Fresh: fresh})
 	return err
 }
 
@@ -541,6 +553,11 @@ func (m *IAM) revokeLocked(c *Command) (*Project, error) {
 
 func (m *IAM) reserveLocked(c *Command) error {
 	if r := m.reservations[c.Lease]; r != nil {
+		// A lease is an idempotency key: reusing it for another project or
+		// other resources would run a sandbox the quota never charged.
+		if c.Fresh || r.Project != c.Project || !sameRes(r.Res, c.Res) {
+			return rpcutil.Err(rpcutil.Conflict, "lease %s is already in use", c.Lease)
+		}
 		if c.Edge != "" && r.Edge != c.Edge { // retried on another edge
 			if r.Edge != "" {
 				delete(m.byEdge[r.Edge], c.Lease)
@@ -568,6 +585,20 @@ func (m *IAM) reserveLocked(c *Command) error {
 	}
 	m.addReservationLocked(&Reservation{Lease: c.Lease, Project: c.Project, Res: copyMap(c.Res), At: c.Now, Edge: c.Edge})
 	return nil
+}
+
+func sameRes(a, b map[string]float64) bool {
+	for k, v := range a {
+		if math.Abs(b[k]-v) > 1e-9 {
+			return false
+		}
+	}
+	for k, v := range b {
+		if _, ok := a[k]; !ok && v != 0 {
+			return false
+		}
+	}
+	return true
 }
 
 // addReservationLocked records r and charges it (no quota check: used for

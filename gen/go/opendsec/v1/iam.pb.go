@@ -550,7 +550,10 @@ type AdmitRequest struct {
 	Edge      string                 `protobuf:"bytes,6,opt,name=edge,proto3" json:"edge,omitempty"` // edge chosen for the sandbox: binds the lease to it
 	// Instead of token: a principal the apiserver authenticated itself (a
 	// token of an extension's authenticator, which IAM does not know).
-	Principal     string `protobuf:"bytes,7,opt,name=principal,proto3" json:"principal,omitempty"`
+	Principal string `protobuf:"bytes,7,opt,name=principal,proto3" json:"principal,omitempty"`
+	// The lease must not be held yet: the first attempt of a create that is
+	// not a retry. A held lease is refused instead of being rebound.
+	Fresh         bool `protobuf:"varint,8,opt,name=fresh,proto3" json:"fresh,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -632,6 +635,13 @@ func (x *AdmitRequest) GetPrincipal() string {
 		return x.Principal
 	}
 	return ""
+}
+
+func (x *AdmitRequest) GetFresh() bool {
+	if x != nil {
+		return x.Fresh
+	}
+	return false
 }
 
 type AdmitResponse struct {
@@ -2627,7 +2637,7 @@ const file_opendsec_v1_iam_proto_rawDesc = "" +
 	"\tPrincipal\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04kind\x18\x02 \x01(\tR\x04kind\x12(\n" +
-	"\x10token_expires_at\x18\x03 \x01(\x01R\x0etokenExpiresAt\"\xd2\x01\n" +
+	"\x10token_expires_at\x18\x03 \x01(\x01R\x0etokenExpiresAt\"\xe8\x01\n" +
 	"\fAdmitRequest\x12\x14\n" +
 	"\x05token\x18\x01 \x01(\tR\x05token\x12\x18\n" +
 	"\aproject\x18\x02 \x01(\tR\aproject\x12\x14\n" +
@@ -2635,7 +2645,8 @@ const file_opendsec_v1_iam_proto_rawDesc = "" +
 	"\x05lease\x18\x04 \x01(\tR\x05lease\x124\n" +
 	"\tresources\x18\x05 \x01(\v2\x16.opendsec.v1.ResourcesR\tresources\x12\x12\n" +
 	"\x04edge\x18\x06 \x01(\tR\x04edge\x12\x1c\n" +
-	"\tprincipal\x18\a \x01(\tR\tprincipal\"-\n" +
+	"\tprincipal\x18\a \x01(\tR\tprincipal\x12\x14\n" +
+	"\x05fresh\x18\b \x01(\bR\x05fresh\"-\n" +
 	"\rAdmitResponse\x12\x1c\n" +
 	"\tprincipal\x18\x01 \x01(\tR\tprincipal\"+\n" +
 	"\x13AuthenticateRequest\x12\x14\n" +
