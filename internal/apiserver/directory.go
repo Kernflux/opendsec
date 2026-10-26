@@ -2,7 +2,9 @@ package apiserver
 
 import (
 	"context"
+	"errors"
 	"slices"
+	"strings"
 
 	"github.com/kernflux/opendsec/ext"
 	pb "github.com/kernflux/opendsec/gen/go/opendsec/v1"
@@ -15,14 +17,11 @@ func (s *Server) Directory() ext.Directory { return directory{s.iam} }
 
 type directory struct{ iam pb.IAMClient }
 
-func (d directory) EnsurePrincipal(ctx context.Context, actor, project, id, kind string) error {
+func (d directory) CreatePrincipal(ctx context.Context, actor, project, id, kind string) error {
 	r, err := d.iam.CreatePrincipal(ctx, &pb.CreatePrincipalRequest{Actor: actor, Project: project, Id: id, Kind: kind})
 	if err != nil {
-		if rpcutil.Reason(err) == rpcutil.Invalid {
-			// It exists (any other invalid request fails the grants next).
-			if _, gerr := d.iam.ListTokens(ctx, &pb.ListTokensRequest{Actor: actor, Principal: id}); gerr == nil {
-				return nil
-			}
+		if rpcutil.Reason(err) == rpcutil.Invalid && strings.HasSuffix(rpcutil.Message(err), "exists") {
+			return ext.ErrExists
 		}
 		return err
 	}
@@ -60,4 +59,24 @@ func (d directory) SetGrants(ctx context.Context, actor, project, principal stri
 		}
 	}
 	return nil
+}
+
+// The extensions' state lives under ext/ in IAM's key-value area; IAM
+// lets apiservers reach nothing else there.
+const statePrefix = "ext/"
+
+func (d directory) GetState(ctx context.Context, key string) ([]byte, uint64, error) {
+	e, err := d.iam.KVGet(ctx, &pb.KVGetRequest{Key: statePrefix + key})
+	if err != nil {
+		return nil, 0, err
+	}
+	return e.GetValue(), e.GetRev(), nil
+}
+
+func (d directory) PutState(ctx context.Context, key string, value []byte, rev uint64) error {
+	_, err := d.iam.KVPut(ctx, &pb.KVPutRequest{Key: statePrefix + key, Value: value, Check: true, ExpectRev: rev})
+	if rpcutil.ReasonOf(err) == rpcutil.Conflict {
+		return errors.Join(ext.ErrConflict, err)
+	}
+	return err
 }

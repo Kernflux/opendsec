@@ -133,6 +133,27 @@ func TestInternalMTLS(t *testing.T) {
 	if _, err := asAPI.Admit(short(t), &pb.AdmitRequest{Token: tc.AdminToken, Project: "root"}); err != nil {
 		t.Fatalf("apiserver Admit: %v", err)
 	}
+	// The key-value area: apiservers reach only their extensions' ext/ keys,
+	// never the fleet service's state.
+	if _, err := asAPI.KVPut(short(t), &pb.KVPutRequest{Key: "ext/sso/users/x", Value: []byte("{}")}); err != nil {
+		t.Fatalf("apiserver KVPut ext/: %v", err)
+	}
+	if e, err := asAPI.KVGet(short(t), &pb.KVGetRequest{Key: "ext/sso/users/x"}); err != nil || string(e.Value) != "{}" {
+		t.Fatalf("apiserver KVGet ext/: %v %v", e, err)
+	}
+	for name, call := range map[string]func() error{
+		"KVPut": func() error {
+			_, err := asAPI.KVPut(short(t), &pb.KVPutRequest{Key: "fleet/node/x", Value: []byte("{}")})
+			return err
+		},
+		"KVGet":    func() error { _, err := asAPI.KVGet(short(t), &pb.KVGetRequest{Key: "fleet/node/x"}); return err },
+		"KVList":   func() error { _, err := asAPI.KVList(short(t), &pb.KVListRequest{Prefix: ""}); return err },
+		"KVDelete": func() error { _, err := asAPI.KVDelete(short(t), &pb.KVDeleteRequest{Key: "fleet/node/x"}); return err },
+	} {
+		if err := call(); rpcutil.Reason(err) != rpcutil.Forbidden {
+			t.Fatalf("apiserver %s outside ext/: %v", name, err)
+		}
+	}
 
 	// An edge may only register itself with the watcher.
 	w := pb.NewWatcherClient(tc.as(t, edgeID, watcherAddr, nil))

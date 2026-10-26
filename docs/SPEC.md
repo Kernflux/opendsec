@@ -3010,20 +3010,32 @@ E2B 的 `sandbox.fork()`、`create_snapshot()`、`Sandbox.create(snapshot_id)` �
 企业版的 `ee/sso` 扩展：调用方直接用身份提供方（IdP）签发的 OIDC token（ID token，或 JWT 格式的 access token）作为 OpenDsec 的 token。SDK 和 opendsecctl 都不用改。配置和用法见企业版文档（`ee/README.md`，不在公开仓库里）。开源版这边只新增了一个扩展点。
 
 - **新扩展点 `ext.Directory`**：扩展通过 apiserver 的 IAM 连接，以配置里的 actor 身份修改 IAM，IAM 照常鉴权。apiserver 在启动时安装它（`Server.Directory()`）。
-  - `EnsurePrincipal`：不存在就创建；IAM 建 principal 时附带签发的 token 会立即吊销，所以这个 principal 只能经扩展认证。
+  - `CreatePrincipal`：创建 principal；同名的已存在时返回 `ext.ErrExists`。IAM 建 principal 时附带签发的 token 会立即吊销，所以这个 principal 只能经扩展认证。
   - `SetGrants`：把 principal 在某个项目上的权限改成恰好是给定的集合，先比较差异，再分别授予和撤销。
+  - `GetState`、`PutState`：扩展的共享状态，存在 IAM 键值区的 `ext/` 下，所有 apiserver 看到同一份；`PutState` 按版本号比较后写入，被别人抢先时返回 `ext.ErrConflict`。IAM 只允许 apiserver 证书访问 `ext/` 开头的键（fleet 的状态决定每台机器跑什么，apiserver 碰不到），检查在请求进入的那个副本上做，转发给 leader 之前。
+  - **[2026-10-26 修订]** 原来的 `EnsurePrincipal` 遇到已存在的 principal 就当成功，于是 IdP 里叫 `admin` 的用户（`principal_prefix` 设成空串时）会直接成为集群管理员，见下面「自动开通」。
 - **验证 token**：
   - 签名：RS256/384/512、PS256/384/512、ES256/384/512（曲线必须与算法对应）、EdDSA；拒绝 `none` 和 HMAC，防止拿公钥当 HMAC 密钥的伪造。
   - `iss` 必须等于配置的 issuer，`aud` 必须包含配置的某个 client id；`exp` 和 `nbf` 允许 1 分钟时钟偏差；
   - 公钥按 discovery 文档里的 JWKS 获取。遇到未知的 key id（密钥轮换）会重新获取，但 30 秒内最多一次，避免伪造的 kid 引发大量请求。
+  - 获取时不持锁，用自己的超时（30 秒），不用触发它的那个请求的：已知 key 的 token 不用等；同时需要它的请求共用一次获取，其中一个请求取消也不影响其他的。**[2026-10-26 修订]** 原来获取时持锁，用伪造的 kid 就能让所有 SSO 登录每 30 秒卡住最多 20 秒；获取还用第一个调用方的 context，它一取消，其他 kid 在 30 秒内都会被拒。
   - 只用标准库实现，没有引入新依赖。
   - issuer 不是本 IdP 的 token 交给 IAM，所以 IAM token 照常可用。
-- **身份**：`principal_prefix`（默认 `sso-`）加上 `principal_claim`（默认 `sub`）的值，`.`、`/` 和空格换成 `_`。用户组取 `groups_claim`（默认 `groups`），可以写点分路径，例如 Keycloak 的 `realm_access.roles`。
+- **身份**：`principal_prefix`（默认 `sso-`）加上 `principal_claim`（默认 `sub`）的值，`.`、`/` 和空格换成 `_`。所以 `john.doe` 和 `john_doe` 会得到同一个名字：开通时记下名字的来源，第二个用户被拒绝（应换成唯一的 claim，例如 `sub`）。用户组取 `groups_claim`（默认 `groups`），可以写点分路径，例如 Keycloak 的 `realm_access.roles`。
 - **自动开通**（可选的 `provision`）：
   - 用户第一次带 token 访问时，在指定项目下创建 principal；
   - 在映射表里出现的每个项目上，把权限设成该用户所在组映射出的集合。离开组后，下一个 token 就会撤销相应权限。映射表里的项目，这些 principal 的权限完全由 IdP 决定。
   - 用户组变化时，或每隔 `sync_s` 秒同步一次。
-  - 同步失败时：以前同步过的用户保留 IAM 现有的权限，只记警告；新用户被拒绝。
+  - 每个开通的 principal 有一条共享记录（`ext/sso/users/<principal>`）：名字来源的 claim 值、已应用的 token 的签发时间（`iat`，没有时用 `exp`）和它的用户组。
+    - 只有带记录的 principal 归 SSO 管：同名 principal 已存在而没有记录时（本地创建的，或者被别人占了），拒绝登录，不接管。
+    - 只按最新签发的 token 改权限：比记录更早签发的 token（离开组之前拿到、还没过期的）照常认证，但不改权限，用的是 IAM 里较新 token 的权限。比本机已知的更新的 token 一律去读共享记录，所以换一台 apiserver 也一样。
+    - 写记录用版本号比较；被另一台 apiserver 抢先就重读，按较新的那个 token 的组再应用一次，所以最后应用的总是最新的。
+  - 同步失败时：
+    - 读不到共享记录（IAM 不可用）：拒绝。不知道 IAM 里实际是谁的权限，而此时创建 sandbox 本来也会失败。
+    - 改权限失败：IAM 里的权限（记录里的组）不超过这个 token 的组所给的，才放行（变化只是加了组，或者没变）；离开了组而撤销没做成的，拒绝。
+    - 新用户被拒绝。
+  - **[2026-10-26 修订]** 原来按每个 token 自己的组同步，没有先后：离开组后再拿旧 token 访问，权限就被加回来，新旧 token 交替时来回切换；同步失败时一律保留原权限，离开组的用户在 IAM 出问题期间一直留着权限。
+  - 已知的限制：principal 刚建好、记录还没写入时进程崩溃，这个用户之后会被当成「不是 SSO 建的」而拒绝，要管理员删掉这个 principal。
 - **授权**：apiserver 按 token 缓存认证结果，直到 token 过期；按「principal、项目、权限」缓存授权结果。所以撤销会在授权缓存过期后生效，旧 token 也一样。
 - **许可证**：要有覆盖 `sso` 功能的有效许可证。没有或过期时，IdP 的 token 被拒绝，集群照常运行，IAM token 不受影响。
 - **测试**（`ee/sso`，用假的 IdP：TLS，提供 discovery 和 JWKS）：
@@ -3033,6 +3045,8 @@ E2B 的 `sandbox.fork()`、`create_snapshot()`、`Sandbox.create(snapshot_id)` �
   - principal 名字的转换、点分路径取用户组、拒绝 http 的 issuer；
   - 没有许可证时拒绝 IdP 的 token，IAM token 不受影响；
   - 真实 IdP：Keycloak 26.4.2（在 bm1 上的临时虚拟机里，HTTPS、自签证书），`TestRealIdP` 用它签发的 access token 和 ID token 都通过：组成员自动开通为 `sso-alice` 并能创建 sandbox，不在组里的用户被拒，篡改的 token 被拒。Keycloak 的配置要点（audience mapper、group mapper）写在企业版文档里。
+  - `TestSync`（内存里的 Directory）：离开组后，旧 token 在同一台和另一台 apiserver 上都不能把权限加回来；名字相同的两个用户，第二个被拒；不是 SSO 建的同名 principal 被拒；改权限失败时，加组的放行、离开组的拒绝；读不到记录时拒绝（另一台 apiserver 的本地视图已经过期）；IAM 不可用时新用户被拒。
+  - `TestVerify` 新增：IdP 迟迟不返回 JWKS 时，已知 key 的 token 立即通过；触发获取的请求取消后，获取照常完成，等它的请求拿到 key。
   - `TestSSOCluster`（本地集群）：组成员第一次访问就被开通并能创建 sandbox；开通的 principal 没有 IAM token；不在组里的用户被拒；离开组后的下一个 token 失去权限；伪造的 token 被拒；admin 的 IAM token 照常可用。
 
 ## 40. 审计日志导出（企业版，2026-10-23）
@@ -3045,6 +3059,8 @@ E2B 的 `sandbox.fork()`、`create_snapshot()`、`Sandbox.create(snapshot_id)` �
   - 所以目标宕机、导出进程重启，都不会丢记录；一个目标出问题也不影响其他目标。
   - 只读完整的行：最后一行没写完的留到下次。当前文件有了后继文件后，读完它就转到下一个（apiserver 一次只写一个文件，轮换前会写完并刷盘）。
   - 游标所在的文件已被 apiserver 删掉（超出 `audit_keep`）时，插入一条 `_gap` 记录，说明「从某文件某字节到某文件之间的记录可能丢失」，然后继续。
+  - 已有后继文件的文件以一行没写完的记录结尾（apiserver 写到一半崩溃，重启后换了新文件）时，也插入一条 `_gap` 记录，说明那条记录丢了。**[2026-10-26 修订]** 原来直接跳过，没有任何痕迹。
+  - `_gap` 记录的内容只由文件决定，时间取下一个文件的开始时间（文件名里的）。**[2026-10-26 修订]** 原来用当时的时间：一批记录送出后没收到确认、重发时，gap 记录变了，它和后面所有记录的链值都跟着变，校验报成「同一序号两条不同的记录」，诚实的导出被当成篡改。
 - **导出格式**：在原记录末尾追加 `_node`、`_seq`、`_prev`、`_chain`，其中 `_chain = sha256(_prev + "\n" + 原记录)`。字段追加在最后，去掉它们就能逐字节还原原记录，所以能重新计算哈希。
   - 只改一条记录：它自己的链值对不上。
   - 删掉一条：序号出现缺口。
@@ -3053,16 +3069,21 @@ E2B 的 `sandbox.fork()`、`create_snapshot()`、`Sandbox.create(snapshot_id)` �
   - 同一条记录重复送达（送达后、存游标前重启）可以容忍。
 - **目标**：
   - syslog：RFC 5424，facility 为 log audit；TCP 和 TLS 用 RFC 6587 的长度前缀分帧，UDP 每条一个包。
+    - UDP 放不下的记录（报文超过 65000 字节）换成一条占位记录：保留 `_node`、`_seq`、`_prev`、`_chain`，正文是原记录的长度和 sha256（`"method":"_oversize"`），链照常往下接；内容只在本地审计文件里。**[2026-10-26 修订]** 原来发送失败、重试同一批，这个目标的导出永远卡在这里。
+    - syslog 的 TCP 没有应答。每批发送前先探测连接是否已被对端关闭（1 毫秒的读超时），关了就重连。这只能挡住「对端早已关闭」的情况；发送过程中断开的，已写出的部分可能丢失而游标照常前移。要保证送达，用 S3 或 HTTP。
   - S3 兼容存储：自己实现 SigV4 签名，没有引入 SDK。每批写成一个 gzip 的 NDJSON 对象，按序号命名，重发会覆盖同一个对象。带 Content-MD5；配置 `retain_days` 时用 Object Lock 合规模式写入，到期前谁都删不了、改不了。
   - HTTP：POST NDJSON。
 - **失败重试**：退避从 1 秒开始，最长 1 分钟。指标包括：滞后字节数、最后成功时间、送达条数、失败次数（`opendsec_ee_audit_export_*`）。
-- **校验工具** `opendsec-audit verify FILE...`：按 apiserver 分组，报告范围、缺失的序号段、断开的链接、`_gap` 记录。有记录缺失或被改动时退出码为 1。
+- **校验工具** `opendsec-audit verify FILE...`：按 apiserver 分组，报告范围、缺失的序号段、断开的链接、`_gap` 记录和 `_oversize` 占位记录。有记录缺失或被改动时退出码为 1。
 - **许可证**：要覆盖 `audit_export` 功能。在导出循环里检查，没有就每 2 秒再查一次，错误只记一条日志。
+  - 许可证文件每分钟检查一次，换了（续期）就重新加载，不用重启；新文件验证不过时记错误、保留原来的。**[2026-10-26 修订]** 原来只在启动时读一次：续期后不重启，到旧的到期时间 SSO 和审计导出照样被关掉。测试 `TestReload`。
   - 发现的问题：`ext` 按名字顺序设置扩展，`audit_export` 排在 `license` 前面，所以在设置时检查许可证一定失败，导出永远不会开始。SSO 因为名字排在 `license` 后面，侥幸没有遇到这个问题。
   - 2026-10-25 线上试跑时发现，改成在导出循环里检查之后仍有问题：导出协程在 `license` 加载前就开始跑，每次启动先报一条「没有有效授权」的 ERROR，2 秒后才正常导出。修复：`ext` 新增 `AfterSetup(f)`，扩展在 Setup 里登记，等这个组件的所有扩展都设置完再执行；导出循环和 SSO 的授权检查都改用它。
 - **测试**：
   - `TestExport`：没写完的行留到下次；跨文件轮换；按批导出；投递失败后游标不动，重试时送的是同样的记录；文件被删时产生 gap 记录；重复送达可以容忍；改动、删除、重算链值、冲突都能查出。
   - `TestExportFromNow`：`from: now` 时不导出已有的记录。
+  - `TestExportResend`：以半行结尾的文件产生 gap 记录，时间是下一个文件的开始时间；带 gap 记录的一批送达但确认丢失，重发后两份一致，校验通过。
+  - `TestSyslogFailures`：TCP 对端在第一批后关闭连接，第二批在新连接上送达；UDP 上 70 KB 的记录以占位记录送出，三条记录的链校验通过，占位记录单独列出。
   - 三种目标：
     - syslog（TCP、TLS）检查报文格式和分帧；
     - HTTP：401 不算送达；

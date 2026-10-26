@@ -7,6 +7,7 @@ package ext
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"slices"
@@ -53,12 +54,24 @@ type AuditSink interface {
 // outside directory (an SSO provider's users and groups): IAM operations
 // made as actor, which IAM authorizes as usual. The apiserver installs it.
 type Directory interface {
-	// EnsurePrincipal creates principal id in project if it does not
-	// exist, with no usable token of its own.
-	EnsurePrincipal(ctx context.Context, actor, project, id, kind string) error
+	// CreatePrincipal creates principal id in project, with no usable
+	// token of its own; ErrExists if a principal of that name exists
+	// (one the extension made is one it recorded in its state).
+	CreatePrincipal(ctx context.Context, actor, project, id, kind string) error
 	// SetGrants makes principal's permissions on project exactly perms.
 	SetGrants(ctx context.Context, actor, project, principal string, perms []string) error
+	// GetState reads key of the extensions' area of IAM's key-value store,
+	// shared by every apiserver: nil and revision 0 when it is not there.
+	GetState(ctx context.Context, key string) ([]byte, uint64, error)
+	// PutState writes key if its revision is still rev (0: it must not
+	// exist yet); ErrConflict otherwise.
+	PutState(ctx context.Context, key string, value []byte, rev uint64) error
 }
+
+var (
+	ErrExists   = errors.New("exists")
+	ErrConflict = errors.New("changed meanwhile")
+)
 
 var (
 	mu       sync.Mutex
