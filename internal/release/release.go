@@ -98,6 +98,9 @@ func VerifyTarball(r io.Reader) (*Info, error) {
 	info := &Info{Deps: map[string]string{}}
 	got := map[string]string{}
 	var sums []byte
+	// Unpack refuses what it cannot lay out (a second copy of a file, a file
+	// where a directory goes): so does verification, not the nodes later.
+	files, dirs := map[string]bool{}, map[string]bool{}
 	for {
 		h, err := tr.Next()
 		if err == io.EOF {
@@ -118,10 +121,24 @@ func VerifyTarball(r io.Reader) (*Info, error) {
 		}
 		switch h.Typeflag {
 		case tar.TypeDir:
+			if files[name] {
+				return nil, fmt.Errorf("%s is both a file and a directory in the release", name)
+			}
+			dirs[name] = true
 			continue
 		case tar.TypeReg:
 		default:
 			return nil, fmt.Errorf("%s: only files and directories are allowed in a release", h.Name)
+		}
+		if files[name] || dirs[name] {
+			return nil, fmt.Errorf("%s appears twice in the release", name)
+		}
+		files[name] = true
+		for d := path.Dir(name); d != "."; d = path.Dir(d) {
+			if files[d] {
+				return nil, fmt.Errorf("%s is both a file and a directory in the release", d)
+			}
+			dirs[d] = true
 		}
 		hs := sha256.New()
 		var buf bytes.Buffer

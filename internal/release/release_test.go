@@ -1,7 +1,10 @@
 package release
 
 import (
+	"archive/tar"
 	"bytes"
+	"compress/gzip"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -67,5 +70,58 @@ func TestVerifyRejectsTampering(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, "bin/extra"), []byte("x"), 0o755)
 	if err := VerifyDir(dir); err == nil || !strings.Contains(err.Error(), "not covered") {
 		t.Fatalf("uncovered file: %v", err)
+	}
+}
+
+// TestVerifyRejectsWhatUnpackCannot: a tarball listing a file twice (same
+// contents, so the sums match) or a file where a directory goes passed
+// verification at upload, then failed to unpack on every node.
+func TestVerifyRejectsWhatUnpackCannot(t *testing.T) {
+	dir := makeRelease(t, "0.11.0-1")
+	var tgz bytes.Buffer
+	if err := Pack(dir, &tgz); err != nil {
+		t.Fatal(err)
+	}
+	// with re-packs the release, adding extra after its entries.
+	with := func(extra ...*tar.Header) []byte {
+		zr, _ := gzip.NewReader(bytes.NewReader(tgz.Bytes()))
+		tr := tar.NewReader(zr)
+		var out bytes.Buffer
+		zw := gzip.NewWriter(&out)
+		tw := tar.NewWriter(zw)
+		edge := []byte{}
+		for {
+			h, err := tr.Next()
+			if err == io.EOF {
+				break
+			}
+			b, _ := io.ReadAll(tr)
+			if h.Name == "0.11.0-1/bin/opendsec-edge" {
+				edge = b
+			}
+			tw.WriteHeader(h)
+			tw.Write(b)
+		}
+		for _, h := range extra {
+			if h.Typeflag == tar.TypeReg {
+				h.Size = int64(len(edge))
+			}
+			tw.WriteHeader(h)
+			if h.Typeflag == tar.TypeReg {
+				tw.Write(edge)
+			}
+		}
+		tw.Close()
+		zw.Close()
+		return out.Bytes()
+	}
+	for name, b := range map[string][]byte{
+		"a file twice":          with(&tar.Header{Name: "0.11.0-1/bin/opendsec-edge", Typeflag: tar.TypeReg, Mode: 0o755}),
+		"a file as a directory": with(&tar.Header{Name: "0.11.0-1/bin/opendsec-edge/", Typeflag: tar.TypeDir, Mode: 0o755}),
+	} {
+		if _, err := VerifyTarball(bytes.NewReader(b)); err == nil {
+			err = Unpack(bytes.NewReader(b), t.TempDir(), "0.11.0-1")
+			t.Errorf("%s: verified; unpacking it: %v", name, err)
+		}
 	}
 }
