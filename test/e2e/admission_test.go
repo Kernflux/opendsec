@@ -46,6 +46,7 @@ func TestAdmissionPolicy(t *testing.T) {
 	// Single creations past the burst are rejected with rate_limited...
 	time.Sleep(200 * time.Millisecond) // refill the burst of 5
 	limited := 0
+	began := time.Now()
 	for i := 0; i < 20; i++ {
 		if _, err := c.Create(cx, &pb.SandboxSpec{Backend: "sim"}); rpcutil.Reason(err) == rpcutil.RateLimited {
 			limited++
@@ -53,8 +54,11 @@ func TestAdmissionPolicy(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if limited < 10 {
-		t.Fatalf("only %d of 20 back-to-back creations rate limited (burst 5, 50/s)", limited)
+	// At most the burst plus what refilled while they ran gets through; on a
+	// slow machine that can be most of them, so the bound follows the clock.
+	allowed := 5 + int(time.Since(began).Seconds()*50) + 1
+	if 20-limited > allowed || (allowed < 20 && limited == 0) {
+		t.Fatalf("%d of 20 back-to-back creations got through, at most %d may (burst 5, 50/s)", 20-limited, allowed)
 	}
 	// ...while a batch is paced instead: all of it succeeds, at about the rate.
 	start := time.Now()
