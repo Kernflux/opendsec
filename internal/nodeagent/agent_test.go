@@ -41,10 +41,16 @@ func (f *fakeSD) ActiveState(context.Context, string) string {
 }
 func (f *fakeSD) RestartSelf(context.Context) error { return nil }
 
-// fakeFleet serves release tarballs from memory.
+// fakeFleet serves release tarballs from memory, and answers heartbeats
+// with hb.
 type fakeFleet struct {
 	pb.FleetClient
 	tgz map[string][]byte
+	hb  *pb.HeartbeatResponse
+}
+
+func (f *fakeFleet) Heartbeat(context.Context, *pb.HeartbeatRequest, ...grpc.CallOption) (*pb.HeartbeatResponse, error) {
+	return f.hb, nil
 }
 
 type chunks struct {
@@ -164,5 +170,84 @@ func TestRejectsForeignUnitsAndFiles(t *testing.T) {
 func TestFirecrackerVersion(t *testing.T) {
 	if v := FirecrackerVersion("Firecracker v1.17.0\n\nExiting successfully"); v != "1.17.0" {
 		t.Fatalf("%q", v)
+	}
+}
+
+func units(names ...string) []*pb.NodeUnit {
+	var out []*pb.NodeUnit
+	for _, n := range names {
+		out = append(out, &pb.NodeUnit{Unit: n})
+	}
+	return out
+}
+
+// index is where entry first is in log (-1: absent).
+func index(log []string, entry string) int {
+	for i, l := range log {
+		if l == entry {
+			return i
+		}
+	}
+	return -1
+}
+
+// TestRoleChange: units applied before and not wanted now (a role removed,
+// or renumbered) are stopped before the new ones start; a failed apply
+// puts the previous units back and stops the new ones.
+func TestRoleChange(t *testing.T) {
+	a, sd, ff, base := setup(t)
+	ctx := context.Background()
+	op := applyOp(ff, "v1", "one")
+	op.Units = units("opendsec-e2b@0.service", "opendsec-edge.service")
+	if _, err := a.execute(ctx, op); err != nil {
+		t.Fatal(err)
+	}
+	sd.log = nil
+	op = applyOp(ff, "v1", "two")
+	op.Units = units("opendsec-e2b@1.service", "opendsec-edge.service")
+	if _, err := a.execute(ctx, op); err != nil {
+		t.Fatal(err)
+	}
+	stop, start := index(sd.log, "stop opendsec-e2b@0.service"), index(sd.log, "restart opendsec-e2b@1.service")
+	if stop < 0 || index(sd.log, "disable opendsec-e2b@0.service") < 0 || start < stop {
+		t.Fatalf("renumbered role: %v", sd.log)
+	}
+	if index(sd.log, "stop opendsec-edge.service") >= 0 {
+		t.Fatalf("a unit still wanted was stopped: %v", sd.log)
+	}
+
+	// v2 fails, with e2b renumbered again: e2b@1 is back, e2b@2 stopped.
+	sd.bad, sd.log = "v2", nil
+	op = applyOp(ff, "v2", "three")
+	op.Units = units("opendsec-e2b@2.service", "opendsec-edge.service")
+	if _, err := a.execute(ctx, op); err == nil {
+		t.Fatal("apply of a failing release succeeded")
+	}
+	restored := sd.log[index(sd.log, "restart opendsec-e2b@2.service")+1:]
+	if index(restored, "stop opendsec-e2b@2.service") < 0 || index(restored, "enable opendsec-e2b@1.service") < 0 ||
+		index(restored, "restart opendsec-e2b@1.service") < 0 {
+		t.Fatalf("restore after a failed role change: %v", sd.log)
+	}
+
+	// What was applied last survives a restart of the agent.
+	a.save() // as after every operation
+	b := New(Options{Root: sd.root, StateFile: filepath.Join(base, "state.json"), Systemd: sd})
+	if strings.Join(b.applied, " ") != "opendsec-e2b@1.service opendsec-edge.service" {
+		t.Fatalf("applied after a restart: %v", b.applied)
+	}
+}
+
+// TestRetiredRunsNothing: once its node is retired, an agent carries out
+// no operation the fleet still hands it.
+func TestRetiredRunsNothing(t *testing.T) {
+	a, _, ff, _ := setup(t)
+	ctx := context.Background()
+	ff.hb = &pb.HeartbeatResponse{State: "retired", Op: applyOp(ff, "v1", "one")}
+	a.beat(ctx) // retires
+	a.beat(ctx)
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.op != nil || a.running {
+		t.Fatalf("a retired node ran %v", a.op)
 	}
 }

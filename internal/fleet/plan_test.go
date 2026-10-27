@@ -121,7 +121,19 @@ func TestDeployed(t *testing.T) {
 	if strings.Join(units, " ") != "opendsec-apiserver@0.service opendsec-edge.service" {
 		t.Fatalf("units %v", units)
 	}
-	if got := strings.Join(rolesOf(n), ","); got != "apiserver,e2b,edge" {
+	if got := strings.Join(rolesOf(n), ","); got != "apiserver=0,e2b=0,edge=e1" {
 		t.Fatalf("rolesOf %s", got)
+	}
+	// Recorded with ids: a role renumbered since counts with its old id
+	// (its new unit runs only once deployed), and one removed since still
+	// counts (it runs until then).
+	n.Roles = map[string]string{"apiserver": "0", "e2b": "1"}
+	n.DeployedRoles = []string{"apiserver=0", "e2b=0", "edge=e1"}
+	d = deployed(n)
+	if len(d.Roles) != 3 || d.Roles["e2b"] != "0" || d.Roles["edge"] != "e1" || d.Name != "a" {
+		t.Fatalf("deployed roles %v", d.Roles)
+	}
+	if n.Roles["e2b"] != "1" {
+		t.Fatal("deployed changed the node")
 	}
 }

@@ -326,6 +326,9 @@ func (s *Server) Heartbeat(ctx context.Context, r *pb.HeartbeatRequest) (*pb.Hea
 	}
 	resp.State = n.V.State
 	resp.Units = nodeUnits(n.V, s.opt.Cfg.ReadyPorts)
+	if n.V.State == "retired" {
+		resp.Op = nil // nothing runs on it again
+	}
 	if !known || (op != nil && st.Op.GetOpId() == op.OpId && st.Op.GetState() != "running") {
 		s.Kick() // an operation finished: act on it now
 	}

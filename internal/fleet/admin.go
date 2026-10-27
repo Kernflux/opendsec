@@ -458,6 +458,8 @@ func (s *Server) CreateRollout(ctx context.Context, r *pb.FleetCreateRolloutRequ
 // node to its step in the rollout being undone.
 func (s *Server) createRollout(ctx context.Context, r *pb.FleetCreateRolloutRequest, picked []*pb.FleetNode,
 	st *pb.FleetStrategy, rollback bool, from map[string]*pb.FleetStep) (*pb.FleetRollout, error) {
+	s.ctl.Lock() // two creations at once would both find no active rollout
+	defer s.ctl.Unlock()
 	ros, err := s.store.Rollouts(ctx)
 	if err != nil {
 		return nil, err

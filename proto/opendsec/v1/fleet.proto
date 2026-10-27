@@ -66,10 +66,12 @@ message FleetNode {
   bool sync = 13;                      // bring the node to its desired release and config
   NodeStatus status = 14;              // last heartbeat (not stored)
   string message = 15;                 // outcome of the last sync, or why it is pending
-  // The roles its units were last applied with (by a rollout or a sync).
-  // A role added since is not running yet and does not count against the
-  // node's health until a rollout or sync of the node deploys it. Empty:
-  // all of roles (nodes recorded before this field).
+  // The roles its units were last applied with (by a rollout or a sync),
+  // as "role=id". A role added or renumbered since is not running yet and
+  // does not count against the node's health until a rollout or sync of
+  // the node deploys it; a failed apply is reverted to these roles. Empty:
+  // all of roles (nodes recorded before this field); an entry without
+  // "=id" (recorded before the ids were): the id in roles.
   repeated string deployed_roles = 16;
 }
 

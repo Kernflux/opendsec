@@ -21,6 +21,7 @@ import (
 	"os/exec"
 	"os/user"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -111,6 +112,7 @@ type Agent struct {
 	gen      uint64       // config generation last written (persisted)
 	running  bool
 	units    []*pb.NodeUnit // what the fleet says this node runs
+	applied  []string       // the units of the last apply that succeeded (persisted; nil: not known)
 	retired  bool
 	interval time.Duration
 	kick     chan struct{}
@@ -118,8 +120,9 @@ type Agent struct {
 }
 
 type persisted struct {
-	Op  *pb.OpStatus `json:"op"`
-	Gen uint64       `json:"config_gen"`
+	Op      *pb.OpStatus `json:"op"`
+	Gen     uint64       `json:"config_gen"`
+	Applied []string     `json:"applied_units,omitempty"`
 }
 
 func New(o Options) *Agent {
@@ -129,7 +132,7 @@ func New(o Options) *Agent {
 	if b, err := os.ReadFile(o.StateFile); err == nil {
 		var p persisted
 		if json.Unmarshal(b, &p) == nil {
-			a.op, a.gen = p.Op, p.Gen
+			a.op, a.gen, a.applied = p.Op, p.Gen, p.Applied
 			if a.op != nil && a.op.State == "running" { // the agent died mid-operation
 				a.op.State, a.op.Message, a.op.Finished = "failed", "agent restarted during the operation", now()
 			}
@@ -142,7 +145,7 @@ func now() float64 { return float64(time.Now().UnixNano()) / 1e9 }
 
 func (a *Agent) save() {
 	a.mu.Lock()
-	b, _ := json.Marshal(persisted{Op: a.op, Gen: a.gen})
+	b, _ := json.Marshal(persisted{Op: a.op, Gen: a.gen, Applied: a.applied})
 	a.mu.Unlock()
 	os.MkdirAll(filepath.Dir(a.o.StateFile), 0o755)
 	tmp := a.o.StateFile + ".tmp"
@@ -188,12 +191,13 @@ func (a *Agent) beat(ctx context.Context) {
 	}
 	retire := resp.State == "retired" && !a.retired
 	a.retired = resp.State == "retired"
+	applied := a.applied
 	a.mu.Unlock()
 	if retire {
-		go a.retire(ctx, resp.Units)
+		go a.retire(ctx, resp.Units, applied)
 		return
 	}
-	if resp.Op != nil {
+	if resp.Op != nil && resp.State != "retired" { // a retired node runs nothing again
 		a.maybeStart(ctx, resp.Op)
 	}
 }
@@ -239,17 +243,45 @@ func (a *Agent) maybeStart(ctx context.Context, op *pb.NodeOp) {
 	}()
 }
 
-func (a *Agent) retire(ctx context.Context, units []*pb.NodeUnit) {
+// retire stops the node's units: those of its roles, and those last
+// applied (roles changed since run until the next apply).
+func (a *Agent) retire(ctx context.Context, units []*pb.NodeUnit, applied []string) {
 	a.o.Log.Info("node retired: stopping its components")
-	for i := len(units) - 1; i >= 0; i-- {
-		u := units[i].Unit
-		if err := a.o.Systemd.Run(ctx, "disable", u); err != nil {
-			a.o.Log.Warn("disable", "unit", u, "err", err)
-		}
-		if err := a.o.Systemd.Run(ctx, "stop", u); err != nil {
-			a.o.Log.Warn("stop", "unit", u, "err", err)
+	var names []string
+	for _, u := range units {
+		names = append(names, u.Unit)
+	}
+	for _, u := range applied {
+		if !slices.Contains(names, u) {
+			names = append(names, u)
 		}
 	}
+	for i := len(names) - 1; i >= 0; i-- {
+		a.stopUnit(ctx, names[i])
+	}
+}
+
+// stopUnit disables and stops u (failures are logged: the unit is not
+// wanted either way).
+func (a *Agent) stopUnit(ctx context.Context, u string) {
+	if !allowedUnit(u) {
+		return
+	}
+	if err := a.o.Systemd.Run(ctx, "disable", u); err != nil {
+		a.o.Log.Warn("disable", "unit", u, "err", err)
+	}
+	if err := a.o.Systemd.Run(ctx, "stop", u); err != nil {
+		a.o.Log.Warn("stop", "unit", u, "err", err)
+	}
+}
+
+// unitNames is the units of op.
+func unitNames(units []*pb.NodeUnit) []string {
+	out := make([]string, 0, len(units))
+	for _, u := range units {
+		out = append(out, u.Unit)
+	}
+	return out
 }
 
 // ---- status -----------------------------------------------------------------------
@@ -574,6 +606,9 @@ type undo struct {
 // config and units back and restarts them again.
 func (a *Agent) apply(ctx context.Context, op *pb.NodeOp, timeout time.Duration) (bool, error) {
 	prev := a.current()
+	a.mu.Lock()
+	prevUnits := a.applied
+	a.mu.Unlock()
 	if op.Release != "" {
 		if err := a.stage(ctx, op); err != nil {
 			return false, err
@@ -594,13 +629,14 @@ func (a *Agent) apply(ctx context.Context, op *pb.NodeOp, timeout time.Duration)
 			u.files[f.Name] = nil
 		}
 	}
-	err := a.applySteps(ctx, op, timeout)
+	err := a.applySteps(ctx, op, prevUnits, timeout)
 	if err == nil {
+		a.mu.Lock()
 		if op.ConfigGen != 0 {
-			a.mu.Lock()
 			a.gen = op.ConfigGen
-			a.mu.Unlock()
 		}
+		a.applied = unitNames(op.Units)
+		a.mu.Unlock()
 		a.prune()
 		if op.Release == "" || op.Release == prev {
 			return false, nil
@@ -612,13 +648,16 @@ func (a *Agent) apply(ctx context.Context, op *pb.NodeOp, timeout time.Duration)
 		return restart, nil
 	}
 	a.o.Log.Warn("apply failed: putting the previous release and config back", "err", err)
-	if rerr := a.restore(ctx, op, u, timeout); rerr != nil {
+	if rerr := a.restore(ctx, op, u, prevUnits, timeout); rerr != nil {
 		return false, fmt.Errorf("%v; restoring the previous state also failed: %v", err, rerr)
 	}
 	return false, err
 }
 
-func (a *Agent) applySteps(ctx context.Context, op *pb.NodeOp, timeout time.Duration) error {
+// applySteps switches, writes the files and runs op's units. Units applied
+// before and not in op (a role removed, or its instance renumbered) are
+// stopped first: the new ones may need their ports.
+func (a *Agent) applySteps(ctx context.Context, op *pb.NodeOp, prevUnits []string, timeout time.Duration) error {
 	if op.Release != "" {
 		if err := a.switchTo("releases/" + op.Release); err != nil {
 			return err
@@ -631,6 +670,12 @@ func (a *Agent) applySteps(ctx context.Context, op *pb.NodeOp, timeout time.Dura
 	}
 	if err := a.installUnits(ctx); err != nil {
 		return err
+	}
+	want := unitNames(op.Units)
+	for _, u := range prevUnits {
+		if !slices.Contains(want, u) {
+			a.stopUnit(ctx, u)
+		}
 	}
 	for _, nu := range op.Units {
 		if err := a.o.Systemd.Run(ctx, "enable", nu.Unit); err != nil {
@@ -646,7 +691,9 @@ func (a *Agent) applySteps(ctx context.Context, op *pb.NodeOp, timeout time.Dura
 	return nil
 }
 
-func (a *Agent) restore(ctx context.Context, op *pb.NodeOp, u undo, timeout time.Duration) error {
+// restore puts back the release, files and units from before op: the
+// units applied before (when known; else op's), with op's others stopped.
+func (a *Agent) restore(ctx context.Context, op *pb.NodeOp, u undo, prevUnits []string, timeout time.Duration) error {
 	if u.current != "" {
 		if err := a.switchTo(u.current); err != nil {
 			return err
@@ -664,8 +711,28 @@ func (a *Agent) restore(ctx context.Context, op *pb.NodeOp, u undo, timeout time
 	if err := a.installUnits(ctx); err != nil {
 		return err
 	}
+	units := op.Units
+	if prevUnits != nil {
+		units = nil
+		for _, nu := range op.Units {
+			if slices.Contains(prevUnits, nu.Unit) {
+				units = append(units, nu)
+			} else {
+				a.stopUnit(ctx, nu.Unit)
+			}
+		}
+		for _, name := range prevUnits {
+			if !slices.Contains(unitNames(op.Units), name) {
+				units = append(units, &pb.NodeUnit{Unit: name}) // stopped by applySteps; no /readyz known
+			}
+		}
+	}
 	var errs []error
-	for _, nu := range op.Units {
+	for _, nu := range units {
+		if err := a.o.Systemd.Run(ctx, "enable", nu.Unit); err != nil {
+			errs = append(errs, err)
+			continue
+		}
 		if err := a.o.Systemd.Run(ctx, "restart", nu.Unit); err != nil {
 			errs = append(errs, err)
 			continue

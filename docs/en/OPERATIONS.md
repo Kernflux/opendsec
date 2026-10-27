@@ -278,6 +278,8 @@ opendsecctl fleet rollout status [-steps]
 ```
 - Order: every target machine downloads the release first; control-plane nodes upgrade one by one, the IAM leader's node last; then one edge as the canary, and after its bake, the edges in batches, with at most half of a batch from any one failure domain.
 - Each edge is drained before its upgrade; after it, its own `/readyz` and the watcher snapshot must be fine before scheduling resumes. Edge restarts leave existing sandboxes alone.
+- The last batch (the canary, when it is the only one) is watched too: the rollout is done only after its pause (or bake) and one more gate check.
+- After a machine's roles change (a role removed, or its instance renumbered), its next rollout or sync stops and disables the units no longer wanted before starting the new ones; a failure puts the old ones back.
 - Before each batch: the machines already upgraded in this rollout are still fine, and every control-plane component is ready. With `fleet.prometheus_url` and `fleet.gates` set, those PromQL queries are checked during the bake and before each batch: a value over its limit, or a query that cannot be read (Prometheus down), pauses the rollout; a query with no samples reads as 0, provided Prometheus is scraping OpenDsec at all (`fleet.gates_up`, by default some `up{job=~"opendsec-.*"}` is 1); otherwise the rollout pauses with `gate data unavailable`. Resuming a rollout a gate paused lets the gates pass until the next batch has started. Rollbacks do not check the gates.
 - **When something fails**: the failed machine goes back to its old release by itself and is pinned, and the rollout pauses. Then:
   - `opendsecctl fleet rollout resume <id>`: accept the failures and upgrade the remaining machines;

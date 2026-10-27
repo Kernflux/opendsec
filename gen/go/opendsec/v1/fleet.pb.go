@@ -40,10 +40,12 @@ type FleetNode struct {
 	Sync         bool              `protobuf:"varint,13,opt,name=sync,proto3" json:"sync,omitempty"`      // bring the node to its desired release and config
 	Status       *NodeStatus       `protobuf:"bytes,14,opt,name=status,proto3" json:"status,omitempty"`   // last heartbeat (not stored)
 	Message      string            `protobuf:"bytes,15,opt,name=message,proto3" json:"message,omitempty"` // outcome of the last sync, or why it is pending
-	// The roles its units were last applied with (by a rollout or a sync).
-	// A role added since is not running yet and does not count against the
-	// node's health until a rollout or sync of the node deploys it. Empty:
-	// all of roles (nodes recorded before this field).
+	// The roles its units were last applied with (by a rollout or a sync),
+	// as "role=id". A role added or renumbered since is not running yet and
+	// does not count against the node's health until a rollout or sync of
+	// the node deploys it; a failed apply is reverted to these roles. Empty:
+	// all of roles (nodes recorded before this field); an entry without
+	// "=id" (recorded before the ids were): the id in roles.
 	DeployedRoles []string `protobuf:"bytes,16,rep,name=deployed_roles,json=deployedRoles,proto3" json:"deployed_roles,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

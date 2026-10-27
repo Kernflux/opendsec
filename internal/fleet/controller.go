@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"google.golang.org/protobuf/proto"
@@ -263,25 +264,36 @@ func (s *Server) drain(ctx context.Context, e *pb.EdgeState, draining bool) erro
 	return err
 }
 
-// deployed is n as its units were last applied: roles added since are not
-// running yet, and must not hold back the rollouts that would deploy them
-// (each node's waits on the health of the others).
+// deployed is n as its units were last applied: roles added or renumbered
+// since are not running yet, and must not hold back the rollouts that
+// would deploy them (each node's waits on the health of the others); and
+// a failed apply is reverted to these roles.
 func deployed(n *pb.FleetNode) *pb.FleetNode {
 	if len(n.DeployedRoles) == 0 {
 		return n
 	}
 	roles := map[string]string{}
 	for _, r := range n.DeployedRoles {
-		if id, ok := n.Roles[r]; ok {
-			roles[r] = id
+		name, id, ok := strings.Cut(r, "=")
+		if !ok { // recorded without its id: the id it has now
+			id, ok = n.Roles[name]
+		}
+		if ok {
+			roles[name] = id
 		}
 	}
-	return &pb.FleetNode{Name: n.Name, Roles: roles}
+	d := proto.Clone(n).(*pb.FleetNode)
+	d.Roles = roles
+	return d
 }
 
-// rolesOf is n's role names, sorted (deployed_roles).
+// rolesOf is n's roles as deployed_roles keeps them: "role=id", sorted.
 func rolesOf(n *pb.FleetNode) []string {
-	return sortedKeys(n.Roles)
+	var out []string
+	for _, r := range sortedKeys(n.Roles) {
+		out = append(out, r+"="+n.Roles[r])
+	}
+	return out
 }
 
 // healthy reports whether node n runs well: every unit ready in its last
@@ -345,13 +357,23 @@ func (s *Server) driveRollout(ctx context.Context, rr rec[*pb.FleetRollout], nod
 	timeout := config.Seconds(st.StepTimeoutS)
 	now := s.unix()
 	changed := false // the rollout record itself
+	stored := make([]*pb.FleetStep, len(steps)) // each step as IAM holds it
+	for i := range steps {
+		stored[i] = proto.Clone(steps[i].V).(*pb.FleetStep)
+	}
+	// save writes step i. If that fails, the step goes back to what IAM
+	// holds, in place: nothing in this round acts on a change that was not
+	// saved (an operation handed out, the rollout finished on it).
 	save := func(i int) bool {
 		rev, err := s.store.PutStep(ctx, ro.Id, steps[i].V, steps[i].Rev)
 		if err != nil {
 			s.log.Warn("rollout: save step", "rollout", ro.Id, "node", steps[i].V.Node, "err", err)
+			proto.Reset(steps[i].V)
+			proto.Merge(steps[i].V, stored[i])
 			return false
 		}
 		steps[i].Rev = rev
+		stored[i] = proto.Clone(steps[i].V).(*pb.FleetStep)
 		return true
 	}
 	setPhase := func(i int, phase, msg string) {
@@ -375,15 +397,18 @@ func (s *Server) driveRollout(ctx context.Context, rr rec[*pb.FleetRollout], nod
 	// 1. Results of operations handed out earlier, and timeouts.
 	for i := range steps {
 		v := steps[i].V
-		if terminal(v.Phase) || v.Phase == phPending || v.Phase == phStaged {
+		if terminal(v.Phase) {
+			continue
+		}
+		n := nodeOf(i)
+		if n == nil || n.State == "retired" { // its agent stops everything; nothing to hand it
+			setPhase(i, phSkipped, map[bool]string{true: "node removed", false: "node retired"}[n == nil])
+			continue
+		}
+		if v.Phase == phPending || v.Phase == phStaged {
 			continue
 		}
 		busy[v.Node] = true
-		n := nodeOf(i)
-		if n == nil {
-			setPhase(i, phSkipped, "node removed")
-			continue
-		}
 		if s.unix()-v.Started > timeout.Seconds() {
 			switch v.Phase {
 			case phStaging:
@@ -392,7 +417,7 @@ func (s *Server) driveRollout(ctx context.Context, rr rec[*pb.FleetRollout], nod
 				s.pin(ctx, n.Name, "revert timed out in rollout "+ro.Id)
 				setPhase(i, phFailed, "revert timed out")
 			default:
-				s.startRevert(ctx, ro, &steps[i], n, "timed out after "+timeout.String(), ops, save)
+				s.startRevert(ctx, ro, steps, i, n, "timed out after "+timeout.String(), ops, save)
 			}
 			continue
 		}
@@ -412,12 +437,14 @@ func (s *Server) driveRollout(ctx context.Context, rr rec[*pb.FleetRollout], nod
 				if res.State == "ok" {
 					setPhase(i, phVerifying, "")
 				} else {
-					s.startRevert(ctx, ro, &steps[i], n, res.Message, ops, save)
+					s.startRevert(ctx, ro, steps, i, n, res.Message, ops, save)
 				}
 			}
 		case phVerifying:
 			if ok, _ := s.healthy(n); ok {
-				s.recordTarget(ctx, n.Name, v)
+				if err := s.recordTarget(ctx, n.Name, v); err != nil {
+					continue // ok only once the node's target says so: a sync would put it back
+				}
 				if n.State != "cordoned" {
 					if err := s.ensureDrain(ctx, n, false); err != nil {
 						s.log.Warn("undrain", "node", n.Name, "err", err)
@@ -458,7 +485,7 @@ func (s *Server) driveRollout(ctx context.Context, rr rec[*pb.FleetRollout], nod
 				ops[v.Node] = op
 			}
 		case phReverting:
-			if op, err := s.applyOp(ctx, n, v.FromRelease, v.FromGen, v.OpId, unitTimeout(ro, n)); err == nil {
+			if op, err := s.applyOp(ctx, deployed(n), v.FromRelease, v.FromGen, v.OpId, unitTimeout(ro, n)); err == nil {
 				ops[v.Node] = op
 			}
 		}
@@ -503,7 +530,7 @@ func (s *Server) driveRollout(ctx context.Context, rr rec[*pb.FleetRollout], nod
 		s.event(ro, "aborted")
 		changed = true
 	}
-	if ro.State == rsRunning && finished == len(steps) {
+	if ro.State == rsRunning && finished == len(steps) && ro.Batch >= ro.Batches { // the last batch watched too
 		ro.State, ro.FinishedAt = rsDone, now
 		if failures > 0 {
 			ro.Message = fmt.Sprintf("done with %d failed nodes (pinned)", failures)
@@ -522,7 +549,7 @@ func (s *Server) driveRollout(ctx context.Context, rr rec[*pb.FleetRollout], nod
 }
 
 // recordTarget makes the step's target the node's desired state.
-func (s *Server) recordTarget(ctx context.Context, node string, v *pb.FleetStep) {
+func (s *Server) recordTarget(ctx context.Context, node string, v *pb.FleetStep) error {
 	if _, err := s.store.UpdateNode(ctx, node, func(n *pb.FleetNode) error {
 		if v.ToRelease != "" {
 			n.Release = v.ToRelease
@@ -534,8 +561,10 @@ func (s *Server) recordTarget(ctx context.Context, node string, v *pb.FleetStep)
 		return nil
 	}); err != nil {
 		s.log.Warn("record node target", "node", node, "err", err)
+		return err
 	}
 	s.Kick()
+	return nil
 }
 
 func (s *Server) pin(ctx context.Context, node, reason string) {
@@ -548,28 +577,29 @@ func (s *Server) pin(ctx context.Context, node, reason string) {
 	s.Kick()
 }
 
-// startRevert puts the node of a failed step back where it was. A rollback
-// rollout does not revert (that would redo the upgrade): it pins.
-func (s *Server) startRevert(ctx context.Context, ro *pb.FleetRollout, sr *stepRec, n *pb.FleetNode, why string,
+// startRevert puts the node of failed step i back where it was, with the
+// roles it ran before. A rollback rollout does not revert (that would redo
+// the upgrade): it pins. The revert is handed out only once saved: unsaved,
+// the next round would hand out the failed apply again.
+func (s *Server) startRevert(ctx context.Context, ro *pb.FleetRollout, steps []stepRec, i int, n *pb.FleetNode, why string,
 	ops map[string]*pb.NodeOp, save func(int) bool) {
-	v := sr.V
+	v := steps[i].V
 	if ro.Rollback {
 		v.Phase, v.Message, v.Finished = phFailed, why, s.unix()
-		s.pin(ctx, n.Name, "rollback "+ro.Id+" failed: "+why)
 	} else {
 		v.Attempt++
 		v.Phase, v.Message = phReverting, why
 		v.OpId = fmt.Sprintf("%s/%s/revert/%d", ro.Id, v.Node, v.Attempt)
 		v.Started = s.unix()
-		if op, err := s.applyOp(ctx, n, v.FromRelease, v.FromGen, v.OpId, unitTimeout(ro, n)); err == nil {
-			ops[v.Node] = op
-		}
 	}
-	if rev, err := s.store.PutStep(ctx, ro.Id, v, sr.Rev); err == nil {
-		sr.Rev = rev
-		s.event(ro, "%s failed: %s; %s", v.Node, why, map[bool]string{true: "pinned", false: "reverting"}[ro.Rollback])
-	} else {
-		s.log.Warn("rollout: save step", "err", err)
+	if !save(i) {
+		return
+	}
+	s.event(ro, "%s failed: %s; %s", v.Node, why, map[bool]string{true: "pinned", false: "reverting"}[ro.Rollback])
+	if ro.Rollback {
+		s.pin(ctx, n.Name, "rollback "+ro.Id+" failed: "+why)
+	} else if op, err := s.applyOp(ctx, deployed(n), v.FromRelease, v.FromGen, v.OpId, unitTimeout(ro, n)); err == nil {
+		ops[v.Node] = op
 	}
 }
 
@@ -697,6 +727,10 @@ func (s *Server) advance(ctx context.Context, ro *pb.FleetRollout, steps []stepR
 						return false
 					}
 					s.waitMsg(ro, fmt.Sprintf("batch %d done; next in %.0fs", ro.Batch, lastFinish+wait-s.unix()))
+					return false
+				}
+				// The last batch has no next one to read the gates before.
+				if len(cur) > 0 && ro.Batch == ro.Batches-1 && s.gatePaused(ctx, ro) {
 					return false
 				}
 				ro.Batch++
