@@ -2,6 +2,7 @@ package chronus
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"os"
 	"path/filepath"
@@ -420,5 +421,39 @@ func TestFilesAsUser(t *testing.T) {
 				t.Fatalf("a thread kept the session's identity: %s: %s", f, l)
 			}
 		}
+	}
+}
+
+// TestRecordsDirAsUser: a session's user cannot add to the records dir,
+// and a link at a name chronus writes next (planted before, or left from
+// before a restart) is replaced, never written through as root.
+func TestRecordsDirAsUser(t *testing.T) {
+	if os.Getuid() != 0 {
+		t.Skip("needs root")
+	}
+	c, work, sh := clientWith(t, func(sh *Shell) { sh.User = "65534:65534" })
+	for p := work; p != "/"; p = filepath.Dir(p) {
+		if fi, err := os.Stat(p); err == nil {
+			os.Chmod(p, fi.Mode().Perm()|0o011)
+		}
+	}
+	if r := run(t, c, "echo hi"); string(r.Stdout) != "hi\n" {
+		t.Fatalf("first command: %q", r.Stdout)
+	}
+	if r := run(t, c, "touch "+filepath.Join(sh.Dir, "x")+" 2>&1; echo $?"); strings.TrimSpace(string(r.Stdout)) == "0" {
+		t.Fatal("the session's user could create a file in the records dir")
+	}
+	victim := filepath.Join(t.TempDir(), "victim")
+	os.WriteFile(victim, []byte("keep"), 0o600)
+	next := sh.next + 1
+	for _, n := range []string{"%d.out", "%d.err", "%d.sh"} {
+		os.Symlink(victim, filepath.Join(sh.Dir, fmt.Sprintf(n, next)))
+	}
+	if r := run(t, c, "echo again"); string(r.Stdout) != "again\n" {
+		t.Fatalf("command after the links: %q", r.Stdout)
+	}
+	var st syscall.Stat_t
+	if b, _ := os.ReadFile(victim); string(b) != "keep" || syscall.Stat(victim, &st) != nil || st.Uid != 0 {
+		t.Fatalf("written through a link: %q, owner %d", b, st.Uid)
 	}
 }

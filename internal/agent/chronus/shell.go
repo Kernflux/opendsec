@@ -124,8 +124,10 @@ type Shell struct {
 }
 
 func NewShell(workdir, user string, env map[string]string, dir string) (*Shell, error) {
-	// The session dir is the shell user's (chowned at start); its parents
-	// only need to be traversable by it.
+	// The session dir is root's, 0711: the shell user opens the files
+	// chronus makes there for it (by name), but cannot add any, so a link
+	// planted at a name chronus writes next never makes root write through
+	// it. Its parents only need to be traversable.
 	if err := os.MkdirAll(filepath.Dir(dir), 0o711); err != nil {
 		return nil, err
 	}
@@ -137,7 +139,17 @@ func NewShell(workdir, user string, env map[string]string, dir string) (*Shell, 
 			break // up to the agents' run dir
 		}
 	}
-	if err := os.Mkdir(dir, 0o700); err != nil && !os.IsExist(err) {
+	if fi, err := os.Lstat(dir); err == nil && !fi.IsDir() {
+		os.Remove(dir)
+	}
+	if err := os.Mkdir(dir, 0o711); err != nil && !os.IsExist(err) {
+		return nil, err
+	}
+	// A dir from before (chronus restarted) may hold what its user put there.
+	if err := os.Lchown(dir, 0, 0); err != nil && !os.IsPermission(err) {
+		return nil, err
+	}
+	if err := os.Chmod(dir, 0o711); err != nil {
 		return nil, err
 	}
 	return &Shell{Workdir: workdir, User: user, Env: env, Dir: dir,
@@ -252,9 +264,6 @@ func (s *Shell) startLocked() error {
 	}
 	// chronus inherited aether's OOM protection; the user's commands do not.
 	os.WriteFile(fmt.Sprintf("/proc/%d/oom_score_adj", cmd.Process.Pid), []byte("0"), 0)
-	if cred != nil {
-		os.Chown(s.Dir, int(cred.Uid), int(cred.Gid))
-	}
 	alive := make(chan struct{})
 	s.proc, s.stdin, s.alive = cmd, stdin, alive
 	go s.readMarkers(cmd, stdout, alive)
@@ -357,8 +366,9 @@ func (s *Shell) submit(cmdline string, env map[string]string, cwd, reqID string)
 	// The shell writes the output into pipes; chronus records it, within
 	// limits (spec §29.3). The records are chronus's only.
 	outPipe, errPipe := c.OutPath+".pipe", c.ErrPath+".pipe"
+	cr := s.proc.SysProcAttr.Credential
 	for _, p := range []string{c.OutPath, c.ErrPath} {
-		if err := os.WriteFile(p, nil, 0o600); err != nil {
+		if err := createFile(p, nil, nil); err != nil {
 			return nil, err
 		}
 	}
@@ -367,15 +377,12 @@ func (s *Shell) submit(cmdline string, env map[string]string, cwd, reqID string)
 		if err := syscall.Mkfifo(p, 0o600); err != nil {
 			return nil, fmt.Errorf("output pipe: %w", err)
 		}
-	}
-	if err := os.WriteFile(script, []byte(cmdline+"\n"), 0o600); err != nil {
-		return nil, err
-	}
-	if s.proc.SysProcAttr.Credential != nil {
-		cr := s.proc.SysProcAttr.Credential
-		for _, p := range []string{outPipe, errPipe, script} {
-			os.Chown(p, int(cr.Uid), int(cr.Gid))
+		if cr != nil {
+			os.Lchown(p, int(cr.Uid), int(cr.Gid))
 		}
+	}
+	if err := createFile(script, []byte(cmdline+"\n"), cr); err != nil {
+		return nil, err
 	}
 	c.out, c.err = startRecorder(outPipe, c.OutPath, s.MaxRecord), startRecorder(errPipe, c.ErrPath, s.MaxRecord)
 	var line string
@@ -420,6 +427,24 @@ func (s *Shell) submit(cmdline string, env map[string]string, cwd, reqID string)
 		s.keep(c)
 	}()
 	return c, nil
+}
+
+// createFile makes a new file p holding data, owned by cr if set: whatever
+// is at p is replaced, a link never followed.
+func createFile(p string, data []byte, cr *syscall.Credential) error {
+	os.Remove(p)
+	f, err := os.OpenFile(p, os.O_WRONLY|os.O_CREATE|os.O_EXCL|syscall.O_NOFOLLOW, 0o600)
+	if err != nil {
+		return err
+	}
+	_, err = f.Write(data)
+	if err == nil && cr != nil {
+		err = f.Chown(int(cr.Uid), int(cr.Gid))
+	}
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	return err
 }
 
 // keep counts finished command c's records against the session's budget,
