@@ -457,3 +457,32 @@ func TestRecordsDirAsUser(t *testing.T) {
 		t.Fatalf("written through a link: %q, owner %d", b, st.Uid)
 	}
 }
+
+// TestRecordsBudgetLater: output a finished command's background process
+// writes later counts against the session's budget as it is written.
+func TestRecordsBudgetLater(t *testing.T) {
+	c, _, sh := clientWith(t, func(s *Shell) { s.SessionRecords = 300 << 10 })
+	run(t, c, "(for i in 1 2 3 4 5 6 7 8; do head -c 100000 /dev/zero; sleep 0.1; done) & true")
+	run(t, c, "true") // the newest finished command, kept whatever its size
+	time.Sleep(1500 * time.Millisecond)
+	if n := recordsSize(t, sh); n > 400<<10 {
+		t.Fatalf("records take %d bytes, budget %d", n, 300<<10)
+	}
+}
+
+// TestRetryAfterRecordsWent: a retry of a request whose command's records
+// went (session budget) is refused, not run a second time.
+func TestRetryAfterRecordsWent(t *testing.T) {
+	c, work, _ := clientWith(t, func(s *Shell) { s.SessionRecords = 150 << 10 })
+	req := &pb.ExecRequest{Cmd: "echo x >> runs; head -c 100000 /dev/zero", RequestId: "once"}
+	if _, err := c.Exec(ctx(t), req); err != nil {
+		t.Fatal(err)
+	}
+	for range 3 {
+		run(t, c, "head -c 100000 /dev/zero")
+	}
+	_, err := c.Exec(ctx(t), req)
+	if b, _ := os.ReadFile(filepath.Join(work, "runs")); string(b) != "x\n" || err == nil {
+		t.Fatalf("retry after its records went: ran %q times, err %v", b, err)
+	}
+}

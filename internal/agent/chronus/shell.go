@@ -18,10 +18,12 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
 	"github.com/kernflux/opendsec/internal/agent/proctree"
+	"github.com/kernflux/opendsec/internal/rpcutil"
 )
 
 const doneMarker = "__OPENDSEC_DONE__"
@@ -116,12 +118,21 @@ type Shell struct {
 	alive chan struct{} // closed when the current shell process exits
 	cmds  map[int64]*Command
 	byReq map[string]*Command // by client request id (idempotent resubmission)
-	next  int64
-	cur   *Command
-	// Finished commands' records, oldest first, and their total size.
+	// Request ids of commands whose records went, oldest first (bounded): a
+	// retry of one is refused, not run again.
+	gone      map[string]int64
+	goneOrder []string
+	next      int64
+	cur       *Command
+	// Finished commands, oldest first, whose records the session keeps, and
+	// the size of all records (finished or not; recorders count as they write).
 	kept     []*Command
-	recorded int64
+	recorded atomic.Int64
+	trimming atomic.Bool
 }
+
+// maxGone bounds the request ids remembered after their records went.
+const maxGone = 1 << 16
 
 func NewShell(workdir, user string, env map[string]string, dir string) (*Shell, error) {
 	// The session dir is root's, 0711: the shell user opens the files
@@ -154,7 +165,7 @@ func NewShell(workdir, user string, env map[string]string, dir string) (*Shell, 
 	}
 	return &Shell{Workdir: workdir, User: user, Env: env, Dir: dir,
 		MaxRecord: DefaultMaxRecord, SessionRecords: DefaultSessionRecords,
-		run: make(chan struct{}, 1), cmds: map[int64]*Command{}, byReq: map[string]*Command{}}, nil
+		run: make(chan struct{}, 1), cmds: map[int64]*Command{}, byReq: map[string]*Command{}, gone: map[string]int64{}}, nil
 }
 
 func shellPath() string {
@@ -317,17 +328,17 @@ func quote(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + 
 // Submit starts cmdline once the session is free. A non-empty reqID makes it
 // idempotent: a command already submitted with that id is returned instead.
 func (s *Shell) Submit(ctx context.Context, cmdline string, timeout time.Duration, env map[string]string, cwd, reqID string) (*Command, error) {
-	if c := s.byRequest(reqID); c != nil {
-		return c, nil
+	if c, err := s.byRequest(reqID); c != nil || err != nil {
+		return c, err
 	}
 	select {
 	case s.run <- struct{}{}:
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
-	if c := s.byRequest(reqID); c != nil { // submitted while this one waited
+	if c, err := s.byRequest(reqID); c != nil || err != nil { // submitted while this one waited
 		<-s.run
-		return c, nil
+		return c, err
 	}
 	c, err := s.submit(cmdline, env, cwd, reqID)
 	if err != nil {
@@ -338,13 +349,16 @@ func (s *Shell) Submit(ctx context.Context, cmdline string, timeout time.Duratio
 	return c, nil
 }
 
-func (s *Shell) byRequest(reqID string) *Command {
+func (s *Shell) byRequest(reqID string) (*Command, error) {
 	if reqID == "" {
-		return nil
+		return nil, nil
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.byReq[reqID]
+	if id, ok := s.gone[reqID]; ok {
+		return nil, rpcutil.Err(rpcutil.Invalid, "request %s ran as command %d, whose output is gone (session record budget): not run again", reqID, id)
+	}
+	return s.byReq[reqID], nil
 }
 
 func (s *Shell) submit(cmdline string, env map[string]string, cwd, reqID string) (*Command, error) {
@@ -384,7 +398,8 @@ func (s *Shell) submit(cmdline string, env map[string]string, cwd, reqID string)
 	if err := createFile(script, []byte(cmdline+"\n"), cr); err != nil {
 		return nil, err
 	}
-	c.out, c.err = startRecorder(outPipe, c.OutPath, s.MaxRecord), startRecorder(errPipe, c.ErrPath, s.MaxRecord)
+	c.out, c.err = startRecorder(outPipe, c.OutPath, s.MaxRecord, &s.recorded, s.grew),
+		startRecorder(errPipe, c.ErrPath, s.MaxRecord, &s.recorded, s.grew)
 	var line string
 	if len(env) == 0 && cwd == "" {
 		// Runs in the session shell itself: state changes persist.
@@ -447,25 +462,40 @@ func createFile(p string, data []byte, cr *syscall.Credential) error {
 	return err
 }
 
-// keep counts finished command c's records against the session's budget,
-// removing the oldest finished commands' records (never c's) while over it.
+// keep adds finished command c to the records the session keeps, and
+// trims them to its budget.
 func (s *Shell) keep(c *Command) {
-	size := func(c *Command) (n int64) {
-		for _, p := range []string{c.OutPath, c.ErrPath} {
-			if st, err := os.Stat(p); err == nil {
-				n += st.Size()
-			}
-		}
-		return n
-	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.kept = append(s.kept, c)
-	s.recorded += size(c)
-	for s.recorded > s.SessionRecords && len(s.kept) > 1 {
+	s.trimLocked()
+}
+
+// grew trims the records after a recorder wrote: background processes of
+// finished commands keep writing.
+func (s *Shell) grew() {
+	if s.recorded.Load() <= s.SessionRecords || !s.trimming.CompareAndSwap(false, true) {
+		return
+	}
+	go func() {
+		defer s.trimming.Store(false)
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		s.trimLocked()
+	}()
+}
+
+// trimLocked removes the oldest finished commands' records (never the
+// newest's) while the session's records are over its budget.
+func (s *Shell) trimLocked() {
+	for s.recorded.Load() > s.SessionRecords && len(s.kept) > 1 {
 		old := s.kept[0]
 		s.kept = s.kept[1:]
-		s.recorded -= size(old)
+		for _, r := range []*recorder{old.out, old.err} {
+			if r != nil {
+				r.remove()
+			}
+		}
 		for _, p := range []string{old.OutPath, old.ErrPath, strings.TrimSuffix(old.OutPath, ".out") + ".sh"} {
 			os.Remove(p)
 		}
@@ -473,7 +503,13 @@ func (s *Shell) keep(c *Command) {
 		for k, v := range s.byReq {
 			if v == old {
 				delete(s.byReq, k)
+				s.gone[k] = old.ID
+				s.goneOrder = append(s.goneOrder, k)
 			}
+		}
+		for len(s.goneOrder) > maxGone {
+			delete(s.gone, s.goneOrder[0])
+			s.goneOrder = s.goneOrder[1:]
 		}
 	}
 }

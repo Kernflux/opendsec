@@ -3,6 +3,7 @@ package chronus
 import (
 	"io"
 	"os"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -20,17 +21,25 @@ const (
 )
 
 // recorder copies one output stream of a command from its pipe into its
-// record file.
+// record file. What it writes counts in the session's total as it is
+// written: a background process the command left keeps writing after it
+// ends, and that output is held to the session's budget too.
 type recorder struct {
 	pipe, path string
 	limit      int64
+	total      *atomic.Int64 // the session's records, in bytes
+	grew       func()        // called when the total grew
 	opened     chan struct{} // the shell opened the pipe (or gave up on it)
 	done       chan struct{} // the stream ended
 	dropped    atomic.Int64
+
+	mu      sync.Mutex
+	size    int64 // written to the record and counted in total
+	removed bool  // the record went (session budget): the rest is dropped
 }
 
-func startRecorder(pipe, path string, limit int64) *recorder {
-	r := &recorder{pipe: pipe, path: path, limit: limit, opened: make(chan struct{}), done: make(chan struct{})}
+func startRecorder(pipe, path string, limit int64, total *atomic.Int64, grew func()) *recorder {
+	r := &recorder{pipe: pipe, path: path, limit: limit, total: total, grew: grew, opened: make(chan struct{}), done: make(chan struct{})}
 	go r.run()
 	return r
 }
@@ -49,10 +58,44 @@ func (r *recorder) run() {
 		r.drop(in)
 		return
 	}
-	n, _ := io.Copy(out, io.LimitReader(in, r.limit))
-	out.Close()
-	if n == r.limit {
-		r.drop(in)
+	defer out.Close()
+	buf := make([]byte, 64<<10)
+	for {
+		n, err := in.Read(buf)
+		if n > 0 {
+			r.mu.Lock()
+			keep := int64(n)
+			if r.removed {
+				keep = 0
+			}
+			keep = min(keep, r.limit-r.size)
+			if keep > 0 {
+				w, _ := out.Write(buf[:keep])
+				r.size += int64(w)
+				r.total.Add(int64(w))
+			}
+			r.mu.Unlock()
+			if int64(n) > keep {
+				r.dropped.Add(int64(n) - keep)
+			}
+			if keep > 0 && r.grew != nil {
+				r.grew()
+			}
+		}
+		if err != nil {
+			return
+		}
+	}
+}
+
+// remove takes the record out of the session's total; what the stream
+// carries from now on is dropped. The caller removes the file.
+func (r *recorder) remove() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if !r.removed {
+		r.removed = true
+		r.total.Add(-r.size)
 	}
 }
 

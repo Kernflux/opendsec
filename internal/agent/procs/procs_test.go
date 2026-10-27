@@ -224,3 +224,19 @@ func TestUser(t *testing.T) {
 		t.Fatalf("as 65534: %q", ev.stdout())
 	}
 }
+
+// TestRelativePath: a relative PATH entry is relative to the process's
+// cwd, not to the agent's.
+func TestRelativePath(t *testing.T) {
+	m := newManager(t)
+	dir := t.TempDir()
+	if err := os.WriteFile(dir+"/prog", []byte("#!/bin/sh\necho from-cwd\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	ev := newEvents()
+	err := m.Start(context.Background(), &pb.StartProcessRequest{Cmd: "prog", Cwd: dir,
+		Env: map[string]string{"PATH": ".:/usr/bin:/bin"}}, ev.send)
+	if err != nil || ev.stdout() != "from-cwd\n" {
+		t.Fatalf("got %q, %v", ev.stdout(), err)
+	}
+}

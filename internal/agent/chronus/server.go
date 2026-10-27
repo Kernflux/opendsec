@@ -33,8 +33,8 @@ type Server struct {
 func dur(s float64) time.Duration { return time.Duration(s * float64(time.Second)) }
 
 func (s *Server) result(c *Command, outOff, errOff int64) (*pb.ExecResult, error) {
+	done := c.IsDone() // first: done, the status read next is final
 	code, timedOut, d := c.Status()
-	done := c.IsDone()
 	out, outSize, err := ReadRange(c.OutPath, outOff, MaxOutput)
 	if err != nil {
 		return nil, rpcutil.Err(rpcutil.Internal, "read output: %v", err)

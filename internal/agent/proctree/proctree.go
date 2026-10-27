@@ -54,13 +54,34 @@ func Descendants(pid int) []int {
 }
 
 // Signal sends sig to every descendant of pid; with self, to pid as well.
+// The tree is stopped first, walking it again until no new process shows
+// up: a process that forks after one walk is found by the next, and none
+// leaves the tree (its parent killed, it would go to init) before it is
+// found. The stopped processes are continued after sig, so a catchable one
+// handles it.
 func Signal(pid int, sig syscall.Signal, self bool) {
-	// Stop the tree first so nothing forks while we walk it.
-	victims := Descendants(pid)
+	var victims []int
+	seen := map[int]bool{}
 	if self {
-		victims = append([]int{pid}, victims...)
+		syscall.Kill(pid, syscall.SIGSTOP)
+		victims, seen[pid] = append(victims, pid), true
+	}
+	for range 100 { // bounded: a parent left running (not self) may fork on
+		found := false
+		for _, p := range Descendants(pid) {
+			if !seen[p] {
+				syscall.Kill(p, syscall.SIGSTOP)
+				victims, seen[p], found = append(victims, p), true, true
+			}
+		}
+		if !found {
+			break
+		}
 	}
 	for _, p := range victims {
 		syscall.Kill(p, sig)
+	}
+	for _, p := range victims {
+		syscall.Kill(p, syscall.SIGCONT)
 	}
 }

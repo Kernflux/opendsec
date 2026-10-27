@@ -357,7 +357,8 @@ func (s *Server) driveRollout(ctx context.Context, rr rec[*pb.FleetRollout], nod
 	timeout := config.Seconds(st.StepTimeoutS)
 	now := s.unix()
 	changed := false // the rollout record itself
-	stored := make([]*pb.FleetStep, len(steps)) // each step as IAM holds it
+	// Each step as IAM holds it.
+	stored := make([]*pb.FleetStep, len(steps))
 	for i := range steps {
 		stored[i] = proto.Clone(steps[i].V).(*pb.FleetStep)
 	}

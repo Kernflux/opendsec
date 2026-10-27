@@ -163,7 +163,7 @@ func (m *Manager) Start(ctx context.Context, r *pb.StartProcessRequest, send fun
 	} else if st, err := os.Stat(cwd); err != nil || !st.IsDir() {
 		return rpcutil.Err(rpcutil.Invalid, "cwd %s is not a directory", cwd)
 	}
-	path, err := lookPath(r.Cmd, environ)
+	path, err := lookPath(r.Cmd, environ, cwd)
 	if err != nil {
 		return rpcutil.Err(rpcutil.NotFound, "%v", err)
 	}
@@ -419,7 +419,9 @@ func (m *Manager) Resize(r *pb.ProcessResize) error {
 }
 
 // lookPath finds cmd in the PATH of env (the process's, not aether's).
-func lookPath(cmd string, env []string) (string, error) {
+// lookPath finds cmd in env's PATH; relative entries ("." or empty, as in
+// a shell) are relative to cwd, where the process runs.
+func lookPath(cmd string, env []string, cwd string) (string, error) {
 	if filepath.IsAbs(cmd) || filepath.Base(cmd) != cmd {
 		return cmd, nil
 	}
@@ -430,6 +432,9 @@ func lookPath(cmd string, env []string) (string, error) {
 		}
 	}
 	for _, dir := range filepath.SplitList(path) {
+		if !filepath.IsAbs(dir) {
+			dir = filepath.Join(cwd, dir)
+		}
 		p := filepath.Join(dir, cmd)
 		if st, err := os.Stat(p); err == nil && !st.IsDir() && st.Mode()&0o111 != 0 {
 			return p, nil
