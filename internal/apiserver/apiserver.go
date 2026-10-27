@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"math"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -389,8 +390,10 @@ func validateSpec(sp *pb.SandboxSpec) error {
 		return rpcutil.Err(rpcutil.Invalid, "spec.backend required (sim|container|microvm|fullvm|fncall)")
 	}
 	r := sp.Resources
-	if r.GetCpuCores() < 0 || r.GetMemoryMb() < 0 || r.GetGpus() < 0 {
-		return rpcutil.Err(rpcutil.Invalid, "resources must be >= 0")
+	// NaN passes every comparison, so it would fit any edge and poison the
+	// placement overlay; ±Inf is no amount of CPU either.
+	if cpu := r.GetCpuCores(); !(cpu >= 0) || math.IsInf(cpu, 1) || r.GetMemoryMb() < 0 || r.GetGpus() < 0 {
+		return rpcutil.Err(rpcutil.Invalid, "resources must be finite and >= 0")
 	}
 	if sp.TtlRunningStopS < 0 || sp.TtlMaxS < 0 {
 		return rpcutil.Err(rpcutil.Invalid, "ttls must be >= 0")

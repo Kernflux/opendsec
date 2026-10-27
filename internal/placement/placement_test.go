@@ -387,3 +387,18 @@ func TestRuntimeVersions(t *testing.T) {
 		t.Fatalf("only an edge with another version left: %v", err)
 	}
 }
+
+// TestNonFiniteCPU: NaN passes every capacity comparison, so it used to
+// fit, poison the edge's overlay, and make the next pick select no edge
+// (a nil dereference that took the apiserver down).
+func TestNonFiniteCPU(t *testing.T) {
+	e := engine(2, edge("a", ZoneOnprem, 10, 100))
+	for _, cpu := range []float64{math.NaN(), math.Inf(1), math.Inf(-1), -1} {
+		if _, err := e.Pick(Request{Backend: "sim", Res: &pb.Resources{CpuCores: cpu}}, nil); rpcutil.Reason(err) != rpcutil.Invalid {
+			t.Fatalf("cpu %g: %v", cpu, err)
+		}
+	}
+	if d, err := e.Pick(small, nil); err != nil || d.Edge.Id != "a" {
+		t.Fatalf("after: %v %v", d, err)
+	}
+}

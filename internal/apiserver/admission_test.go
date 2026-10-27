@@ -2,6 +2,7 @@ package apiserver
 
 import (
 	"context"
+	"math"
 	"testing"
 	"time"
 
@@ -101,5 +102,17 @@ func TestApplyTTLs(t *testing.T) {
 	s.SetAdmission(config.Admission{DefaultTTLRunningStop: -1, DefaultTTLMax: -1, MaxTTLMax: -1})
 	if sp = (&pb.SandboxSpec{}); s.applyTTLs(sp) != nil || sp.TtlMaxS != 0 || sp.TtlRunningStopS != 0 {
 		t.Fatalf("-1 must disable defaults and cap: %+v", sp)
+	}
+}
+
+func TestValidateSpecNonFinite(t *testing.T) {
+	for _, cpu := range []float64{math.NaN(), math.Inf(1), math.Inf(-1), -1} {
+		sp := &pb.SandboxSpec{Backend: "sim", Resources: &pb.Resources{CpuCores: cpu}}
+		if err := validateSpec(sp); rpcutil.Reason(err) != rpcutil.Invalid {
+			t.Fatalf("cpu %g: %v", cpu, err)
+		}
+	}
+	if err := validateSpec(&pb.SandboxSpec{Backend: "sim", Resources: &pb.Resources{CpuCores: 0.5}}); err != nil {
+		t.Fatal(err)
 	}
 }

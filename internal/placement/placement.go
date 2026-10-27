@@ -332,6 +332,9 @@ func (e *Engine) utilizationLocked(zone, backend string) float64 {
 // Pick chooses an edge for r, skipping edges in exclude, and reserves the
 // placement in the overlay. Call Cancel if the creation then fails.
 func (e *Engine) Pick(r Request, exclude map[string]bool) (*Decision, error) {
+	if cpu := r.Res.GetCpuCores(); !(cpu >= 0) || math.IsInf(cpu, 1) {
+		return nil, rpcutil.Err(rpcutil.Invalid, "cpu must be finite and >= 0, not %g", cpu)
+	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	now := e.now()

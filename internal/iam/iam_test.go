@@ -1,6 +1,7 @@
 package iam
 
 import (
+	"math"
 	"path/filepath"
 	"testing"
 	"time"
@@ -303,4 +304,16 @@ func TestFence(t *testing.T) {
 	if _, err := m.KVPut("fleet/y", []byte("1"), false, 0); err != nil { // unfenced writes as before
 		t.Fatal(err)
 	}
+}
+
+// TestNonFinite: NaN passes "< 0" and "usage+v > limit" alike; charged, it
+// would turn the usage NaN and disable the quota for good.
+func TestNonFinite(t *testing.T) {
+	m, _ := setup(t)
+	for _, v := range []float64{math.NaN(), math.Inf(1), -1} {
+		wantReason(t, m.Reserve("l1", "root", map[string]float64{QSandboxes: 1, QCPU: v}), rpcutil.Invalid)
+		_, err := m.CreateProject("admin", "root", "p", map[string]float64{QCPU: v})
+		wantReason(t, err, rpcutil.Invalid)
+	}
+	wantReason(t, m.Reserve("l2", "root", map[string]float64{QSandboxes: 1, QCPU: 65}), rpcutil.QuotaExceeded)
 }

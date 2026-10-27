@@ -350,6 +350,11 @@ func (m *IAM) ReserveFresh(lease, project string, res map[string]float64, edge s
 }
 
 func (m *IAM) reserve(lease, project string, res map[string]float64, edge string, fresh bool) error {
+	for k, v := range res {
+		if !(v >= 0) || math.IsInf(v, 1) {
+			return rpcutil.Err(rpcutil.Invalid, "%s must be finite and >= 0", k)
+		}
+	}
 	_, err := m.propose(&Command{Op: opReserve, Lease: lease, Project: project, Res: res, Edge: edge, Fresh: fresh})
 	return err
 }
@@ -501,8 +506,8 @@ func (m *IAM) boundQuotaLocked(parent string, quota map[string]float64) (map[str
 		if !quotaKeys[k] {
 			return nil, rpcutil.Err(rpcutil.Invalid, "unknown quota key %q", k)
 		}
-		if v < 0 {
-			return nil, rpcutil.Err(rpcutil.Invalid, "quota %s must be >= 0", k)
+		if !(v >= 0) || math.IsInf(v, 1) {
+			return nil, rpcutil.Err(rpcutil.Invalid, "quota %s must be finite and >= 0", k)
 		}
 		out[k] = v
 	}
