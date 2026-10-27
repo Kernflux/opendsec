@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/klauspost/compress/zstd"
@@ -448,5 +449,20 @@ func TestPullZstdLayers(t *testing.T) {
 	if _, err := (&Puller{Store: s2, PlainHTTP: true, Platform: "linux/amd64"}).Pull(context.Background(),
 		strings.TrimPrefix(srv2.URL, "http://")+"/test/app:v1"); err == nil {
 		t.Fatal("corrupt zstd layer imported")
+	}
+}
+
+// TestExtractDirModes: a directory keeps its sticky and setgid bits (/tmp
+// is 1777: without sticky, anyone deletes anyone's files).
+func TestExtractDirModes(t *testing.T) {
+	root := t.TempDir()
+	for name, mode := range map[string]int64{"tmp": 0o1777, "shared": 0o2775} {
+		if err := extractEntry(nil, &tar.Header{Name: name + "/", Typeflag: tar.TypeDir, Mode: mode}, root, nil); err != nil {
+			t.Fatal(err)
+		}
+		var st syscall.Stat_t
+		if err := syscall.Stat(filepath.Join(root, name), &st); err != nil || int64(st.Mode&0o7777) != mode {
+			t.Errorf("%s: mode %o, want %o (%v)", name, st.Mode&0o7777, mode, err)
+		}
 	}
 }

@@ -149,11 +149,27 @@ func scrubPath(dir string, parts []string) {
 	}
 }
 
+// cachedManifest is a manifest as read, with the identity of the file it
+// was read from: manifests are replaced by rename (a new inode), also by
+// other processes sharing the store.
+type cachedManifest struct {
+	m     *Manifest
+	stamp string
+}
+
+func fileStamp(fi os.FileInfo) string {
+	st, _ := fi.Sys().(*syscall.Stat_t)
+	if st == nil {
+		return ""
+	}
+	return fmt.Sprint(st.Dev, st.Ino, fi.Size(), fi.ModTime().UnixNano())
+}
+
 type Store struct {
 	Root string
 
 	mu    sync.Mutex
-	cache map[string]*Manifest // manifests are immutable once written (unless overwritten)
+	cache map[string]cachedManifest
 }
 
 func NewStore(root string) (*Store, error) {
@@ -162,7 +178,7 @@ func NewStore(root string) (*Store, error) {
 			return nil, err
 		}
 	}
-	return &Store{Root: root, cache: map[string]*Manifest{}}, nil
+	return &Store{Root: root, cache: map[string]cachedManifest{}}, nil
 }
 
 func (s *Store) layerDir(id string) string { return filepath.Join(s.Root, "layers", id) }
@@ -325,19 +341,29 @@ func (s *Store) PutManifest(m *Manifest, overwrite bool) error {
 	return nil
 }
 
-// GetManifest reads an image manifest (cached: only overwrite changes it).
+// GetManifest reads an image manifest, cached while its file is the same:
+// a tag another process overwrote (an apiserver; the edge reads it) is
+// read again. On NFS, the attribute cache bounds how soon that is seen.
 func (s *Store) GetManifest(name string) (*Manifest, error) {
 	name, err := Canonical(name)
 	if err != nil {
 		return nil, err
 	}
+	path, _ := s.manifestPath(name)
+	fi, err := os.Stat(path) // before the read: a file replaced meanwhile is read again next time
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, rpcutil.Err(rpcutil.NotFound, "image %s", name)
+		}
+		return nil, err
+	}
+	stamp := fileStamp(fi)
 	s.mu.Lock()
-	if m, ok := s.cache[name]; ok {
+	if c, ok := s.cache[name]; ok && stamp != "" && c.stamp == stamp {
 		s.mu.Unlock()
-		return m, nil
+		return c.m, nil
 	}
 	s.mu.Unlock()
-	path, _ := s.manifestPath(name)
 	var m Manifest
 	if err := readJSON(path, &m); err != nil {
 		if os.IsNotExist(err) {
@@ -346,7 +372,7 @@ func (s *Store) GetManifest(name string) (*Manifest, error) {
 		return nil, err
 	}
 	s.mu.Lock()
-	s.cache[name] = &m
+	s.cache[name] = cachedManifest{m: &m, stamp: stamp}
 	s.mu.Unlock()
 	return &m, nil
 }

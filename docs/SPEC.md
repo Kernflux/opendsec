@@ -1501,6 +1501,7 @@ SDK sb.fork(count=8)
   - **/proc**：和 runc 的默认一样，`/proc/sys`、`sysrq-trigger`、`irq`、`bus`、`fs` 只读，`kcore`、`keys`、`kallsyms` 等屏蔽。
 - **文件访问限制**：`SandboxSpec.readonly_paths` / `masked_paths`（新字段 13、14，`internal/sandboxfs`）。
   - 路径在 sandbox 的根里解析，只读用重新挂载实现；屏蔽时目录换成空的只读 tmpfs，文件换成 `/dev/null`。
+  - 只读连同下面的子挂载一起（2026-10-27，`mount_setattr` 的 `AT_RECURSIVE`，`TestReadonlySubmounts`）：此前只重新挂载了顶层，例如 `/dev` 只读后 `/dev/shm` 仍然可写。
   - 容器里 root 撤销不了这些限制（没有 mount 也没有 `CAP_SYS_ADMIN`）；microVM / 完整 VM 里由 vminit 设置，guest 的 root 可以撤销，所以这类场景要配合非 root 的 `init_user`。
   - edge 在创建时检查路径必须是干净的绝对路径。
 - **guest OOM 时保护 aether**（19.10 留下的问题）：aether 和 chronus 的 `oom_score_adj` 设为 -1000。容器在 setup 进程里设置，那时还有 `CAP_SYS_RESOURCE`；VM 在 vminit 里设置；chronus 把它启动的用户命令改回 0。
@@ -1563,6 +1564,10 @@ SDK sb.fork(count=8)
   - 引用来源：镜像清单、快照记录，以及容器 sandbox 运行时登记在 `<store>/inuse/` 下的层（sandbox 可能比它的镜像活得久）；容器结束或 edge 清理遗留时撤销登记。
   - 回收对象：没有被引用、并且超过宽限期的层；没有被镜像引用的旧快照（fork 的快照只在启动副本时用到；VM 副本持有文件的硬链接）；中断的写入。
   - 被重新导入（内容寻址、直接复用）的层会刷新时间戳，重新进入宽限期。
+  - 镜像相关的其他修订（2026-10-27）：
+    - 合并层时，目录取代了下层的删除标记或文件，合并结果把它标成 opaque（`TestMergeLayers` 的 `redo`）：此前合并出的层叠在更底层的层上时，删掉又重建的目录会重新露出原来的文件。
+    - 镜像清单的缓存按文件身份（inode、大小、修改时间）校验（`TestManifestCacheShared`）：此前只在本进程覆盖时失效，apiserver 覆盖 tag 后 edge 继续用旧内容。NFS 上看到变化的快慢受属性缓存限制。
+    - 导入 OCI 镜像时目录保留 sticky、setgid 位（`TestExtractDirModes`）：此前 `/tmp` 的 1777 变成 777。
   - 读完引用之后写入的引用（2026-10-27，`TestGCRace`、`TestInUseLayers`、`TestPutManifestOnce`）：
     - 写镜像清单、快照记录或 in-use 登记之前，先刷新它们引用的层（和快照）的时间戳；GC 在删除之前再检查一次，变新了就保留，被保留的快照连同它的层。此前 GC 只读一次引用，期间新建的镜像如果引用一个已过宽限期的旧层（tag 复制、导入时复用），发布成功，层随后被删。仍有一个很小的窗口：刷新正好落在复查和删除之间。
     - microVM 运行时也登记 in-use（此前只有容器登记）：源镜像删除并经过 GC 后，它的快照和 fork 仍然找得到层。edge 接管旧 VM 时补登记，清理遗留时撤销。
@@ -2339,7 +2344,7 @@ SDK sb.fork(count=8)
 |---|---|---|
 | 无限输出（`yes`）写满存储 | **容器的命令输出写在宿主机状态盘上，没有上限**，一个 sandbox 能写满整台机器；microVM 写在 guest 的 tmpfs 里 | 每条命令每路最多记录 64 MB，之后读出丢弃（`ExecResult.dropped_bytes`），命令不阻塞；每个会话最多保留 512 MB，超出删最早结束的命令的记录 |
 | 伪造请求发给 chronus 的 socket | root 的命令能连其他会话的 socket | socket 0600；agent 会话用普通用户时连不上 |
-| 读 chronus 的日志找答案 | root 能读其他会话的记录 | 记录目录 0700 属会话用户，输出文件只有 chronus（root）能写；普通用户看不到别的会话 |
+| 读 chronus 的日志找答案 | root 能读其他会话的记录 | 记录目录属 root、0711，输出文件只有 chronus（root）能读写；普通用户看不到别的会话 |
 | 覆盖 `/bin/bash` | root 能改 | 普通用户改不了系统文件 |
 | XFS ioctl 破坏元数据 | sandbox 的可写盘是它自己的 ext4（microVM 是 guest 自己的文件系统），只坏它自己 | 同左 |
 | 读 `/proc/kpagecgroup` 让内核崩溃 | 容器没有 `CAP_SYS_ADMIN` 读不了；microVM 崩的是 guest 内核 | 同左 |
@@ -2349,6 +2354,14 @@ SDK sb.fork(count=8)
 - **输出上限**：命令的 stdout、stderr 不再由 shell 直接重定向到记录文件，而是写进命名管道，由 chronus 读出来记录（`record.go`）。命令结束后最多等 100 ms 让记录写完；它起的后台进程还开着输出时不等，之后写的照样记录，`GetOutput` 能取到。chronus 参数 `--max-output-mb`、`--session-output-mb` 可调。
   - 一台机器上很多 sandbox、很多会话合起来仍可能占不少空间；把容器的记录放进 sandbox 自己的可写盘（受 `disk_mb` 限制）更彻底，留作后续。
 - **会话的用户**：`ExecRequest.user`（SDK `run_shell(..., user=)`，命令行 `exec -user`）在会话第一次启动时生效，可以是用户名或 `uid[:gid]`（镜像里不需要有这个用户，家目录是 `/tmp/home-<uid>`）。会话启动后用户固定，指定另一个用户返回 `invalid`，agent 不能借评测会话提权。文件读写类接口原先由 chronus 以 root 执行；2026-10-26 起以会话的用户执行（chronus 仍是 root，只在执行文件操作的线程上切换 fsuid、fsgid 和附加组，做完再换回来）：和 shell 看到同样的权限，新建的文件归会话用户所有，这也和 E2B 按用户读写文件的语义一致。评测要读写 agent 看不到的文件，用 root 会话。
+- **2026-10-27 修订**（`TestRecordsDirAsUser`、`TestSessionNames`、`TestRecordsBudgetLater`、`TestRetryAfterRecordsWent`、`TestRelativePath`、`TestSignalForking`）：
+  - 记录目录原先 chown 给会话用户，命令编号又可以预测：普通用户预先在 `N.out`、`N.sh` 放符号链接，chronus 以 root 写入和 chown 时就跟着链接走，能截断任意文件、把任意文件改成它的。现在目录一直属 root、0711（chronus 重启前留下的目录也改回来），文件用 `O_EXCL|O_NOFOLLOW` 新建，经文件描述符 chown。
+  - 会话名 `.`、`..` 原先能通过校验，指向共享运行目录，随后被交给会话用户；现在会话名必须以字母、数字或 `_` 开头。
+  - 会话的记录总量原先只在命令结束时统计一次，命令留下的后台进程之后写的输出不计入；现在按写入实时计入，超出预算就删最早的记录，被删记录的流之后的输出直接丢弃。
+  - 记录被删掉的命令，用同一个 `request_id` 重试会被拒绝（`invalid`），不再当成新命令执行第二次；会话最多记住 65536 个这样的 id。
+  - 先读是否结束、再读退出码：此前顺序相反，命令恰好在两次读取之间结束时会返回 `done` 和退出码 0。
+  - 进程（`StartProcess`）PATH 里的相对目录按请求的 cwd 解析，此前按 aether 自己的工作目录。
+  - 杀进程树时先反复 SIGSTOP，直到再也找不到新进程，再统一发信号，最后 SIGCONT：此前只扫描一次，扫描之后 fork 出来的、或者父进程先死被过继给 init 的进程会漏掉。
 - **调用方的责任**：评测要瞒着 agent 的东西要用严格的权限写（例如 `umask 077`）。平台不把 root 会话的 umask 改成 077：那样 root 用 pip 装的包，普通用户就 import 不了。测试时 microVM 的精简根文件系统里 `/root` 是 0755，用默认 umask 写的答案普通用户能读，就是这个原因。
 - **测试**：chronus 单元测试 `TestFilesAsUser`（普通用户会话读不到 root 的 0600 文件，写的文件归它所有，做完后 chronus 的所有线程都回到 root）、`TestOutputLimit`（64 KB 上限下写 1 MB 和无限的 `yes`）、`TestSessionRecords`、`TestOutputAfterCommand`（后台进程的输出：`Exec` 不等它，之后能取到）；容器和 microVM 的 `TestSessionUsers`：uid 1000 的会话读不到 root 会话的答案和记录，连不上 socket，改不了 `/usr/bin/bash`、`/bin/sh`，会话不能换用户。Python SDK 测试、e2e 都通过。
 

@@ -39,6 +39,7 @@ func (s *Store) MergeLayers(id string, layers []string, meta LayerMeta) (*LayerM
 // applyLayer puts layer src over the squashed layers in dst: what src hides
 // or replaces is removed first, then src is copied in.
 func applyLayer(dst, src string) error {
+	var replaced []string // directories of src taking the place of a non-directory (a whiteout, a file)
 	err := filepath.WalkDir(src, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -63,6 +64,7 @@ func applyLayer(dst, src string) error {
 			}
 			return fs.SkipDir
 		case !cur.IsDir():
+			replaced = append(replaced, target)
 			return os.RemoveAll(target)
 		}
 		return nil
@@ -72,6 +74,14 @@ func applyLayer(dst, src string) error {
 	}
 	if out, err := exec.Command("cp", "-a", "--", src+"/.", dst+"/").CombinedOutput(); err != nil {
 		return fmt.Errorf("copy: %v: %s", err, out)
+	}
+	// What the non-directory hid in the layers beneath the merged ones (a
+	// directory deleted, then made again) stays hidden: the directory that
+	// replaces it is opaque.
+	for _, p := range replaced {
+		if err := unix.Lsetxattr(p, "trusted.overlay.opaque", []byte("y"), 0); err != nil {
+			return fmt.Errorf("opaque %s: %w", p, err)
+		}
 	}
 	return nil
 }

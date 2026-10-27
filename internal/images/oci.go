@@ -601,7 +601,9 @@ func extractEntry(tr *tar.Reader, hdr *tar.Header, root string, opaque *[]string
 		if err := os.Mkdir(dst, 0o755); err != nil && !os.IsExist(err) {
 			return err
 		}
-		if err := os.Chmod(dst, os.FileMode(mode)|os.ModeDir); err != nil {
+		// os.FileMode keeps only the permission bits of a raw mode: sticky
+		// (/tmp's 1777) and setgid go through setBits.
+		if err := os.Chmod(dst, os.FileMode(mode&0o777)|setBits(mode)); err != nil {
 			return err
 		}
 	case tar.TypeReg:

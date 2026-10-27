@@ -133,8 +133,10 @@ func TestGCStopsOnUnreadable(t *testing.T) {
 				st.MarkInUse("e1.container.lease", []string{id})
 				p = filepath.Join(st.inuseDir(), "e1.container.lease")
 			}
-			os.Chtimes(filepath.Join(st.layerDir(id), "meta.json"), old, old) // writing the reference touched it
-			os.WriteFile(p, []byte("{not json"), 0o644) // as a read failing midway
+			// Writing the reference touched the layer; then the reference
+			// reads as a read failing midway would.
+			os.Chtimes(filepath.Join(st.layerDir(id), "meta.json"), old, old)
+			os.WriteFile(p, []byte("{not json"), 0o644)
 			res, err := st.GC(24*time.Hour, false)
 			if err == nil || res != nil {
 				t.Fatalf("GC = %v, %v; want it stopped", res, err)

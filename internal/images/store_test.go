@@ -189,3 +189,35 @@ func TestSnapshots(t *testing.T) {
 		t.Fatalf("bad id: %v", err)
 	}
 }
+
+// TestManifestCacheShared: a tag overwritten through another Store on the
+// same root (another process: an apiserver, while an edge reads) is seen.
+func TestManifestCacheShared(t *testing.T) {
+	root := t.TempDir()
+	a, _ := NewStore(root)
+	b, _ := NewStore(root)
+	var layers []string
+	for _, id := range []string{"diff-aaaaaaaaaaaaaaaa", "diff-bbbbbbbbbbbbbbbb"} {
+		w, _, _ := a.BeginLayer(id)
+		w.Commit(LayerMeta{})
+		layers = append(layers, id)
+	}
+	if err := a.PutManifest(&Manifest{Name: "root/x:1", Layers: layers[:1]}, false); err != nil {
+		t.Fatal(err)
+	}
+	if m, err := b.GetManifest("root/x:1"); err != nil || m.Layers[0] != layers[0] {
+		t.Fatal(m, err)
+	}
+	if err := a.PutManifest(&Manifest{Name: "root/x:1", Layers: layers[1:]}, true); err != nil {
+		t.Fatal(err)
+	}
+	if m, err := b.GetManifest("root/x:1"); err != nil || m.Layers[0] != layers[1] {
+		t.Fatalf("after another store overwrote the tag: %v %v", m.Layers, err)
+	}
+	if err := a.DeleteManifest("root/x:1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.GetManifest("root/x:1"); rpcutil.Reason(err) != rpcutil.NotFound {
+		t.Fatalf("after another store deleted it: %v", err)
+	}
+}

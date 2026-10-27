@@ -58,6 +58,7 @@ func TestMergeLayers(t *testing.T) {
 		write(r, "dir2file/x", "base")
 		write(r, "file2dir", "base")
 		write(r, "later/gone", "base")
+		write(r, "redo/old", "base")
 	})
 	l1 := layer("b", func(r string) {
 		write(r, "etc/keep", "l1")
@@ -66,12 +67,14 @@ func TestMergeLayers(t *testing.T) {
 		write(r, "opq/new", "l1")
 		write(r, "tmp/made", "l1")
 		whiteout(r, "dir2file")
+		whiteout(r, "redo") // deleted, then made again below: base's content stays hidden
 	})
 	l2 := layer("c", func(r string) {
 		write(r, "dir2file", "l2")
 		write(r, "file2dir/y", "l2")
 		whiteout(r, "tmp/made") // made above, deleted again
 		write(r, "opq/l2", "l2")
+		write(r, "redo/new", "l2")
 	})
 	l3 := layer("d", func(r string) {
 		opaque(r, "tmp")
@@ -111,7 +114,8 @@ func TestMergeLayers(t *testing.T) {
 	if !slices.Equal(want, got) {
 		t.Fatalf("merged view:\n%v\nwant:\n%v", got, want)
 	}
-	if !slices.Contains(want, "opq/new=l1") || slices.Contains(want, "opq/old=base") || !slices.Contains(want, "etc/gone=back") {
+	if !slices.Contains(want, "opq/new=l1") || slices.Contains(want, "opq/old=base") || !slices.Contains(want, "etc/gone=back") ||
+		slices.Contains(want, "redo/old=base") {
 		t.Fatalf("unexpected stacked view: %v", want)
 	}
 }
