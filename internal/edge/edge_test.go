@@ -17,6 +17,7 @@ import (
 	"github.com/kernflux/opendsec/internal/ids"
 	"github.com/kernflux/opendsec/internal/images"
 	"github.com/kernflux/opendsec/internal/rpcutil"
+	"google.golang.org/protobuf/proto"
 )
 
 type clock struct {
@@ -116,6 +117,23 @@ func TestIdempotentCreate(t *testing.T) {
 	}
 	if st := f.e.Status(false).State; st.CountByBackend["sim"] != 1 {
 		t.Fatalf("double charged: %v", st.CountByBackend)
+	}
+}
+
+// A lease another project used (and released, by stopping) does not give
+// its sandbox to a new create.
+func TestCreateOtherProject(t *testing.T) {
+	f := newFixture(t, 10)
+	ctx := context.Background()
+	req := &pb.EdgeCreateRequest{Id: ids.Sandbox("e1", ids.NewLease()), Project: "root/a", Spec: &pb.SandboxSpec{Backend: "sim", Resources: cpu(1)}}
+	if _, err := f.e.Create(ctx, req); err != nil {
+		t.Fatal(err)
+	}
+	f.e.Stop(ctx, req.Id)
+	other := proto.Clone(req).(*pb.EdgeCreateRequest)
+	other.Project = "root/b"
+	if sb, err := f.e.Create(ctx, other); rpcutil.Reason(err) != rpcutil.Conflict {
+		t.Fatalf("got %v, %v; want conflict", sb, err)
 	}
 }
 

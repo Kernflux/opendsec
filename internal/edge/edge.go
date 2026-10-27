@@ -310,6 +310,9 @@ func (e *Edge) create(ctx context.Context, req *pb.EdgeCreateRequest) (*pb.Sandb
 	e.mu.Lock()
 	if r := e.sbs[req.Id]; r != nil {
 		e.mu.Unlock()
+		if r.sb.Project != req.Project { // a lease reused, after it was released, by another project
+			return nil, rpcutil.Err(rpcutil.Conflict, "sandbox %s exists in another project", req.Id)
+		}
 		return e.waitCreated(ctx, r)
 	}
 	if e.draining {

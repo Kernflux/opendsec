@@ -558,6 +558,11 @@ func (s *Server) place(ctx context.Context, token, project string, spec *pb.Sand
 			var sb *pb.Sandbox
 			sb, err = ec.CreateSandbox(ctx, &pb.EdgeCreateRequest{
 				Id: ids.Sandbox(d.Edge.Id, lease), Project: project, Principal: adm.Principal, Spec: spec, SnapshotPeer: peer})
+			if err == nil && sb.Project != project {
+				// The edge returned a sandbox it held under this ID: another
+				// project's, whose lease was released (it stopped).
+				err = rpcutil.Err(rpcutil.Conflict, "lease %s is already in use", lease)
+			}
 			if err == nil {
 				s.rememberProject(sb.Id, project)
 				return sb, nil
