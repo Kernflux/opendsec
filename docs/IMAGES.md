@@ -102,7 +102,7 @@ await sb.stop()
 opendsecctl image pack $ID root/rl/repo-env:v1 -scrub srv/repo/.git
 ```
 
-- `scrub` 里是相对于 `/` 的 glob。
+- `scrub` 里是相对于 `/` 的 glob，不能含 `..`；不会沿符号链接往下匹配。
 - 新镜像记录它的父镜像（`parent`），比父镜像多一层。
 - microVM 不支持 `pack_diff`。需要只含文件的镜像时，用 container 构建，得到的镜像 microVM 也能用。
 

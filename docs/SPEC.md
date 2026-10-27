@@ -793,6 +793,7 @@ edge 处理每个运行时请求时：先透明 resume（如果 sandbox 处于�
   3. 解冻 sandbox。
   4. apiserver 登记新镜像：层列表 = 源镜像的层 + 新的 diff 层，`parent` 指向源镜像。
 - 默认清理以下内容，避免构建残留进入镜像：`tmp/*`、`var/tmp/*`、`root/.cache`、`*/.bash_history`、`.opendsec`（运行时挂载点）。
+- 清理规则只在复制出来的层里生效（2026-10-27 修订，`TestScrubStaysInside`）：规则必须是相对路径，不能含 `..`；逐级匹配，遇到符号链接不往下走。此前用 `filepath.Glob` 加 `RemoveAll`，而清理是 edge 以 root 在宿主机上做的：`-scrub ../../..`，或者在 sandbox 里把 `/tmp` 换成指向 `/` 的链接、再用默认规则 `tmp/*`，都会删掉宿主机上的文件。
 - 只有源镜像来自共享镜像库时才能执行：静态镜像的层不在共享存储上，没法拼进新镜像。
 
 ### 17.5 OCI 导入：`opendsecctl image import`

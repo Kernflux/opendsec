@@ -102,7 +102,7 @@ await sb.stop()
 opendsecctl image pack $ID root/rl/repo-env:v1 -scrub srv/repo/.git
 ```
 
-- `scrub` takes globs relative to `/`.
+- `scrub` takes globs relative to `/`, without `..`; matching never follows a symbolic link.
 - The new image records its parent image (`parent`) and has one layer more.
 - microVMs do not support `pack_diff`. For a files-only image, build on container: the image works on microVMs too.
 

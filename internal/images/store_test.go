@@ -122,6 +122,41 @@ func TestPublishLayerDirScrubs(t *testing.T) {
 	}
 }
 
+// TestScrubStaysInside: scrub patterns never reach outside the layer: not
+// with "..", and not through a link the sandbox made (tmp -> /), which
+// would have the edge, as root, remove the host's files.
+func TestScrubStaysInside(t *testing.T) {
+	s, _ := NewStore(t.TempDir())
+	host := t.TempDir() // stands for the host's /
+	for _, p := range []string{"etc/passwd", "keep/x"} {
+		os.MkdirAll(filepath.Join(host, filepath.Dir(p)), 0o755)
+		os.WriteFile(filepath.Join(host, p), []byte("x"), 0o644)
+	}
+	src := t.TempDir()
+	os.Symlink(host, filepath.Join(src, "tmp"))
+	os.MkdirAll(filepath.Join(src, "home"), 0o755)
+	os.Symlink(host, filepath.Join(src, "home", "u"))
+	os.MkdirAll(filepath.Join(src, "var"), 0o755)
+	os.WriteFile(filepath.Join(src, "var", "f"), []byte("x"), 0o644)
+	id := NewDiffLayerID()
+	if _, err := s.PublishLayerDir(id, src, nil, append(DefaultScrub, "home/*/keep"), LayerMeta{}); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range []string{"etc/passwd", "keep/x"} {
+		if _, err := os.Stat(filepath.Join(host, p)); err != nil {
+			t.Errorf("scrub removed %s outside the layer", p)
+		}
+	}
+	if fi, err := os.Lstat(filepath.Join(s.LayerRootfs(id), "tmp")); err != nil || fi.Mode()&os.ModeSymlink == 0 {
+		t.Errorf("the link itself should stay (tmp/* matches inside a directory only): %v", err)
+	}
+	for _, bad := range []string{"../x", "a/../../x", "/etc", "a//b", ".", "", "[x"} {
+		if _, err := s.PublishLayerDir(NewDiffLayerID(), src, nil, []string{bad}, LayerMeta{}); rpcutil.Reason(err) != rpcutil.Invalid {
+			t.Errorf("scrub %q: %v, want invalid", bad, err)
+		}
+	}
+}
+
 func TestSnapshots(t *testing.T) {
 	st, _ := NewStore(t.TempDir())
 	w, _, _ := st.BeginLayer(NewDiffLayerID())

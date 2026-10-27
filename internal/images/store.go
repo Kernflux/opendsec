@@ -21,6 +21,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -112,6 +113,41 @@ func NewDiffLayerID() string {
 // build-time residue never ships in an image (spec §17.4).
 var DefaultScrub = []string{"tmp/*", "var/tmp/*", "root/.cache", "root/.bash_history", "home/*/.bash_history",
 	"root/.python_history", ".opendsec"}
+
+// ValidScrub checks a scrub pattern: a relative glob (filepath.Match) inside
+// the layer, clean, without "..".
+func ValidScrub(pat string) error {
+	if pat == "" || filepath.IsAbs(pat) || filepath.Clean(pat) != pat || pat == "." || strings.ContainsRune(pat, 0) ||
+		slices.Contains(strings.Split(pat, "/"), "..") {
+		return rpcutil.Err(rpcutil.Invalid, "scrub %q: a relative path inside the image, without ..", pat)
+	}
+	if _, err := filepath.Match(pat, ""); err != nil {
+		return rpcutil.Err(rpcutil.Invalid, "scrub %q: %v", pat, err)
+	}
+	return nil
+}
+
+// scrubPath removes what the pattern's components match under dir, one
+// directory level each, never through a symbolic link: the layer is the
+// sandbox's, and a link in it (tmp -> /) points into the host, where this
+// runs as root.
+func scrubPath(dir string, parts []string) {
+	ents, err := os.ReadDir(dir) // dir is a directory, not a link (checked by the caller)
+	if err != nil {
+		return
+	}
+	for _, e := range ents {
+		if ok, _ := filepath.Match(parts[0], e.Name()); !ok {
+			continue
+		}
+		p := filepath.Join(dir, e.Name())
+		if len(parts) == 1 {
+			os.RemoveAll(p) // a link itself, not what it points to
+		} else if fi, err := os.Lstat(p); err == nil && fi.IsDir() {
+			scrubPath(p, parts[1:])
+		}
+	}
+}
 
 type Store struct {
 	Root string
@@ -207,6 +243,11 @@ func (w *LayerWriter) Abort() { os.RemoveAll(w.tmp) }
 // globs). Whiteouts, owners and hard links are preserved (cp -a); opaque
 // directories are expanded over lower (spec §29.5).
 func (s *Store) PublishLayerDir(id, src string, lower []string, scrub []string, meta LayerMeta) (*LayerMeta, error) {
+	for _, pat := range scrub {
+		if err := ValidScrub(pat); err != nil {
+			return nil, err
+		}
+	}
 	w, exists, err := s.BeginLayer(id)
 	if err != nil {
 		return nil, err
@@ -219,10 +260,7 @@ func (s *Store) PublishLayerDir(id, src string, lower []string, scrub []string, 
 		return nil, fmt.Errorf("copy layer: %v: %s", err, out)
 	}
 	for _, pat := range scrub {
-		matches, _ := filepath.Glob(filepath.Join(w.Rootfs, pat))
-		for _, m := range matches {
-			os.RemoveAll(m)
-		}
+		scrubPath(w.Rootfs, strings.Split(pat, "/"))
 	}
 	if dirs := opaqueDirs(src); len(dirs) > 0 {
 		if err := expandOpaque(w.Rootfs, dirs, lower); err != nil {

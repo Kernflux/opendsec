@@ -222,6 +222,11 @@ func (s *Server) PackDiff(ctx context.Context, r *pb.PackDiffRequest) (*pb.Image
 	if err != nil {
 		return nil, err
 	}
+	for _, pat := range r.Scrub {
+		if err := images.ValidScrub(pat); err != nil {
+			return nil, err
+		}
+	}
 	parent, err := runningImage(st, sb)
 	if err != nil {
 		return nil, err
