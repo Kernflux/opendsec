@@ -80,7 +80,12 @@ closure=$(apt-cache depends --recurse --no-recommends --no-suggests --no-conflic
 mkdir -p "$B/debs"
 skipped=
 for p in $closure; do
-	(cd "$B/debs" && apt-get download -qq "$p" >/dev/null 2>&1) || skipped="$skipped $p"
+	(cd "$B/debs" && apt-get download -qq "$p" >/dev/null 2>&1) && continue
+	# Virtual and foreign-architecture names have no package to download; a
+	# real package that did not download makes a bundle that cannot install.
+	LC_ALL=C apt-cache policy "$p" 2>/dev/null | grep -q 'Candidate: [^(]' &&
+		die "downloading package $p failed (apt-get download $p)"
+	skipped="$skipped $p"
 done
 [ -z "$skipped" ] || echo "  not downloadable (virtual or foreign-architecture names):$skipped"
 (cd "$B/debs" && apt-ftparchive packages . > Packages 2>/dev/null)
@@ -89,7 +94,12 @@ echo "  $(ls "$B/debs"/*.deb | wc -l) packages, $(du -sh "$B/debs" | cut -f1)"
 
 say "saving images"
 for ref in "${images[@]}"; do
-	f=$(basename "${ref%%@*}" | tr ':/' '--').tar
+	if [ -f "$B/images/IMAGES" ] && cut -f2 "$B/images/IMAGES" | grep -qxF "$ref"; then die "--image $ref: given twice"; fi
+	f=$(basename "${ref%%@*}" | tr ':/' '--').tar # python-3.12.tar
+	# Two references with the same last part (other registries, or digests):
+	# the whole reference names the file.
+	[ -e "$B/images/$f" ] && f=$(printf '%s' "$ref" | tr ':/@' '---').tar
+	[ -e "$B/images/$f" ] && die "--image $ref: its file name, $f, is another image's"
 	"$REPO/bin/opendsecctl" image save "$ref" -out "$B/images/$f" 2>/dev/null
 	printf '%s\t%s\n' "$f" "$ref" >> "$B/images/IMAGES"
 	echo "  $ref -> images/$f ($(du -sh "$B/images/$f" | cut -f1))"

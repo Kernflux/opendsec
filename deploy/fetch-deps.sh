@@ -63,7 +63,7 @@ while read -r name version src sum path; do
 	file:*)
 		f=${src#file:}
 		case "$f" in /*) ;; *) f=$here/$f ;; esac
-		install -m 0644 "$f" "$dst"
+		install -m "$(mode "$path")" "$f" "$dst"
 		;;
 	*) echo "$name: unknown source $src" >&2; exit 1 ;;
 	esac

@@ -11,6 +11,8 @@ FC=${FC:-v1.17.0}
 here=$(cd "$(dirname "$0")" && pwd)
 WORK=${WORK:-$PWD/kbuild}
 OUT=${OUT:-$PWD/vmlinux-$VERSION-opendsec}
+case $OUT in /*) ;; *) OUT=$PWD/$OUT ;; esac # the build runs in WORK
+case $WORK in /*) ;; *) WORK=$PWD/$WORK ;; esac
 mkdir -p "$WORK"
 cd "$WORK"
 [ -f "linux-$VERSION.tar.xz" ] || curl -fsSLO "https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-$VERSION.tar.xz"
