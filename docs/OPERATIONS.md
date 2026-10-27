@@ -105,10 +105,11 @@ make build && deploy/prod/opendsecops release bin/
 deploy/prod/opendsecops upgrade <新版本>
 ```
 - 执行顺序：
-  1. 把新版本下发到所有节点并校验 sha256；
+  1. 把新版本下发到所有节点并校验 sha256；每台机器切换版本时，同时装上新版本自带的 systemd 单元文件（有变化才 `daemon-reload`），回滚时装回旧版本的；
   2. 逐个重启组件，每个都等到 `/readyz` 返回 200 才继续下一个；
   3. IAM 先重启 follower，最后重启 leader；
   4. 然后依次是 watcher、apiserver、edge。每台 edge 重启后，还要等它在集群快照中恢复为 healthy。
+- 开始前检查所有组件都就绪；从没启用过的单元（比如迁到 fleet 时新加的 fleet 副本）不算，升级过程中会把它启动。
 - 任何一步超时（`OPENDSEC_READY_TIMEOUT`，默认 180 秒）就停下，不再继续。已经升级的组件保持新版本；要回滚就执行 `opendsecops rollback <旧版本>`。
 - apiserver 收到 SIGTERM 后先让 `/readyz` 失败，再继续服务 6 秒，等 LB 把它摘掉，然后给进行中的请求最多 30 秒完成。SDK 会对断开的请求做重试和流续传（SPEC §26）。
 - edge 重启不会影响 sandbox：前提是配置了 `keep_sandboxes_on_exit` 和 `persist_state`，unit 使用 `KillMode=process`。新 edge 进程启动后会重新接管这些 sandbox。
@@ -138,6 +139,8 @@ opendsecctl edge drain node-a1 -undo
   1. `opendsecops rotate-ca 1`：生成新 CA，所有节点同时信任新旧两个 CA，组件证书暂时不变。
   2. `opendsecops rotate-ca 2`：用新 CA 重签全部组件证书。
   3. `opendsecops rotate-ca 3`：移除旧 CA。
+
+  每一步都会先重启各机器上的节点代理（它只在启动时读取证书和 CA），再滚动重启各组件。
 
   第 1 步之后，把 `$OPENDSEC_OPS/pki/ca.crt`（同时含新旧两个 CA）发给所有客户端；第 3 步之后，再发一次（只含新 CA）。
   - 为什么要分三步：组件在重启前一直使用旧的证书和信任列表。如果直接用新 CA 重签，已经重启和尚未重启的组件之间会互相校验失败。
@@ -191,7 +194,7 @@ opendsecctl usage root -from 2026-10-01 -daily -csv > usage.csv        # 按天�
    }
    ```
 2. 给机器加上角色，一台一台来：`opendsecctl fleet node set <名字> -roles <原有角色>,e2b=<序号>`（序号对应 `gateways` 里的位置），再执行 `opendsecctl fleet node sync <名字>`。节点代理会把这台机器同步到它应有的版本和配置，启用并启动 `opendsec-e2b@<序号>`，就绪后再做下一台。
-3. 前面放 LB：转发 TCP 7400，健康检查用 HTTP 9467 的 `/readyz`，空闲超时不低于 60 秒（SDK 的流每 50 秒保活一次）。对外要用 HTTPS 时，在 LB 上终止 TLS，或者在 `gateways` 里配 `tls_cert` 和 `tls_key`。
+3. 前面放 LB：转发 TCP 7400，健康检查用 HTTP 9467 的 `/readyz`，空闲超时不低于 60 秒（SDK 的流每 50 秒保活一次）。对外要用 HTTPS 时，在 LB 上终止 TLS，或者在 `gateways` 里配 `tls_cert` 和 `tls_key`（证书通过 systemd 凭据传入，见 E2B 文档）。
 4. 调用方的设置：`E2B_API_URL` 和 `E2B_SANDBOX_URL` 都指向网关，`E2B_API_KEY` 用他的 OpenDsec token。这个 token 需要在 `project` 上有 `sandbox.create`、`sandbox.operate`，在镜像所在项目上有 `layer.use`。要用快照（`create_snapshot()`）的，还要在 `project` 上有 `layer.publish`：快照存成这个项目里的镜像。
 
 网关不保存状态，每个请求都用调用方自己的 token 调 apiserver，所以权限、配额、审计和直接用 OpenDsec SDK 完全一样。
@@ -297,7 +300,7 @@ opendsecctl fleet node accept n17 -roles edge=n17 -domain az2        # 下发当
 ### 6.4 从 opendsecops 迁到 fleet（一次性，不停机）
 1. inventory 里给控制面节点加上 `fleet=<id>`，`opendsec.json` 里加上 `fleet` 段（参照 `deploy/prod/cluster.example.json`），并把 microvm 的 `firecracker`、`jailer`、`kernel` 指向 `/opt/opendsec/current/...`。
 2. `opendsecops certs`：补签 fleet、节点代理和 ops 证书。
-3. 用 opendsecops 做最后一次滚动升级（带 fleet 和节点代理的版本）：`opendsecops release bin/`、`opendsecops push-config all`、`OPENDSEC_FORCE=1 opendsecops upgrade <版本>`，再 `opendsecops start all` 启动 fleet 副本。
+3. 用 opendsecops 做最后一次滚动升级（带 fleet 和节点代理的版本）：`opendsecops release bin/`、`opendsecops push-config all`、`OPENDSEC_FORCE=1 opendsecops upgrade <版本>`（会顺带启动 fleet 副本），再 `opendsecops start all` 把它们设为开机自启。
 4. `opendsecops install-agent all`：每台机器启动节点代理。
 5. 导入：`opendsecctl fleet release push $OPENDSEC_OPS/releases/<版本>`；`opendsecctl fleet config put $OPENDSEC_OPS/opendsec.json`；`opendsecctl fleet import -inventory $OPENDSEC_OPS/inventory -release <版本> -config-gen 1 -domain <故障域>`。
 6. `opendsecctl fleet nodes`：确认每台机器都在上报，`RUNNING` 与 `RELEASE` 一致，`UNITS` 全部就绪。

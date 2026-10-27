@@ -283,7 +283,7 @@ The E2B-compatible gateway; optional.
 
 | Field | Default | Meaning |
 |---|---|---|
-| `gateways` | — | Gateway instances: `[{"addr", "tls_cert", "tls_key"}]`. `addr` e.g. `10.0.0.1:7400`; set both `tls_cert` and `tls_key` for the gateway to serve HTTPS itself, or neither for plain HTTP behind a TLS-terminating load balancer |
+| `gateways` | — | Gateway instances: `[{"addr", "tls_cert", "tls_key"}]`. `addr` e.g. `10.0.0.1:7400`; set both `tls_cert` and `tls_key` for the gateway to serve HTTPS itself, or neither for plain HTTP behind a TLS-terminating load balancer. Relative paths name systemd credentials (`LoadCredential`); see the E2B guide |
 | `project` | required with gateways | Sandboxes are created in this project. A request can name another with the `X-OpenDsec-Project` header |
 | `domain` | — | The sandboxes' domain returned to SDKs, which then reach `<port>-<id>.<domain>` (needs wildcard DNS and a certificate pointing at the gateways). Unset, clients set `E2B_SANDBOX_URL` |
 | `templates` | — | E2B template id → sandbox. SDKs default to `base`. A template id containing `/` is taken as an image name with `default_template`'s other settings |

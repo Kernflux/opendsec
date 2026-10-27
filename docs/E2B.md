@@ -101,7 +101,15 @@ print(sbx.run_code("6 * 7").text)               # 42
    }
    ```
 2. 一台一台地给节点加上 fleet 角色 `e2b=<序号>`（`opendsecctl fleet node set`，然后 `fleet node sync`）。
-3. 前面放一个负载均衡：TCP 7400，健康检查用 HTTP 9467 `/readyz`，空闲超时不低于 60 秒。TLS 可以在负载均衡上终止，也可以给网关配置 `tls_cert` 和 `tls_key`。
+3. 前面放一个负载均衡：TCP 7400，健康检查用 HTTP 9467 `/readyz`，空闲超时不低于 60 秒。TLS 可以在负载均衡上终止，也可以由网关自己提供：
+   - 网关的 unit 以动态用户运行，读不到 `/etc/opendsec`，所以证书和私钥通过 systemd 凭据传入。在每台网关机器上加一个 drop-in `/etc/systemd/system/opendsec-e2b@.service.d/tls.conf`：
+     ```ini
+     [Service]
+     LoadCredential=tls.crt:/etc/opendsec/e2b/tls.crt
+     LoadCredential=tls.key:/etc/opendsec/e2b/tls.key
+     ```
+   - 配置里写相对路径 `"tls_cert": "tls.crt", "tls_key": "tls.key"`，网关会到凭据目录里找。
+   - fleet 更新单元文件时不会动 drop-in。
 4. 给调用方的 token 授予项目上的 `sandbox.create` 和 `sandbox.operate`，以及镜像所在项目上的 `layer.use`。用快照还需要项目上的 `layer.publish`，因为快照就是这个项目里的一个镜像。
 5. code interpreter 需要它的模板：`deploy/e2b/build-code-interpreter.py` 会构建 `root/code-interpreter:v1`，即一个运行着 E2B code-interpreter 服务的 microVM 的内存快照，再在模板配置里把一个名字对应到它。
 6. 和 E2B 一样，经网关创建的 sandbox 默认可以访问公网，除非调用方关闭（`allow_internet_access=False`，或者 `deny_out` 全部流量），不受集群 `network.default_rules` 的影响。

@@ -105,10 +105,11 @@ make build && deploy/prod/opendsecops release bin/
 deploy/prod/opendsecops upgrade <new version>
 ```
 - The sequence:
-  1. deliver the new release to every node and check its sha256;
+  1. deliver the new release to every node and check its sha256; switching a machine to it also installs the release's systemd unit files (with a `daemon-reload` if any changed), and a rollback puts back the old release's;
   2. restart components one by one, each only after the previous one's `/readyz` returns 200;
   3. IAM followers first, the leader last;
   4. then watchers, apiservers and edges. After each edge restarts, wait until it is healthy again in the cluster snapshot.
+- First, every component must be ready; units never enabled (fleet replicas added for the migration to the fleet) do not count, and the upgrade starts them.
 - If any step times out (`OPENDSEC_READY_TIMEOUT`, default 180 s), it stops there. Components already upgraded keep the new version; to go back, `opendsecops rollback <old version>`.
 - On SIGTERM, an apiserver first fails `/readyz` and keeps serving 6 more seconds while the LB takes it out, then gives calls in flight up to 30 seconds. The SDK retries broken calls and resumes streams (SPEC §26).
 - Edge restarts do not touch sandboxes, provided `keep_sandboxes_on_exit` and `persist_state` are set and the unit uses `KillMode=process`. The new edge process re-adopts them.
@@ -138,6 +139,8 @@ Notes:
   1. `opendsecops rotate-ca 1`: create a new CA; every node trusts both the old and the new CA, component certificates unchanged for now.
   2. `opendsecops rotate-ca 2`: reissue every component certificate from the new CA.
   3. `opendsecops rotate-ca 3`: drop the old CA.
+
+  Each step first restarts the node agents (they read their certificate and CA at start only), then the components, one at a time.
 
   After step 1, give every client `$OPENDSEC_OPS/pki/ca.crt` (both CAs); after step 3, again (the new CA only).
   - Why three steps: until restarted, components use their old certificates and trust lists. Reissuing straight from a new CA would make restarted and not-yet-restarted components reject each other.
@@ -191,7 +194,7 @@ Lets callers using the E2B SDK connect directly.
    }
    ```
 2. Give machines the role, one at a time: `opendsecctl fleet node set <name> -roles <existing roles>,e2b=<index>` (the index is the position in `gateways`), then `opendsecctl fleet node sync <name>`. The node agent brings the machine to its desired release and config and enables and starts `opendsec-e2b@<index>`; once it is ready, do the next machine.
-3. Put an LB in front: forward TCP 7400, health check HTTP 9467 `/readyz`, idle timeout at least 60 s (the SDK's streams send keepalives every 50 s). For HTTPS from outside, terminate TLS on the LB, or set `tls_cert` and `tls_key` in `gateways`.
+3. Put an LB in front: forward TCP 7400, health check HTTP 9467 `/readyz`, idle timeout at least 60 s (the SDK's streams send keepalives every 50 s). For HTTPS from outside, terminate TLS on the LB, or set `tls_cert` and `tls_key` in `gateways` (the files come in as systemd credentials; see the E2B guide).
 4. Callers set `E2B_API_URL` and `E2B_SANDBOX_URL` to the gateway and `E2B_API_KEY` to their OpenDsec token. The token needs `sandbox.create` and `sandbox.operate` on `project` and `layer.use` on the images' project; for snapshots (`create_snapshot()`), also `layer.publish` on `project`, where snapshots are stored as images.
 
 The gateway is stateless and calls the apiserver with each caller's own token, so permissions, quotas and audit are exactly as with the OpenDsec SDK.
@@ -299,7 +302,7 @@ opendsecctl fleet node accept n17 -roles edge=n17 -domain az2        # deliver t
 ### 6.4 Moving from opendsecops to fleet (once, without downtime)
 1. In the inventory, add `fleet=<id>` to the control-plane nodes; in `opendsec.json`, add a `fleet` section (see `deploy/prod/cluster.example.json`), and point microvm's `firecracker`, `jailer` and `kernel` at `/opt/opendsec/current/...`.
 2. `opendsecops certs`: issues the fleet, node agent and ops certificates.
-3. One last rolling upgrade with opendsecops (to a release with fleet and the node agent): `opendsecops release bin/`, `opendsecops push-config all`, `OPENDSEC_FORCE=1 opendsecops upgrade <version>`, then `opendsecops start all` to start the fleet replicas.
+3. One last rolling upgrade with opendsecops (to a release with fleet and the node agent): `opendsecops release bin/`, `opendsecops push-config all`, `OPENDSEC_FORCE=1 opendsecops upgrade <version>` (it starts the fleet replicas too), then `opendsecops start all` to enable them at boot.
 4. `opendsecops install-agent all`: start a node agent on every machine.
 5. Register: `opendsecctl fleet release push $OPENDSEC_OPS/releases/<version>`; `opendsecctl fleet config put $OPENDSEC_OPS/opendsec.json`; `opendsecctl fleet import -inventory $OPENDSEC_OPS/inventory -release <version> -config-gen 1 -domain <failure domain>`.
 6. `opendsecctl fleet nodes`: every machine reports, `RUNNING` matches `RELEASE`, and every `UNITS` is ready.

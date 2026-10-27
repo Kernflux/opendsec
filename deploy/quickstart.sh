@@ -56,12 +56,15 @@ if [ -n "$uninstall" ]; then
 	systemctl disable --now opendsec-edge 'opendsec-apiserver@*' 'opendsec-watcher@*' 'opendsec-iam@*' \
 		'opendsec-fleet@*' opendsec-nodeagent opendsec-iam-backup.timer 2>/dev/null || true
 	for u in $(systemctl list-units --all --plain --no-legend 'opendsec-*' | awk '{print $1}'); do systemctl disable --now "$u" 2>/dev/null || true; done
-	# Sandboxes the edge left running (keep_sandboxes_on_exit).
-	for c in $(find /sys/fs/cgroup -maxdepth 2 -type d -name 'opendsec*' 2>/dev/null | sort -r); do
-		for p in $(cat "$c"/cgroup.procs "$c"/*/cgroup.procs 2>/dev/null); do kill -9 "$p" 2>/dev/null || true; done
+	# Sandboxes the edge left running (keep_sandboxes_on_exit), in
+	# /sys/fs/cgroup/opendsec/<edge>/<lease>/: cgroup.kill takes a whole
+	# subtree, and the loop is for what it misses.
+	for c in $(find /sys/fs/cgroup -maxdepth 1 -type d -name 'opendsec*' 2>/dev/null); do
+		echo 1 > "$c/cgroup.kill" 2>/dev/null || true
+		for p in $(find "$c" -name cgroup.procs -exec cat {} + 2>/dev/null); do kill -9 "$p" 2>/dev/null || true; done
 	done
 	nft list tables 2>/dev/null | awk '/opendsec/ {print $2, $3}' | while read -r fam t; do nft delete table "$fam" "$t" || true; done
-	for l in $(ip -o link show 2>/dev/null | awk -F': ' '{print $2}' | sed 's/@.*//' | grep -E '^(ods|odsbr|opendsec)'); do ip link delete "$l" 2>/dev/null || true; done
+	for l in $(ip -o link show 2>/dev/null | awk -F': ' '{print $2}' | sed 's/@.*//' | grep -E '^(ds[0-9a-f]{12}$|opendsec)'); do ip link delete "$l" 2>/dev/null || true; done
 	for d in $(ip netns list 2>/dev/null | awk '/^ods|^opendsec/ {print $1}'); do ip netns delete "$d" || true; done
 	awk '$2 ~ /opendsec/ {print $2}' /proc/mounts | sort -r | while read -r m; do umount -l "$m" 2>/dev/null || true; done
 	systemctl disable -q opendsec-node-tuning 2>/dev/null || true

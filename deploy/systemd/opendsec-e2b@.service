@@ -8,7 +8,12 @@ Wants=network-online.target
 # Unprivileged, and facing outside traffic: it only calls the apiservers,
 # with its callers' tokens. It gets the cluster config and the CA
 # certificate as credentials, and no other file of /etc/opendsec (keys,
-# admin.token).
+# admin.token). To serve TLS itself (tls_cert, tls_key), add a drop-in,
+# /etc/systemd/system/opendsec-e2b@.service.d/tls.conf:
+#   [Service]
+#   LoadCredential=tls.crt:/etc/opendsec/e2b/tls.crt
+#   LoadCredential=tls.key:/etc/opendsec/e2b/tls.key
+# with "tls_cert": "tls.crt", "tls_key": "tls.key" (relative: credentials).
 DynamicUser=yes
 LoadCredential=config:/etc/opendsec/opendsec.json
 LoadCredential=ca.crt:/etc/opendsec/pki/ca.crt

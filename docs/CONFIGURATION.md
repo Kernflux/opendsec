@@ -283,7 +283,7 @@ E2B 兼容网关，可选。
 
 | 字段 | 默认 | 说明 |
 |---|---|---|
-| `gateways` | — | 网关实例：`[{"addr", "tls_cert", "tls_key"}]`。`addr` 例如 `10.0.0.1:7400`；`tls_cert` 和 `tls_key` 要么都设置（网关自己提供 HTTPS），要么都不设置（明文 HTTP，在前面的负载均衡上终止 TLS） |
+| `gateways` | — | 网关实例：`[{"addr", "tls_cert", "tls_key"}]`。`addr` 例如 `10.0.0.1:7400`；`tls_cert` 和 `tls_key` 要么都设置（网关自己提供 HTTPS），要么都不设置（明文 HTTP，在前面的负载均衡上终止 TLS）。相对路径指 systemd 凭据（`LoadCredential`），见 E2B 文档 |
 | `project` | 有网关时必填 | sandbox 创建在这个项目里。请求可以用 `X-OpenDsec-Project` 头指定别的项目 |
 | `domain` | — | 返回给 SDK 的 sandbox 域名，SDK 会访问 `<端口>-<id>.<domain>`（需要泛域名解析和证书指向网关）。不设置时客户端设置 `E2B_SANDBOX_URL` |
 | `templates` | — | E2B template id → sandbox 规格。SDK 默认用 `base`。含 `/` 的 template id 直接当作镜像名，其余设置取 `default_template` |

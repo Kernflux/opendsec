@@ -11,6 +11,7 @@ import (
 	"flag"
 	"fmt"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -76,11 +77,21 @@ func main() {
 	}()
 	log.Info("e2b gateway listening", "addr", gw.Addr, "tls", gw.TLSCert != "", "project", cfg.E2B.Project)
 	if gw.TLSCert != "" {
-		err = srv.ListenAndServeTLS(gw.TLSCert, gw.TLSKey)
+		err = srv.ListenAndServeTLS(credential(gw.TLSCert), credential(gw.TLSKey))
 	} else {
 		err = srv.ListenAndServe()
 	}
 	if err != nil && err != http.ErrServerClosed {
 		cmdutil.Fatal(log, "serve", err)
 	}
+}
+
+// credential: a relative tls_cert or tls_key is a systemd credential
+// (LoadCredential=tls.crt:...), since the unit runs as a dynamic user
+// without access to /etc/opendsec.
+func credential(p string) string {
+	if d := os.Getenv("CREDENTIALS_DIRECTORY"); d != "" && !filepath.IsAbs(p) {
+		return filepath.Join(d, p)
+	}
+	return p
 }

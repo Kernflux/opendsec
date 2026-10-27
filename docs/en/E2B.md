@@ -101,7 +101,15 @@ Measured through the gateway on microVMs (Firecracker), on the project's bare-me
    }
    ```
 2. Give nodes the fleet role `e2b=<index>`, one at a time (`opendsecctl fleet node set` then `fleet node sync`).
-3. Put a load balancer in front: TCP 7400, health check HTTP 9467 `/readyz`, idle timeout at least 60 s. Terminate TLS there, or set `tls_cert` and `tls_key` on the gateways.
+3. Put a load balancer in front: TCP 7400, health check HTTP 9467 `/readyz`, idle timeout at least 60 s. Terminate TLS there, or have the gateways serve it:
+   - The gateway's unit runs as a dynamic user that cannot read `/etc/opendsec`, so the certificate and key come in as systemd credentials. On each gateway machine, add a drop-in `/etc/systemd/system/opendsec-e2b@.service.d/tls.conf`:
+     ```ini
+     [Service]
+     LoadCredential=tls.crt:/etc/opendsec/e2b/tls.crt
+     LoadCredential=tls.key:/etc/opendsec/e2b/tls.key
+     ```
+   - In the config, use relative paths, `"tls_cert": "tls.crt", "tls_key": "tls.key"`: the gateway looks for them in its credentials directory.
+   - The fleet leaves drop-ins alone when it updates unit files.
 4. Give callers tokens with `sandbox.create` and `sandbox.operate` on the project and `layer.use` on the images' projects. Snapshots also need `layer.publish` on the project, since a snapshot is an image there.
 5. The code interpreter needs its template: `deploy/e2b/build-code-interpreter.py` builds `root/code-interpreter:v1`, a memory snapshot of a microVM running E2B's code-interpreter server, and the template entry maps a name to it.
 6. As on E2B, sandboxes made through the gateway can reach the internet unless the caller turns it off (`allow_internet_access=False`, or `deny_out` of all traffic), whatever the cluster's `network.default_rules`.

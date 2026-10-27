@@ -144,7 +144,7 @@ opendsecctl fleet rollout create -config-gen <新代> [-bake 60 -pause 30]
 OPENDSEC_ADDR=<任一 apiserver> deploy/prod/opendsecops backup
 deploy/prod/opendsecops upgrade <版本>       # 回滚：deploy/prod/opendsecops rollback <旧版本>
 ```
-- 它只换程序、按顺序重启，不安装新的单元文件。新版本带了新的单元文件时，要先手动拷过去。
+- 它换程序、装上新版本自带的单元文件，再按顺序重启（2026-10-27 之前的 opendsecops 不装单元文件，要手动拷）。
 - 0.11 之前的 opendsecctl 不认 `OPENDSEC_ADDR` 里逗号分隔的多个地址，这时临时设成单个地址。
 
 **每次发版或改配置后**：

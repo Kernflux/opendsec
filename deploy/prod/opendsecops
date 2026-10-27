@@ -219,8 +219,21 @@ cmd_rotate_ca() { # rotate-ca 1|2|3: replace the cluster CA without downtime.
 	*) die "usage: opendsecops rotate-ca 1|2|3" ;;
 	esac
 	cmd_push_config all
+	restart_agents # first: each trusts what the fleet presents at every step
 	roll ""
 	log "rotate-ca step $1 done"
+}
+
+# restart_agents: the node agents running restart, to load the pushed
+# certificates and CA (they read them at start only).
+restart_agents() {
+	local n
+	for n in $(nodes); do
+		on "$n" 'systemctl is-active -q opendsec-nodeagent' 2>/dev/null || continue
+		log "restart opendsec-nodeagent on $n"
+		on "$n" 'systemctl restart opendsec-nodeagent'
+		ready "$n" nodeagent
+	done
 }
 
 # bundle NODE DIR: ca.crt plus the node's own certificates only.
@@ -246,10 +259,18 @@ ship() {
 		cd /opt/opendsec/releases/$ver && sha256sum -c --quiet SHA256SUMS"
 }
 
-# switch NODE VERSION: point current (and /usr/local/bin) at a shipped release.
+# switch NODE VERSION: point current (and /usr/local/bin) at a shipped
+# release, and install its unit files.
 switch() {
 	on "$1" "set -e; ln -sfn releases/$2 /opt/opendsec/current.new && mv -T /opt/opendsec/current.new /opt/opendsec/current
 		for b in /opt/opendsec/current/bin/*; do ln -sfn \$b /usr/local/bin/\$(basename \$b); done
+		changed=
+		for u in /opt/opendsec/current/units/opendsec-*.service; do # the release's units, as the node agent installs them
+			[ -f \$u ] || continue
+			d=/etc/systemd/system/\$(basename \$u)
+			cmp -s \$u \$d || { install -m 0644 \$u \$d.new && mv \$d.new \$d; changed=1; }
+		done
+		[ -z \"\$changed\" ] || systemctl daemon-reload
 		cd /opt/opendsec/releases && ls -1t | grep -vx \"\$(readlink /opt/opendsec/current | sed 's#releases/##')\" | tail -n +$KEEP_RELEASES | xargs -r rm -rf"
 }
 
@@ -402,7 +423,7 @@ cmd_upgrade() { # upgrade VERSION
 	local ver=${1:?usage: opendsecops upgrade VERSION}
 	fleet_guard
 	[ -d "$OPS/releases/$ver" ] || die "no release $ver (opendsecops release BIN_DIR)"
-	cmd_status >/dev/null || die "cluster not healthy before the upgrade; see opendsecops status"
+	NEW_OK=1 cmd_status >/dev/null || die "cluster not healthy before the upgrade; see opendsecops status"
 	roll "$ver"
 }
 
@@ -410,7 +431,7 @@ cmd_rollback() { # rollback VERSION: the same rolling restart onto an older rele
 	cmd_upgrade "$@"
 }
 
-cmd_restart() { fleet_guard; roll ""; } # restart: rolling restart (e.g. after push-config)
+cmd_restart() { fleet_guard; restart_agents; roll ""; } # restart: rolling restart (e.g. after push-config)
 
 # ---- checks and backups ---------------------------------------------------------------
 
@@ -423,13 +444,22 @@ cmd_versions() {
 	done
 }
 
+# unit_of ROLE ID: the role's systemd unit.
+unit_of() { if [ "$1" = edge ]; then echo opendsec-edge; else echo "opendsec-$1@$2"; fi; }
+
 cmd_status() { # readiness of every component; exit 1 if any is not ready
-	local bad=0 out
+	# With NEW_OK set (before an upgrade), a component whose unit was never
+	# enabled (a fleet replica added for the migration, spec §28) is not
+	# counted: the upgrade starts it.
+	local bad=0 out st
 	for r in $ROLES; do
 		while read -r n id; do
 			[ -z "$n" ] && continue
 			if out=$(curl -s -m 2 -w '\n%{http_code}' "http://$(ip_of "$n"):${PORT[$r]}/readyz" 2>/dev/null) && [ "${out##*$'\n'}" = 200 ]; then
 				printf '%-10s %-6s %-4s ready\n' "$r" "$n" "$id"
+			elif [ -n "${NEW_OK:-}" ] && st=$(on "$n" "systemctl is-enabled $(unit_of "$r" "$id") 2>/dev/null; true") &&
+				[ "${st:-disabled}" = disabled ]; then # disabled or not installed; a node ssh cannot reach is not ready
+				printf '%-10s %-6s %-4s not started yet\n' "$r" "$n" "$id"
 			else
 				printf '%-10s %-6s %-4s NOT READY %s\n' "$r" "$n" "$id" "$(echo "${out%$'\n'*}" | awk 'NR==1')"; bad=1
 			fi

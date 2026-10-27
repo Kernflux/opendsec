@@ -9,8 +9,9 @@ COPY . .
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/ ./cmd/...
 
 FROM debian:bookworm-slim
-# e2fsprogs: mkfs.ext4 for sandbox writable disks (edge); util-linux: mount/losetup for debugging.
-RUN apt-get update && apt-get install -y --no-install-recommends e2fsprogs util-linux ca-certificates \
+# e2fsprogs: mkfs.ext4 for sandbox writable disks (edge); util-linux: mount/losetup for debugging;
+# nftables, iproute2: nft and ip, which an edge with network.enabled needs.
+RUN apt-get update && apt-get install -y --no-install-recommends e2fsprogs util-linux ca-certificates nftables iproute2 \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=build /out/opendsec-iam /out/opendsec-watcher /out/opendsec-apiserver /out/opendsec-edge /out/opendsecctl /usr/local/bin/
 # In-sandbox agents live in a versioned directory; edges point agent_dir at it,
