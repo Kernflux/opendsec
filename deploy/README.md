@@ -66,9 +66,9 @@ backend 的 `runtime` 设为 `"firecracker"` 后，这个 edge 用 Firecracker m
 - **内存**：VM 的 cgroup 内存上限 = 申请的内存 + `vm_overhead_mb`（默认 64）。最小申请 128 MB。
 - **节点本地缓存**：在 `<state_dir>/<edge>/microvm/cache/`。
   - 镜像第一次使用时展平成只读 ext4 盘，同一镜像的所有 VM 共用；
-  - 缓存目前不会自动清理。
+  - 24 小时没用过、也没有 VM 在用的盘由 edge 自动删除。
   - jailer 要把 guest 内核和镜像盘硬链接进每个 VM 的 chroot，所以这个目录和 `state_dir` 必须在同一个文件系统上，否则会退化成复制。
-- **网络**：VM 目前没有网卡，只有 lo，和容器一样。网络要和网络策略一起做。
+- **网络**：edge 开启 `network` 后，每个 VM 有一块 tap 网卡（`eth0`），和容器一样受网络策略管控（见下文「网络与网络策略」）；没开时只有 lo。
 - **暂停与磁盘**：
   - 暂停中的 microVM 在 `state_dir` 里保留一份完整的内存文件，大小等于申请的内存。按暂停中 sandbox 数 × 内存大小预留磁盘。
   - 运行中的 VM 只要暂停过一次（或者是从快照恢复的），也保留这样一份文件，用作下次暂停的基础。
@@ -209,6 +209,7 @@ systemctl enable --now opendsec-edge
 
 ```sh
 docker build -f deploy/Dockerfile -t <registry>/opendsec:0.1.0 .   # 并把清单里的 image 改成这个地址
+docker push <registry>/opendsec:0.1.0   # 节点从 registry 拉取；没有 registry 时，在每个节点上导入镜像（docker save | ctr -n k8s.io images import -）
 kubectl apply -f deploy/k8s/namespace.yaml
 # 先把 deploy/k8s/opendsec.json 里的 admin_token 换成自己的（dsk.admin.<随机串>）：IAM 拒绝用 CHANGE-ME 启动
 kubectl -n opendsec create secret generic opendsec-config --from-file=opendsec.json=deploy/k8s/opendsec.json
