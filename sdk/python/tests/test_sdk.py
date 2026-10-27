@@ -165,3 +165,22 @@ async def test_batch_retry_same_request_id():
     out = await DSecClient("127.0.0.1:1", "t", "root", retry_timeout=5)._batch(make, req, 3)
     assert seen == [("a" * 26, False), ("a" * 26, True)]
     assert [s.id for s in out] == [f"e1.{'a' * 26}aa{i}" for i in range(3)]
+
+
+async def test_batch_replay_is_not_progress():
+    """A stream that replays the same result and breaks again every time
+    stops at retry_timeout: replayed results are not progress."""
+    import grpc
+
+    from opendsec._pb.opendsec.v1 import opendsec_pb2, types_pb2
+
+    req = opendsec_pb2.CreateSandboxesRequest(project="root", count=3, request_id="b" * 26)
+
+    def make():
+        async def stream():
+            yield opendsec_pb2.CreateSandboxResult(index=0, sandbox=types_pb2.Sandbox(id="e1." + "b" * 26 + "aa0"))
+            raise grpc.aio.AioRpcError(grpc.StatusCode.UNAVAILABLE, grpc.aio.Metadata(), grpc.aio.Metadata(), "edge gone")
+        return stream()
+
+    with pytest.raises(DSecError):
+        await asyncio.wait_for(DSecClient("127.0.0.1:1", "t", "root", retry_timeout=1)._batch(make, req, 3), 10)

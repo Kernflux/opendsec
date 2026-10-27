@@ -566,7 +566,11 @@ class DSecClient:
         while True:
             try:
                 async for x in make():
-                    r.progress()
+                    # A retry replays what earlier attempts made: only a
+                    # result not seen before is progress, else a stream that
+                    # keeps breaking after its replay would retry forever.
+                    if out[x.index] is None:
+                        r.progress()
                     out[x.index] = (Sandbox(self, x.sandbox) if not x.error_reason
                                     else DSecError(x.error_reason, x.error_message))
                 break
