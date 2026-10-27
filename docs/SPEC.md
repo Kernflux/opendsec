@@ -576,7 +576,7 @@ edge 处理每个运行时请求时：先透明 resume（如果 sandbox 处于�
   - `RevokeToken(principal, token_id)`。
   - `DeletePrincipal(principal)`：同时作废它的全部 token，删除它在所有项目上的授权。
   - `DeleteProject(path)`：要求没有子项目，并且当前用量为 0。
-- **吊销及时生效**：IAM 维护一个安全版本号 `security_epoch`，在吊销 token、撤销权限、删除主体或项目时递增。apiserver 每秒读取一次，发现变化就清空认证和鉴权缓存，因此吊销在约 1 秒内对全部 apiserver 实例生效，不再是原来最长 30 秒的缓存期。
+- **吊销及时生效**：IAM 维护一个安全版本号 `security_epoch`，在吊销 token、撤销权限、删除主体或项目时递增。apiserver 每秒读取一次，发现变化就清空认证和鉴权缓存，因此吊销在约 1 秒内对全部 apiserver 实例生效，不再是原来最长 30 秒的缓存期。清空时正在向 IAM 查询的结果只用于这一次调用，不写回缓存（缓存带一个代号，每次清空加一，查询前后代号不同就不写）；否则一个早于吊销的应答会再被缓存 30 秒（鉴权 5 秒）。（2026-10-27）
 
 ### 14.4 审计日志
 - 由 apiserver 记录，因为它是唯一的对外入口。格式是 JSON Lines，追加写入 `<audit_dir>/audit-<apiserver>-<启动时间>.log`，单个文件超过 `audit_max_mb`（默认 256）就换新文件，只保留最新的 `audit_keep` 个（默认 8，§33.2）。需要更久的审计记录，要把它们转存到别处。

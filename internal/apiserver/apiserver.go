@@ -54,6 +54,7 @@ type Server struct {
 	cacheMu   sync.Mutex
 	authn     map[string]authnEntry // token -> principal
 	authz     map[string]time.Time  // principal|project|perm -> expiry
+	authGen   uint64                // bumped by every flush: answers fetched before it are not cached
 	sbProject map[string]string     // sandbox id -> project (immutable)
 	epoch     uint64                // IAM security epoch the caches were filled under
 	epochSeen bool
@@ -200,6 +201,7 @@ func (s *Server) watchEpoch(ctx context.Context) {
 			if !s.epochSeen || r.Epoch != s.epoch {
 				s.authn = map[string]authnEntry{}
 				s.authz = map[string]time.Time{}
+				s.authGen++
 				s.epoch, s.epochSeen = r.Epoch, true
 			}
 			s.cacheMu.Unlock()
@@ -217,6 +219,7 @@ func (s *Server) flushAuth() {
 	s.cacheMu.Lock()
 	s.authn = map[string]authnEntry{}
 	s.authz = map[string]time.Time{}
+	s.authGen++
 	s.cacheMu.Unlock()
 }
 
@@ -238,6 +241,7 @@ func (s *Server) identify(ctx context.Context, tok string) (authnEntry, error) {
 		noteActor(ctx, e.principal)
 		return e, nil
 	}
+	gen := s.authGen
 	s.cacheMu.Unlock()
 	e, err := s.authenticate(ctx, tok)
 	if err != nil {
@@ -250,7 +254,11 @@ func (s *Server) identify(ctx context.Context, tok string) (authnEntry, error) {
 	if len(s.authn) > 100000 {
 		s.authn = map[string]authnEntry{}
 	}
-	s.authn[tok] = e
+	// A revocation flushed the cache while IAM answered: the answer may
+	// predate it, so it serves this call only.
+	if s.authGen == gen {
+		s.authn[tok] = e
+	}
 	s.cacheMu.Unlock()
 	noteActor(ctx, e.principal)
 	return e, nil
@@ -305,6 +313,7 @@ func (s *Server) authorize(ctx context.Context, principal, project, perm string)
 		s.cacheMu.Unlock()
 		return nil
 	}
+	gen := s.authGen
 	s.cacheMu.Unlock()
 	if _, err := s.iam.Authorize(ctx, &pb.AuthorizeRequest{Principal: principal, Project: project, Perm: perm}); err != nil {
 		return err
@@ -313,7 +322,9 @@ func (s *Server) authorize(ctx context.Context, principal, project, perm string)
 	if len(s.authz) > 100000 {
 		s.authz = map[string]time.Time{}
 	}
-	s.authz[key] = now.Add(authzCacheTTL)
+	if s.authGen == gen { // as in identify
+		s.authz[key] = now.Add(authzCacheTTL)
+	}
 	s.cacheMu.Unlock()
 	return nil
 }
