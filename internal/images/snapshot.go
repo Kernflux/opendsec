@@ -101,6 +101,7 @@ func (s *Store) PutSnapshot(snap *Snapshot) error {
 	if !ValidSnapshotID(snap.ID) {
 		return rpcutil.Err(rpcutil.Invalid, "bad snapshot id %q", snap.ID)
 	}
+	s.touch(snap.Layers, "")
 	for _, l := range snap.Layers {
 		if !ValidLayerID(l) || !s.HasLayer(l) {
 			return rpcutil.Err(rpcutil.NotFound, "layer %q (needed by snapshot %s) is not in the image store", l, snap.ID)

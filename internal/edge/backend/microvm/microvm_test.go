@@ -1047,3 +1047,28 @@ echo probed`
 		t.Fatalf("grading session afterwards: %q", got)
 	}
 }
+
+// TestInUseLayers (spec §24): a VM keeps the store layers it runs on while
+// it runs, as a container does: after its image is deleted and GC runs, it
+// can still be snapshotted. Stopped, it lets them go.
+func TestInUseLayers(t *testing.T) {
+	f := newBackend(t)
+	const img = "root/inuse:1"
+	storeImage(t, f.opt.Store, img)
+	ctx := context.Background()
+	a := f.create(t, &pb.SandboxSpec{Image: img, Resources: &pb.Resources{MemoryMb: 256}})
+	if err := f.opt.Store.DeleteManifest(img); err != nil {
+		t.Fatal(err)
+	}
+	res, err := f.opt.Store.GC(0, false)
+	if err != nil || len(res.Layers) != 0 {
+		t.Fatalf("GC removed the running VM's layers: %v %v", res, err)
+	}
+	if _, err := f.b.Snapshot(ctx, a, images.NewSnapshotID(), true); err != nil {
+		t.Fatalf("snapshot after its image went: %v", err)
+	}
+	f.b.Stop(ctx, a)
+	if h := f.opt.Store.InUseHolders(f.opt.EdgeID + ".microvm."); len(h) != 0 {
+		t.Fatalf("markers after the stop: %v", h)
+	}
+}

@@ -231,6 +231,9 @@ func (b *Backend) Create(ctx context.Context, sb *backend.Sandbox) (err error) {
 			return err
 		}
 	}
+	if err := b.markInUse(s); err != nil {
+		return err
+	}
 	s.cg, err = linuxrt.NewCgroup(b.cgRel, lease, linuxrt.Limits{
 		CPUCores: spec.Resources.GetCpuCores(), MemoryMB: memMB + b.opt.OverheadMB, BestEffort: spec.Qos == "BE",
 	})
@@ -479,7 +482,23 @@ func (b *Backend) teardown(s *sandbox) {
 	if s.uid != 0 {
 		b.freeUID(s.uid)
 	}
+	if b.opt.Store != nil && s.lease != "" {
+		b.opt.Store.ReleaseInUse(b.holder(s.lease))
+	}
 }
+
+// markInUse records the image layers VM s runs on, as the container
+// backend does (spec §24): while it runs, GC keeps them, so a snapshot or
+// fork of it still finds them after its image is deleted.
+func (b *Backend) markInUse(s *sandbox) error {
+	if b.opt.Store == nil || len(s.st.Image.Layers) == 0 {
+		return nil
+	}
+	return b.opt.Store.MarkInUse(b.holder(s.lease), s.st.Image.Layers)
+}
+
+// holder names a VM's in-use marker in the store.
+func (b *Backend) holder(lease string) string { return b.opt.EdgeID + "." + b.opt.Name + "." + lease }
 
 func (b *Backend) Stop(_ context.Context, sb *backend.Sandbox) error {
 	b.mu.Lock()
@@ -639,6 +658,9 @@ func (b *Backend) Adopt(ctx context.Context, sb *backend.Sandbox) (bool, error) 
 		return false, fmt.Errorf("runtime state: %w", err)
 	}
 	s.uid = s.st.UID
+	if err := b.markInUse(s); err != nil { // VMs started before the markers had none
+		return false, err
+	}
 	if h := s.st.Holder; h != nil && !h.Alive() {
 		return false, fmt.Errorf("the holder of its network namespace (pid %d) is gone", h.Pid)
 	}

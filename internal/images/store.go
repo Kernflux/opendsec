@@ -294,6 +294,7 @@ func (s *Store) PutManifest(m *Manifest, overwrite bool) error {
 	if len(m.Layers) > 125 { // overlayfs supports at most ~500 lowerdirs; keep stacks shallow
 		return rpcutil.Err(rpcutil.Invalid, "image %s has %d layers (max 125)", name, len(m.Layers))
 	}
+	s.touch(m.Layers, m.Snapshot)
 	for _, l := range m.Layers {
 		if !ValidLayerID(l) || !s.HasLayer(l) {
 			return rpcutil.Err(rpcutil.NotFound, "layer %q (needed by %s) is not in the image store", l, name)
@@ -311,7 +312,11 @@ func (s *Store) PutManifest(m *Manifest, overwrite bool) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	if err := writeJSON(path, m); err != nil {
+	// Without overwrite, the name is taken atomically: of two at once, one fails.
+	if err := writeJSONAs(path, m, overwrite); err != nil {
+		if errors.Is(err, fs.ErrExist) {
+			return rpcutil.Err(rpcutil.Invalid, "image %s already exists", name)
+		}
 		return err
 	}
 	s.mu.Lock()
@@ -427,7 +432,11 @@ func (s *Store) Lowerdirs(m *Manifest) ([]string, error) {
 
 // ---- helpers ---------------------------------------------------------------------
 
-func writeJSON(path string, v any) error {
+func writeJSON(path string, v any) error { return writeJSONAs(path, v, true) }
+
+// writeJSONAs writes v to path atomically; without replace, only if path
+// does not exist (a link of the written file: fs.ErrExist if it does).
+func writeJSONAs(path string, v any, replace bool) error {
 	b, err := json.MarshalIndent(v, "", " ")
 	if err != nil {
 		return err
@@ -448,7 +457,25 @@ func writeJSON(path string, v any) error {
 		return err
 	}
 	f.Close()
-	return os.Rename(tmp, path)
+	if replace {
+		return os.Rename(tmp, path)
+	}
+	err = os.Link(tmp, path)
+	os.Remove(tmp)
+	return err
+}
+
+// touch marks the layers (and snapshot) a record about to be written
+// names as used now: GC, which read the references before, checks again
+// right before it removes anything, and keeps what was touched since.
+func (s *Store) touch(layers []string, snapshot string) {
+	now := time.Now()
+	for _, l := range layers {
+		os.Chtimes(filepath.Join(s.layerDir(l), "meta.json"), now, now)
+	}
+	if snapshot != "" && ValidSnapshotID(snapshot) {
+		os.Chtimes(filepath.Join(s.snapshotDir(snapshot), "snapshot.json"), now, now)
+	}
 }
 
 // readJSON reads a JSON file of the store. On a network filesystem (NFS)

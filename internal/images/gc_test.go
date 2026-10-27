@@ -56,6 +56,11 @@ func TestGC(t *testing.T) {
 	}
 	st.PutManifest(&Manifest{Name: "root/warm:1", Layers: []string{ids["snap"]}, Snapshot: kept}, false)
 	st.MarkInUse("e1.container.lease", []string{ids["inuse"]})
+	for n, id := range ids { // writing the references touched them
+		if n != "young" {
+			age(filepath.Join(st.layerDir(id), "meta.json"))
+		}
+	}
 	res, err := st.GC(24*time.Hour, true)
 	if err != nil {
 		t.Fatal(err)
@@ -128,6 +133,7 @@ func TestGCStopsOnUnreadable(t *testing.T) {
 				st.MarkInUse("e1.container.lease", []string{id})
 				p = filepath.Join(st.inuseDir(), "e1.container.lease")
 			}
+			os.Chtimes(filepath.Join(st.layerDir(id), "meta.json"), old, old) // writing the reference touched it
 			os.WriteFile(p, []byte("{not json"), 0o644) // as a read failing midway
 			res, err := st.GC(24*time.Hour, false)
 			if err == nil || res != nil {
@@ -137,5 +143,71 @@ func TestGCStopsOnUnreadable(t *testing.T) {
 				t.Fatal("the layer went")
 			}
 		})
+	}
+}
+
+// TestGCRace: a layer or snapshot a record names that was written after GC
+// read the references (an image tagged from an old layer) stays.
+func TestGCRace(t *testing.T) {
+	st, err := NewStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-48 * time.Hour)
+	lid := "diff-aaaaaaaaaaaaaaaa"
+	w, _, _ := st.BeginLayer(lid)
+	if _, err := w.Commit(LayerMeta{}); err != nil {
+		t.Fatal(err)
+	}
+	sid := NewSnapshotID()
+	st.SnapshotDir(sid)
+	if err := st.PutSnapshot(&Snapshot{ID: sid, Layers: []string{lid}}); err != nil {
+		t.Fatal(err)
+	}
+	os.Chtimes(filepath.Join(st.layerDir(lid), "meta.json"), old, old)
+	os.Chtimes(filepath.Join(st.snapshotDir(sid), "snapshot.json"), old, old)
+	gcScanned = func() {
+		if err := st.PutManifest(&Manifest{Name: "root/late:1", Layers: []string{lid}, Snapshot: sid}, false); err != nil {
+			t.Fatal(err)
+		}
+	}
+	defer func() { gcScanned = nil }()
+	res, err := st.GC(24*time.Hour, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !st.HasLayer(lid) || len(res.Layers) != 0 {
+		t.Fatalf("a layer named since GC read the references was removed: %v", res.Layers)
+	}
+	if _, err := st.GetSnapshot(sid); err != nil || len(res.Snapshots) != 0 {
+		t.Fatalf("a snapshot named since was removed: %v %v", res.Snapshots, err)
+	}
+}
+
+// TestPutManifestOnce: of two creations of one name without overwrite, one
+// fails; the other's content stays.
+func TestPutManifestOnce(t *testing.T) {
+	st, _ := NewStore(t.TempDir())
+	var layers []string
+	for _, id := range []string{"diff-aaaaaaaaaaaaaaaa", "diff-bbbbbbbbbbbbbbbb"} {
+		w, _, _ := st.BeginLayer(id)
+		w.Commit(LayerMeta{})
+		layers = append(layers, id)
+	}
+	for range 20 {
+		name := "root/x:" + NewDiffLayerID()[5:13]
+		errs := make(chan error, 2)
+		for _, l := range layers {
+			go func() { errs <- st.PutManifest(&Manifest{Name: name, Layers: []string{l}}, false) }()
+		}
+		failed := 0
+		for range 2 {
+			if <-errs != nil {
+				failed++
+			}
+		}
+		if failed != 1 {
+			t.Fatalf("%d of two creations of %s failed", failed, name)
+		}
 	}
 }

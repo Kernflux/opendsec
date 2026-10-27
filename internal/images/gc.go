@@ -20,6 +20,10 @@ import (
 // only needed while its copies start; VM copies hold links to the files),
 // interrupted writes.
 
+// gcScanned, if set, runs between GC's reading of the references and its
+// removals (tests).
+var gcScanned func()
+
 func (s *Store) inuseDir() string { return filepath.Join(s.Root, "inuse") }
 
 // MarkInUse records that holder runs on layers.
@@ -27,6 +31,7 @@ func (s *Store) MarkInUse(holder string, layers []string) error {
 	if err := os.MkdirAll(s.inuseDir(), 0o755); err != nil {
 		return err
 	}
+	s.touch(layers, "")
 	return writeJSON(filepath.Join(s.inuseDir(), holder), layers)
 }
 
@@ -173,12 +178,35 @@ func (s *Store) GC(grace time.Duration, dryRun bool) (*GCResult, error) {
 	if dryRun {
 		return res, nil
 	}
+	if gcScanned != nil {
+		gcScanned()
+	}
+	// What a record written since the references were read names was
+	// touched (Store.touch): checked again here, it stays, with a kept
+	// snapshot's layers.
+	revived := map[string]bool{}
+	var snapsGone []string
 	for _, id := range res.Snapshots {
+		if !old(filepath.Join(s.snapshotDir(id), "snapshot.json")) {
+			if snap, err := s.GetSnapshot(id); err == nil {
+				for _, l := range snap.Layers {
+					revived[l] = true
+				}
+			}
+			continue
+		}
 		if err := s.DeleteSnapshot(id); err != nil {
 			return res, fmt.Errorf("snapshot %s: %w", id, err)
 		}
+		snapsGone = append(snapsGone, id)
 	}
+	res.Snapshots = snapsGone
+	var layersGone []string
 	for _, id := range res.Layers {
+		if revived[id] || !old(filepath.Join(s.layerDir(id), "meta.json")) {
+			continue
+		}
+		layersGone = append(layersGone, id)
 		// Rename first: a reader never sees half a layer.
 		tmp := s.layerDir(id) + ".tmp-gc"
 		if err := os.Rename(s.layerDir(id), tmp); err != nil {
@@ -186,6 +214,7 @@ func (s *Store) GC(grace time.Duration, dryRun bool) (*GCResult, error) {
 		}
 		os.RemoveAll(tmp)
 	}
+	res.Layers = layersGone
 	for _, p := range res.Partial {
 		os.RemoveAll(p)
 	}

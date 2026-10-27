@@ -331,6 +331,14 @@ func (b *Backend) CleanupExcept(keep map[string]bool) {
 			syscall.Kill(pid, syscall.SIGKILL)
 		}
 	}
+	if b.opt.Store != nil {
+		prefix := b.holder("")
+		for _, h := range b.opt.Store.InUseHolders(prefix) {
+			if !keep[strings.TrimPrefix(h, prefix)] {
+				b.opt.Store.ReleaseInUse(h)
+			}
+		}
+	}
 	for lease := range leases {
 		cg := &linuxrt.Cgroup{Path: filepath.Join(linuxrt.CgroupRoot, b.cgRel, lease)}
 		cg.Kill()
