@@ -132,7 +132,10 @@ func metadataOf(sb *pb.Sandbox) map[string]string {
 }
 
 // sandboxEnv is the envVars sandbox id was created with (applied to every
-// process), cached for a minute.
+// process), cached for a minute. The cache answers without asking the
+// apiserver, so it serves only what the caller's own request then
+// authorizes (a process start), never a reply by itself: GET /envs reads
+// the sandbox afresh.
 func (g *Gateway) sandboxEnv(ctx context.Context, id string) (map[string]string, error) {
 	g.envMu.Lock()
 	if e, ok := g.envs[id]; ok && time.Since(e.at) < time.Minute {
@@ -144,10 +147,7 @@ func (g *Gateway) sandboxEnv(ctx context.Context, id string) (map[string]string,
 	if err != nil {
 		return nil, err
 	}
-	env := map[string]string{}
-	if s := sb.GetSpec().GetLabels()[labelEnvs]; s != "" {
-		json.Unmarshal([]byte(s), &env)
-	}
+	env := envOf(sb)
 	g.envMu.Lock()
 	if len(g.envs) > 10000 {
 		g.envs = map[string]envEntry{}
@@ -155,6 +155,14 @@ func (g *Gateway) sandboxEnv(ctx context.Context, id string) (map[string]string,
 	g.envs[id] = envEntry{env, time.Now()}
 	g.envMu.Unlock()
 	return env, nil
+}
+
+func envOf(sb *pb.Sandbox) map[string]string {
+	env := map[string]string{}
+	if s := sb.GetSpec().GetLabels()[labelEnvs]; s != "" {
+		json.Unmarshal([]byte(s), &env)
+	}
+	return env
 }
 
 // ---- errors -----------------------------------------------------------------------

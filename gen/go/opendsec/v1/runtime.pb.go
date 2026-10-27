@@ -548,13 +548,16 @@ func (x *OutputRequest) GetWaitS() float64 {
 }
 
 type FileRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	SandboxId     string                 `protobuf:"bytes,1,opt,name=sandbox_id,json=sandboxId,proto3" json:"sandbox_id,omitempty"`
-	Session       string                 `protobuf:"bytes,2,opt,name=session,proto3" json:"session,omitempty"`
-	Path          string                 `protobuf:"bytes,3,opt,name=path,proto3" json:"path,omitempty"`
-	Offset        int64                  `protobuf:"varint,4,opt,name=offset,proto3" json:"offset,omitempty"`
-	Length        int64                  `protobuf:"varint,5,opt,name=length,proto3" json:"length,omitempty"`       // 0 = to end (capped)
-	Recursive     bool                   `protobuf:"varint,6,opt,name=recursive,proto3" json:"recursive,omitempty"` // Remove
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	SandboxId string                 `protobuf:"bytes,1,opt,name=sandbox_id,json=sandboxId,proto3" json:"sandbox_id,omitempty"`
+	Session   string                 `protobuf:"bytes,2,opt,name=session,proto3" json:"session,omitempty"`
+	Path      string                 `protobuf:"bytes,3,opt,name=path,proto3" json:"path,omitempty"`
+	Offset    int64                  `protobuf:"varint,4,opt,name=offset,proto3" json:"offset,omitempty"`
+	Length    int64                  `protobuf:"varint,5,opt,name=length,proto3" json:"length,omitempty"`       // 0 = to end (capped)
+	Recursive bool                   `protobuf:"varint,6,opt,name=recursive,proto3" json:"recursive,omitempty"` // Remove
+	// The session's user when this request starts the session (as in
+	// SubmitRequest.user): file operations run with its identity.
+	User          string `protobuf:"bytes,7,opt,name=user,proto3" json:"user,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -631,6 +634,13 @@ func (x *FileRequest) GetRecursive() bool {
 	return false
 }
 
+func (x *FileRequest) GetUser() string {
+	if x != nil {
+		return x.User
+	}
+	return ""
+}
+
 type FileData struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Data          []byte                 `protobuf:"bytes,1,opt,name=data,proto3" json:"data,omitempty"`
@@ -691,6 +701,7 @@ type WriteFileRequest struct {
 	Data          []byte                 `protobuf:"bytes,4,opt,name=data,proto3" json:"data,omitempty"`
 	Mode          uint32                 `protobuf:"varint,5,opt,name=mode,proto3" json:"mode,omitempty"` // 0 = 0644 for new files
 	Append        bool                   `protobuf:"varint,6,opt,name=append,proto3" json:"append,omitempty"`
+	User          string                 `protobuf:"bytes,7,opt,name=user,proto3" json:"user,omitempty"` // as FileRequest.user
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -765,6 +776,13 @@ func (x *WriteFileRequest) GetAppend() bool {
 		return x.Append
 	}
 	return false
+}
+
+func (x *WriteFileRequest) GetUser() string {
+	if x != nil {
+		return x.User
+	}
+	return ""
 }
 
 type FileInfo struct {
@@ -1193,6 +1211,7 @@ type MoveRequest struct {
 	Session       string                 `protobuf:"bytes,2,opt,name=session,proto3" json:"session,omitempty"`
 	Source        string                 `protobuf:"bytes,3,opt,name=source,proto3" json:"source,omitempty"`
 	Destination   string                 `protobuf:"bytes,4,opt,name=destination,proto3" json:"destination,omitempty"`
+	User          string                 `protobuf:"bytes,5,opt,name=user,proto3" json:"user,omitempty"` // as FileRequest.user
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1251,6 +1270,13 @@ func (x *MoveRequest) GetSource() string {
 func (x *MoveRequest) GetDestination() string {
 	if x != nil {
 		return x.Destination
+	}
+	return ""
+}
+
+func (x *MoveRequest) GetUser() string {
+	if x != nil {
+		return x.User
 	}
 	return ""
 }
@@ -2128,7 +2154,7 @@ const file_opendsec_v1_runtime_proto_rawDesc = "" +
 	"\x06cmd_id\x18\x03 \x01(\x03R\x05cmdId\x12#\n" +
 	"\rstdout_offset\x18\x04 \x01(\x03R\fstdoutOffset\x12#\n" +
 	"\rstderr_offset\x18\x05 \x01(\x03R\fstderrOffset\x12\x15\n" +
-	"\x06wait_s\x18\x06 \x01(\x01R\x05waitS\"\xa8\x01\n" +
+	"\x06wait_s\x18\x06 \x01(\x01R\x05waitS\"\xbc\x01\n" +
 	"\vFileRequest\x12\x1d\n" +
 	"\n" +
 	"sandbox_id\x18\x01 \x01(\tR\tsandboxId\x12\x18\n" +
@@ -2136,10 +2162,11 @@ const file_opendsec_v1_runtime_proto_rawDesc = "" +
 	"\x04path\x18\x03 \x01(\tR\x04path\x12\x16\n" +
 	"\x06offset\x18\x04 \x01(\x03R\x06offset\x12\x16\n" +
 	"\x06length\x18\x05 \x01(\x03R\x06length\x12\x1c\n" +
-	"\trecursive\x18\x06 \x01(\bR\trecursive\"2\n" +
+	"\trecursive\x18\x06 \x01(\bR\trecursive\x12\x12\n" +
+	"\x04user\x18\a \x01(\tR\x04user\"2\n" +
 	"\bFileData\x12\x12\n" +
 	"\x04data\x18\x01 \x01(\fR\x04data\x12\x12\n" +
-	"\x04size\x18\x02 \x01(\x03R\x04size\"\x9f\x01\n" +
+	"\x04size\x18\x02 \x01(\x03R\x04size\"\xb3\x01\n" +
 	"\x10WriteFileRequest\x12\x1d\n" +
 	"\n" +
 	"sandbox_id\x18\x01 \x01(\tR\tsandboxId\x12\x18\n" +
@@ -2147,7 +2174,8 @@ const file_opendsec_v1_runtime_proto_rawDesc = "" +
 	"\x04path\x18\x03 \x01(\tR\x04path\x12\x12\n" +
 	"\x04data\x18\x04 \x01(\fR\x04data\x12\x12\n" +
 	"\x04mode\x18\x05 \x01(\rR\x04mode\x12\x16\n" +
-	"\x06append\x18\x06 \x01(\bR\x06append\"p\n" +
+	"\x06append\x18\x06 \x01(\bR\x06append\x12\x12\n" +
+	"\x04user\x18\a \x01(\tR\x04user\"p\n" +
 	"\bFileInfo\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
 	"\x04type\x18\x02 \x01(\tR\x04type\x12\x12\n" +
@@ -2185,13 +2213,14 @@ const file_opendsec_v1_runtime_proto_rawDesc = "" +
 	"\bsessions\x18\x01 \x03(\tR\bsessions\"7\n" +
 	"\tHeartbeat\x12\x0e\n" +
 	"\x02at\x18\x01 \x01(\x01R\x02at\x12\x1a\n" +
-	"\bsessions\x18\x02 \x01(\x05R\bsessions\"\x80\x01\n" +
+	"\bsessions\x18\x02 \x01(\x05R\bsessions\"\x94\x01\n" +
 	"\vMoveRequest\x12\x1d\n" +
 	"\n" +
 	"sandbox_id\x18\x01 \x01(\tR\tsandboxId\x12\x18\n" +
 	"\asession\x18\x02 \x01(\tR\asession\x12\x16\n" +
 	"\x06source\x18\x03 \x01(\tR\x06source\x12 \n" +
-	"\vdestination\x18\x04 \x01(\tR\vdestination\"1\n" +
+	"\vdestination\x18\x04 \x01(\tR\vdestination\x12\x12\n" +
+	"\x04user\x18\x05 \x01(\tR\x04user\"1\n" +
 	"\aPtySize\x12\x12\n" +
 	"\x04cols\x18\x01 \x01(\rR\x04cols\x12\x12\n" +
 	"\x04rows\x18\x02 \x01(\rR\x04rows\"\xc5\x02\n" +

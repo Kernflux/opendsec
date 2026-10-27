@@ -120,6 +120,9 @@ message FileRequest {
   int64 offset = 4;
   int64 length = 5;                    // 0 = to end (capped)
   bool recursive = 6;                  // Remove
+  // The session's user when this request starts the session (as in
+  // SubmitRequest.user): file operations run with its identity.
+  string user = 7;
 }
 
 message FileData {
@@ -134,6 +137,7 @@ message WriteFileRequest {
   bytes data = 4;
   uint32 mode = 5;                     // 0 = 0644 for new files
   bool append = 6;
+  string user = 7;                     // as FileRequest.user
 }
 
 message FileInfo {
@@ -183,6 +187,7 @@ message MoveRequest {
   string session = 2;
   string source = 3;
   string destination = 4;
+  string user = 5;                     // as FileRequest.user
 }
 
 // ---- processes (spec §37) ----------------------------------------------------------

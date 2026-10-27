@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"google.golang.org/grpc/status"
@@ -35,9 +36,24 @@ func (g *Gateway) portProxy(id string, port int) http.Handler {
 			writeErr(w, http.StatusUnauthorized, "missing access token (E2B-Traffic-Access-Token or X-Access-Token): an OpenDsec token")
 			return
 		}
+		// Dialed here, on the request's context: the transport's own dials
+		// go on after the request is gone. The connection lives on.
+		conn, derr := g.dialPort(client.WithToken(context.Background(), key), r.Context(), id, port)
+		var once atomic.Pointer[net.Conn]
+		if derr == nil {
+			once.Store(&conn)
+			defer func() {
+				if c := once.Swap(nil); c != nil { // the transport never took it
+					(*c).Close()
+				}
+			}()
+		}
 		tr := &http.Transport{DisableKeepAlives: true, ResponseHeaderTimeout: 0,
 			DialContext: func(context.Context, string, string) (net.Conn, error) {
-				return g.dialPort(client.WithToken(context.Background(), key), id, port)
+				if c := once.Swap(nil); c != nil {
+					return *c, nil
+				}
+				return nil, cmpErr(derr, &dialErr{errors.New("connection already used")})
 			}}
 		rp := &httputil.ReverseProxy{
 			Rewrite: func(pr *httputil.ProxyRequest) {
@@ -72,8 +88,11 @@ func (g *Gateway) portProxy(id string, port int) http.Handler {
 
 // dialPort opens a connection to port of sandbox id; it waits for aether's
 // acknowledgement, so a closed port fails here.
-func (g *Gateway) dialPort(ctx context.Context, id string, port int) (net.Conn, error) {
+func (g *Gateway) dialPort(ctx, dial context.Context, id string, port int) (net.Conn, error) {
 	ctx, cancel := context.WithCancel(ctx)
+	// dial bounds only the dialing (a caller gone, a deadline): the
+	// connection itself lives on ctx.
+	stop := context.AfterFunc(dial, cancel)
 	st, err := g.api.ConnectPort(ctx)
 	if err == nil {
 		err = st.Send(&pb.PortData{SandboxId: id, Port: uint32(port)})
@@ -81,11 +100,23 @@ func (g *Gateway) dialPort(ctx context.Context, id string, port int) (net.Conn, 
 	if err == nil {
 		_, err = st.Recv() // the acknowledgement
 	}
+	if !stop() && err == nil {
+		err = dial.Err()
+	}
 	if err != nil {
 		cancel()
 		return nil, &dialErr{err}
 	}
 	return &portConn{st: st, cancel: cancel}, nil
+}
+
+func cmpErr(errs ...error) error {
+	for _, err := range errs {
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // dialErr keeps the apiserver's status for the error handler (net/http

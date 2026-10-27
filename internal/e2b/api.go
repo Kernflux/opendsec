@@ -136,6 +136,13 @@ func (g *Gateway) full(sb *pb.Sandbox, key string) sandboxDetail {
 	return d
 }
 
+// endsAfter reports whether sb's lifetime (ttl_max_s; 0 = none) lasts
+// beyond t.
+func endsAfter(sb *pb.Sandbox, t time.Time) bool {
+	ttl := sb.GetSpec().GetTtlMaxS()
+	return ttl <= 0 || time.Unix(0, int64(sb.CreatedAt*1e9)).Add(time.Duration(ttl)*time.Second).After(t)
+}
+
 func (g *Gateway) detail(sb *pb.Sandbox, key string) sandboxDetail {
 	spec := sb.GetSpec()
 	started := time.Unix(0, int64(sb.CreatedAt*1e9)).UTC()
@@ -287,7 +294,9 @@ func (g *Gateway) start(ctx context.Context, id string, t config.E2BTemplate, en
 	}
 	deadline := time.Now().Add(timeout)
 	for {
-		c, err := g.dialPort(ctx, id, t.ReadyPort)
+		probe, cancel := context.WithDeadline(ctx, deadline) // a probe hanging is bounded too
+		c, err := g.dialPort(ctx, probe, id, t.ReadyPort)
+		cancel()
 		if err == nil {
 			c.Close()
 			return nil
@@ -468,9 +477,11 @@ func (g *Gateway) connect(ctx context.Context, w http.ResponseWriter, r *http.Re
 		}
 		code = http.StatusCreated
 	}
-	if req.Timeout > 0 {
+	// E2B's connect only extends the sandbox's life: a shorter timeout than
+	// what is left keeps the current end.
+	if t := g.timeout(req.Timeout); t > 0 && !endsAfter(sb, time.Now().Add(time.Duration(t)*time.Second)) {
 		var err error
-		if sb, err = g.api.SetSandboxTimeout(ctx, &pb.SetTimeoutRequest{SandboxId: sb.Id, TimeoutS: g.timeout(req.Timeout)}); err != nil {
+		if sb, err = g.api.SetSandboxTimeout(ctx, &pb.SetTimeoutRequest{SandboxId: sb.Id, TimeoutS: t}); err != nil {
 			writeAPIErr(w, err)
 			return
 		}

@@ -1,6 +1,7 @@
 package e2b
 
 import (
+	"compress/gzip"
 	"context"
 	"encoding/base64"
 	"errors"
@@ -22,6 +23,7 @@ import (
 	"github.com/kernflux/opendsec/gen/go/e2b/envd/process"
 	"github.com/kernflux/opendsec/gen/go/e2b/envd/process/processconnect"
 	pb "github.com/kernflux/opendsec/gen/go/opendsec/v1"
+	"github.com/kernflux/opendsec/internal/rpcutil"
 	"github.com/kernflux/opendsec/pkg/client"
 )
 
@@ -40,37 +42,68 @@ func (g *Gateway) envdHandler() http.Handler {
 	mux.HandleFunc("GET /files", g.download)
 	mux.HandleFunc("POST /files", g.upload)
 	mux.HandleFunc("GET /envs", func(w http.ResponseWriter, r *http.Request) {
-		env, err := g.sandboxEnv(r.Context(), sandboxOf(r.Context()))
+		sb, err := g.api.GetSandbox(r.Context(), &pb.SandboxRef{Id: sandboxOf(r.Context())})
 		if err != nil {
 			writeAPIErr(w, err)
 			return
 		}
-		writeJSON(w, http.StatusOK, env)
+		writeJSON(w, http.StatusOK, envOf(sb))
 	})
 	mux.HandleFunc("POST /init", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) })
 	mux.HandleFunc("GET /metrics", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"cpu_count": 0, "cpu_used_pct": 0, "mem_total": 0, "mem_used": 0, "ts": time.Now().Unix()})
 	})
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		key := apiKey(r)
 		if r.URL.Path == "/health" {
-			w.WriteHeader(http.StatusNoContent)
+			g.health(w, r, key)
 			return
 		}
-		key := apiKey(r)
 		if key == "" {
 			writeErr(w, http.StatusUnauthorized, "missing access token (X-Access-Token): an OpenDsec token")
 			return
 		}
 		ctx := client.WithToken(r.Context(), key)
-		if u := basicUser(r.Header.Get("Authorization")); u != "" {
+		if u := cmpOr(basicUser(r.Header.Get("Authorization")), r.URL.Query().Get("username")); u != "" {
 			ctx = context.WithValue(ctx, userKey{}, u)
 		}
 		mux.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 
+// health answers envd's /health for the sandbox: 204 while it runs, 502
+// (what E2B's proxy answers, and the SDKs' is_running reads as false) once
+// it is gone or paused. Without a token there is nothing to ask: 204.
+func (g *Gateway) health(w http.ResponseWriter, r *http.Request, key string) {
+	if key != "" {
+		sb, err := g.api.GetSandbox(client.WithToken(r.Context(), key), &pb.SandboxRef{Id: sandboxOf(r.Context())})
+		switch {
+		case rpcutil.Reason(err) == rpcutil.NotFound:
+			writeErr(w, http.StatusBadGateway, "sandbox not found")
+			return
+		case err != nil:
+			writeAPIErr(w, err)
+			return
+		case sb.State != pb.SandboxState_RUNNING && sb.State != pb.SandboxState_CREATING:
+			writeErr(w, http.StatusBadGateway, "sandbox is "+strings.ToLower(sb.State.String()))
+			return
+		}
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func sandboxOf(ctx context.Context) string { s, _ := ctx.Value(sandboxKey{}).(string); return s }
 func userOf(ctx context.Context) string    { u, _ := ctx.Value(userKey{}).(string); return u }
+
+// fileSession is the agent session file operations run in: one per user
+// the SDK names, started as that user, so files are read and written with
+// its identity (a session keeps its user; "" = the default session).
+func fileSession(ctx context.Context) string {
+	if u := userOf(ctx); u != "" {
+		return "e2b-user-" + strings.ReplaceAll(u, ":", "_")
+	}
+	return ""
+}
 
 // basicUser is the user of envd's "Authorization: Basic base64(user:)".
 func basicUser(h string) string {
@@ -320,7 +353,7 @@ func entry(p string, fi *pb.FileInfo) *filesystem.EntryInfo {
 }
 
 func (s *filesystemService) Stat(ctx context.Context, req *connect.Request[filesystem.StatRequest]) (*connect.Response[filesystem.StatResponse], error) {
-	fi, err := s.g.api.Stat(ctx, &pb.FileRequest{SandboxId: sandboxOf(ctx), Path: req.Msg.Path})
+	fi, err := s.g.api.Stat(ctx, &pb.FileRequest{SandboxId: sandboxOf(ctx), Session: fileSession(ctx), User: userOf(ctx), Path: req.Msg.Path})
 	if err != nil {
 		return nil, connectErr(err)
 	}
@@ -329,10 +362,10 @@ func (s *filesystemService) Stat(ctx context.Context, req *connect.Request[files
 
 func (s *filesystemService) MakeDir(ctx context.Context, req *connect.Request[filesystem.MakeDirRequest]) (*connect.Response[filesystem.MakeDirResponse], error) {
 	id := sandboxOf(ctx)
-	if _, err := s.g.api.Stat(ctx, &pb.FileRequest{SandboxId: id, Path: req.Msg.Path}); err == nil {
+	if _, err := s.g.api.Stat(ctx, &pb.FileRequest{SandboxId: id, Session: fileSession(ctx), User: userOf(ctx), Path: req.Msg.Path}); err == nil {
 		return nil, connect.NewError(connect.CodeAlreadyExists, errors.New(req.Msg.Path+" already exists"))
 	}
-	fi, err := s.g.api.MakeDir(ctx, &pb.FileRequest{SandboxId: id, Path: req.Msg.Path})
+	fi, err := s.g.api.MakeDir(ctx, &pb.FileRequest{SandboxId: id, Session: fileSession(ctx), User: userOf(ctx), Path: req.Msg.Path})
 	if err != nil {
 		return nil, connectErr(err)
 	}
@@ -340,7 +373,7 @@ func (s *filesystemService) MakeDir(ctx context.Context, req *connect.Request[fi
 }
 
 func (s *filesystemService) Move(ctx context.Context, req *connect.Request[filesystem.MoveRequest]) (*connect.Response[filesystem.MoveResponse], error) {
-	fi, err := s.g.api.Move(ctx, &pb.MoveRequest{SandboxId: sandboxOf(ctx), Source: req.Msg.Source, Destination: req.Msg.Destination})
+	fi, err := s.g.api.Move(ctx, &pb.MoveRequest{SandboxId: sandboxOf(ctx), Session: fileSession(ctx), User: userOf(ctx), Source: req.Msg.Source, Destination: req.Msg.Destination})
 	if err != nil {
 		return nil, connectErr(err)
 	}
@@ -355,7 +388,7 @@ func (s *filesystemService) ListDir(ctx context.Context, req *connect.Request[fi
 	depth := int(max(req.Msg.Depth, 1))
 	var walk func(dir string, level int) error
 	walk = func(dir string, level int) error {
-		l, err := s.g.api.ListDir(ctx, &pb.FileRequest{SandboxId: id, Path: dir})
+		l, err := s.g.api.ListDir(ctx, &pb.FileRequest{SandboxId: id, Session: fileSession(ctx), User: userOf(ctx), Path: dir})
 		if err != nil {
 			return err
 		}
@@ -380,7 +413,7 @@ func (s *filesystemService) ListDir(ctx context.Context, req *connect.Request[fi
 }
 
 func (s *filesystemService) Remove(ctx context.Context, req *connect.Request[filesystem.RemoveRequest]) (*connect.Response[filesystem.RemoveResponse], error) {
-	if _, err := s.g.api.Remove(ctx, &pb.FileRequest{SandboxId: sandboxOf(ctx), Path: req.Msg.Path, Recursive: true}); err != nil {
+	if _, err := s.g.api.Remove(ctx, &pb.FileRequest{SandboxId: sandboxOf(ctx), Session: fileSession(ctx), User: userOf(ctx), Path: req.Msg.Path, Recursive: true}); err != nil {
 		return nil, connectErr(err)
 	}
 	return connect.NewResponse(&filesystem.RemoveResponse{}), nil
@@ -415,7 +448,7 @@ func (g *Gateway) download(w http.ResponseWriter, r *http.Request) {
 	ctx, id, p := r.Context(), sandboxOf(r.Context()), r.URL.Query().Get("path")
 	var off int64
 	for {
-		d, err := g.api.ReadFile(ctx, &pb.FileRequest{SandboxId: id, Path: p, Offset: off, Length: fileChunk})
+		d, err := g.api.ReadFile(ctx, &pb.FileRequest{SandboxId: id, Session: fileSession(ctx), User: userOf(ctx), Path: p, Offset: off, Length: fileChunk})
 		if err != nil {
 			if off == 0 {
 				writeAPIErr(w, err)
@@ -457,7 +490,7 @@ func (g *Gateway) upload(w http.ResponseWriter, r *http.Request) {
 				return rerr
 			}
 			if n > 0 || first {
-				if _, err := g.api.WriteFile(ctx, &pb.WriteFileRequest{SandboxId: id, Path: p, Data: buf[:n], Append: !first}); err != nil {
+				if _, err := g.api.WriteFile(ctx, &pb.WriteFileRequest{SandboxId: id, Session: fileSession(ctx), User: userOf(ctx), Path: p, Data: buf[:n], Append: !first}); err != nil {
 					return err
 				}
 			}
@@ -466,6 +499,20 @@ func (g *Gateway) upload(w http.ResponseWriter, r *http.Request) {
 				return nil
 			}
 		}
+	}
+	switch enc := r.Header.Get("Content-Encoding"); enc {
+	case "", "identity":
+	case "gzip":
+		zr, err := gzip.NewReader(r.Body)
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, "gzip body: "+err.Error())
+			return
+		}
+		defer zr.Close()
+		r.Body = zr
+	default:
+		writeErr(w, http.StatusUnsupportedMediaType, "unsupported Content-Encoding "+enc)
+		return
 	}
 	mt, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type"))
 	if mt != "multipart/form-data" {
@@ -497,7 +544,10 @@ func (g *Gateway) upload(w http.ResponseWriter, r *http.Request) {
 		if part.FormName() != "file" {
 			continue
 		}
-		p := cmpOr(target, part.FileName())
+		// The SDKs send each file's path as its file name; Part.FileName
+		// keeps only the base, which would put every "x" in one place.
+		_, params, _ := mime.ParseMediaType(part.Header.Get("Content-Disposition"))
+		p := cmpOr(target, params["filename"])
 		if p == "" {
 			writeErr(w, http.StatusBadRequest, "path required")
 			return

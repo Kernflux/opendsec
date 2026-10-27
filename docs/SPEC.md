@@ -2987,6 +2987,17 @@ E2B 的 `sandbox.fork()`、`create_snapshot()`、`Sandbox.create(snapshot_id)` �
   - 不支持的拒绝项被拒绝；
   - 信息里返回网络配置。
 
+### 37.12 修订（2026-10-27）
+
+- `GET /envs` 每次都向 apiserver 读取 sandbox。之前命中缓存时直接返回，任何非空 token 都能读到创建时的环境变量。缓存只留给启动进程用，启动进程本身要 apiserver 鉴权。
+- 多文件上传按 part 的完整文件名写入（SDK 把路径放在 filename 里）。之前 `Part.FileName()` 只保留文件名，不同目录的同名文件会互相覆盖。
+- 上传支持 `Content-Encoding: gzip`，解压后写入（我们报告 envd 0.5.7，SDK 的 `gzip=True` 会用到）；其他编码返回 415。
+- sandbox 的 `/health` 带 token 时查询 sandbox：运行中返回 204；不存在、已结束或已暂停返回 502，SDK 的 `is_running()` 据此返回 False。没有 token 时仍返回 204。
+- `connect` 只延长寿命，和 E2B 一致：新的截止时间早于现在的就不改。
+- 文件操作按 SDK 指定的用户执行（Basic 认证里的用户，或 HTTP 文件接口的 `username` 参数）：`FileRequest`、`WriteFileRequest`、`MoveRequest` 新增 `user`，aether 按它启动会话；网关给每个用户用一个会话 `e2b-user-<用户>`，chronus 以该用户的身份读写。旧版 agent 忽略这个字段，仍以默认用户执行。
+- 就绪探测的每一次拨号都受 `ready_timeout_s` 限制；端口访问在处理请求时用请求自己的 context 拨号，调用方断开后拨号随之取消（之前在 `Background()` 上拨号，取消的请求会在后台累积）。
+- 测试：`TestE2BGateway`（e2e，容器）覆盖前六项，在旧代码上逐项失败；`internal/e2b` 的 `TestPortDialCancelled`、`TestReadyProbeBounded` 用一个永不确认端口连接的假 apiserver。
+
 ## 38. 离线安装（2026-10-23）
 
 国内私有化部署的机房大多不能访问外网。原来的安装要在线获取：程序（从源码构建，或下载依赖打包）、edge 用的系统软件包（apt）、基础镜像（镜像仓库）、Python SDK 的依赖（pip）。离线安装包把这些一次带齐。

@@ -206,7 +206,7 @@ func (a *Aether) GetOutput(ctx context.Context, r *pb.OutputRequest) (*pb.ExecRe
 }
 
 func (a *Aether) ReadFile(ctx context.Context, r *pb.FileRequest) (*pb.FileData, error) {
-	s, err := a.session(ctx, r.Session)
+	s, err := a.sessionAs(ctx, r.Session, r.User)
 	if err != nil {
 		return nil, err
 	}
@@ -214,7 +214,7 @@ func (a *Aether) ReadFile(ctx context.Context, r *pb.FileRequest) (*pb.FileData,
 }
 
 func (a *Aether) WriteFile(ctx context.Context, r *pb.WriteFileRequest) (*pb.FileInfo, error) {
-	s, err := a.session(ctx, r.Session)
+	s, err := a.sessionAs(ctx, r.Session, r.User)
 	if err != nil {
 		return nil, err
 	}
@@ -222,7 +222,7 @@ func (a *Aether) WriteFile(ctx context.Context, r *pb.WriteFileRequest) (*pb.Fil
 }
 
 func (a *Aether) ListDir(ctx context.Context, r *pb.FileRequest) (*pb.DirListing, error) {
-	s, err := a.session(ctx, r.Session)
+	s, err := a.sessionAs(ctx, r.Session, r.User)
 	if err != nil {
 		return nil, err
 	}
@@ -230,7 +230,7 @@ func (a *Aether) ListDir(ctx context.Context, r *pb.FileRequest) (*pb.DirListing
 }
 
 func (a *Aether) Stat(ctx context.Context, r *pb.FileRequest) (*pb.FileInfo, error) {
-	s, err := a.session(ctx, r.Session)
+	s, err := a.sessionAs(ctx, r.Session, r.User)
 	if err != nil {
 		return nil, err
 	}
@@ -238,7 +238,7 @@ func (a *Aether) Stat(ctx context.Context, r *pb.FileRequest) (*pb.FileInfo, err
 }
 
 func (a *Aether) Remove(ctx context.Context, r *pb.FileRequest) (*pb.Empty, error) {
-	s, err := a.session(ctx, r.Session)
+	s, err := a.sessionAs(ctx, r.Session, r.User)
 	if err != nil {
 		return nil, err
 	}
@@ -266,7 +266,7 @@ func (a *Aether) ExecStream(r *pb.ExecRequest, st pb.Runtime_ExecStreamServer) e
 }
 
 func (a *Aether) MakeDir(ctx context.Context, r *pb.FileRequest) (*pb.FileInfo, error) {
-	s, err := a.session(ctx, r.Session)
+	s, err := a.sessionAs(ctx, r.Session, r.User)
 	if err != nil {
 		return nil, err
 	}
@@ -274,7 +274,7 @@ func (a *Aether) MakeDir(ctx context.Context, r *pb.FileRequest) (*pb.FileInfo, 
 }
 
 func (a *Aether) Move(ctx context.Context, r *pb.MoveRequest) (*pb.FileInfo, error) {
-	s, err := a.session(ctx, r.Session)
+	s, err := a.sessionAs(ctx, r.Session, r.User)
 	if err != nil {
 		return nil, err
 	}
