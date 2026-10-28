@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/kernflux/opendsec/internal/edge/backend"
 )
 
 // fcAPI talks to one Firecracker process over its API socket.
@@ -20,8 +22,7 @@ type fcAPI struct {
 func newFCAPI(sock string) *fcAPI {
 	return &fcAPI{c: &http.Client{Timeout: 30 * time.Second, Transport: &http.Transport{
 		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-			var d net.Dialer
-			return d.DialContext(ctx, "unix", sock)
+			return backend.DialUnix(ctx, sock)
 		},
 	}}}
 }
@@ -72,8 +73,7 @@ func (a *fcAPI) state(ctx context.Context) (string, error) {
 // dialVsock connects to guest port through Firecracker's vsock Unix socket
 // (host-initiated connections: "CONNECT <port>\n", answered "OK <n>\n").
 func dialVsock(ctx context.Context, uds string, port uint32) (net.Conn, error) {
-	var d net.Dialer
-	c, err := d.DialContext(ctx, "unix", uds)
+	c, err := backend.DialUnix(ctx, uds)
 	if err != nil {
 		return nil, err
 	}

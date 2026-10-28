@@ -8,6 +8,8 @@ import (
 	"net"
 	"time"
 
+	"github.com/kernflux/opendsec/internal/edge/backend"
+
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/backoff"
 	"google.golang.org/grpc/credentials/insecure"
@@ -18,8 +20,7 @@ import (
 // qmpCall runs one QMP command on the socket at path and returns its
 // result.
 func qmpCall(ctx context.Context, path, cmd string) (json.RawMessage, error) {
-	var d net.Dialer
-	c, err := d.DialContext(ctx, "unix", path)
+	c, err := backend.DialUnix(ctx, path)
 	if err != nil {
 		return nil, err
 	}

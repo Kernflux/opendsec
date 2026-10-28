@@ -188,6 +188,14 @@ docs/OPERATIONS.md §6.4.
   they go to the image store.
 
 ### Fixed
+- **No microVM could start on a node with a long host name**: a microVM's
+  vsock and API sockets sit under the edge's state directory, which holds
+  the edge's name (the host name, on a quickstart node). With a cloud
+  machine's name such as `iv-yey8f4xjb46dqxo1uo1e` their paths passed the
+  108 bytes a unix socket address allows, connecting failed with `invalid
+  argument`, and every microVM failed with `aether did not listen within
+  30s`. The edge now reaches such a socket through its directory's file
+  descriptor; full VMs' QEMU binds its QMP socket by a relative path.
 - **Files and command output over 4 MB failed through the apiserver**: the
   apiserver, the edge and the internal clients kept gRPC's 4 MB message
   limit, so `write_file` and `read_file` of a larger file, and `run_shell`

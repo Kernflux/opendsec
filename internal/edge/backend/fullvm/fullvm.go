@@ -466,7 +466,9 @@ func (b *Backend) startQEMU(s *sandbox, image string, memMB int64, vcpus int) er
 		"-serial", "file:" + filepath.Join(s.dir, "console.log"),
 		"-kernel", b.opt.Kernel, "-append", bootArgs,
 		"-device", fmt.Sprintf("vhost-vsock-pci,guest-cid=%d", s.st.CID),
-		"-qmp", "unix:" + filepath.Join(s.dir, "qmp.sock") + ",server=on,wait=off",
+		// Relative to the working directory (s.dir): the absolute path can be
+		// longer than a unix socket address allows (backend.DialUnix).
+		"-qmp", "unix:qmp.sock,server=on,wait=off",
 		"-sandbox", "on,obsolete=deny,elevateprivileges=deny,spawn=deny,resourcecontrol=deny",
 	}
 	args = append(args, drive("agents", b.agents, true)...)
@@ -491,6 +493,7 @@ func (b *Backend) startQEMU(s *sandbox, image string, memMB int64, vcpus int) er
 	}
 	defer logf.Close()
 	cmd := exec.Command(b.opt.QEMU, args...)
+	cmd.Dir = s.dir
 	cmd.Stdout, cmd.Stderr = logf, logf
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Credential:  &syscall.Credential{Uid: uint32(s.st.UID), Gid: uint32(s.st.UID), Groups: []uint32{uint32(b.kvmGID)}},
