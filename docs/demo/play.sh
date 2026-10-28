@@ -1,18 +1,20 @@
 #!/bin/bash
-# Drives the README demo recording (see render.py): types each
-# command, then runs it for real. The quickstart step is not rerun: the
-# tail of its log from the run on this machine stands in for its 8 minutes.
+# Drives the README demo recording (see render.py): types each command,
+# then runs exactly that line. Before it, as a reader's shell would be:
+# the quickstart has run in /root/opendsec, the SDK is installed in its
+# .venv (activated) and demo.py sits next to it. The quickstart itself is
+# not rerun: the tail of its log stands in for its 8 minutes.
 cd /root/opendsec
+cp "$(dirname "$0")/demo.py" demo.py
+. .venv/bin/activate
 type() { printf '\033[1;32m$\033[0m '; for ((i = 0; i < ${#1}; i++)); do printf '%s' "${1:i:1}"; sleep 0.04; done; sleep 0.4; echo; }
+run() { type "$1"; eval "$1"; }
 type "deploy/quickstart.sh"
 printf '\033[2m# ... 8 minutes later (8-core VM): built, installed, python:3.12 imported ...\033[0m\n'
 grep -E '\[ok\] (container|microvm) sandbox|OpenDsec is running' /root/qs.log
 sleep 1.5
-type ". /root/opendsec-ops/demo.env"
-. /root/opendsec-ops/demo.env
-type "cat demo.py"
-cat /root/demo.py
+run ". /root/opendsec-ops/demo.env"
+run "cat demo.py"
 sleep 5
-type "python demo.py"
-.venv/bin/python /root/demo.py
+run "python demo.py"
 sleep 3
