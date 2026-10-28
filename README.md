@@ -2,7 +2,7 @@
 
 English | [中文](README.zh-CN.md) | [Website](https://kernflux.github.io/) | [Docs](https://kernflux.github.io/en/docs/)
 
-<p align="center"><img src="docs/demo/demo.svg" alt="deploy/quickstart.sh, then a microVM sandbox runs print(6*7), prints 42, and forks into four copies" width="800"><br><sub>Recorded on an 8-core VM. The 8-minute quickstart is cut; everything after it runs in real time. 0.76 s is the whole API call (placement, boot, agent ready); the 0.1 s cold start below is the VM boot alone. Script and renderer: <a href="docs/demo/">docs/demo/</a>.</sub></p>
+<p align="center"><img src="docs/demo/demo.svg" alt="deploy/quickstart.sh, then a microVM sandbox runs print(6*7), prints 42, and forks into four copies" width="800"><br><sub>Recorded on a bare-metal server, sandbox state on a local NVMe disk with XFS (the fork copies memory files by reflink). The 6-minute quickstart is cut; everything after it runs in real time. 0.16 s is the whole API call (placement, boot, agent ready); the 0.1 s cold start below is the VM boot alone. Script and renderer: <a href="docs/demo/">docs/demo/</a>.</sub></p>
 
 OpenDsec runs large numbers of isolated sandboxes (Firecracker microVMs, containers, full QEMU VMs) for reinforcement-learning rollouts and code-executing agents.
 
