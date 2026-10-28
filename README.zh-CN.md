@@ -2,6 +2,8 @@
 
 [English](README.md) | 中文 | [主页](https://kernflux.github.io/) | [文档](https://kernflux.github.io/docs/)
 
+<p align="center"><img src="docs/demo/demo.svg" alt="deploy/quickstart.sh, then a microVM sandbox runs print(6*7), prints 42, and forks into four copies" width="800"><br><sub>在一台 8 核虚拟机上录制。quickstart 的 8 分钟剪掉了，其余部分按实际速度播放。0.75 秒是整个 API 调用的时间（调度、启动、agent 就绪），下文的 0.1 秒冷启动只算 VM 启动本身。录制脚本和渲染程序在 <a href="docs/demo/">docs/demo/</a>。</sub></p>
+
 > **本项目借鉴自 DeepSeek 的 DSec 论文**：[*DeepSeek Elastic Compute (DSec): A Sandbox Infrastructure for Effective Agentic Training at Scale*](https://arxiv.org/abs/2609.22978)（arXiv:2609.22978）。
 >
 > - OpenDsec 是按照这篇论文描述的系统做的开源实现，整体架构和大部分设计都来自论文，详见下文「借鉴自 DSec 论文」。

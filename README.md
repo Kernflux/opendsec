@@ -2,6 +2,8 @@
 
 English | [中文](README.zh-CN.md) | [Website](https://kernflux.github.io/) | [Docs](https://kernflux.github.io/en/docs/)
 
+<p align="center"><img src="docs/demo/demo.svg" alt="deploy/quickstart.sh, then a microVM sandbox runs print(6*7), prints 42, and forks into four copies" width="800"><br><sub>Recorded on an 8-core VM. The 8-minute quickstart is cut; everything after it runs in real time. 0.75 s is the whole API call (placement, boot, agent ready); the 0.1 s cold start below is the VM boot alone. Script and renderer: <a href="docs/demo/">docs/demo/</a>.</sub></p>
+
 OpenDsec runs large numbers of isolated sandboxes (Firecracker microVMs, containers, full QEMU VMs) for reinforcement-learning rollouts and code-executing agents.
 
 > **Based on DeepSeek's DSec paper.** OpenDsec is an open-source implementation of the system described in [*DeepSeek Elastic Compute (DSec): A Sandbox Infrastructure for Effective Agentic Training at Scale*](https://arxiv.org/abs/2609.22978) (arXiv:2609.22978). Its architecture and most of its design come from that paper; see [Based on the DSec paper](#based-on-the-dsec-paper) below. It is an independent project: **not affiliated with, endorsed by, or maintained by DeepSeek**, and it contains no DeepSeek code.
