@@ -12,7 +12,7 @@
 | cgroups | v2 (unified) | `stat -fc %T /sys/fs/cgroup` prints `cgroup2fs` |
 | File systems | overlay | `grep overlay /proc/filesystems` |
 | Commands | `curl`, `tar`, `sha256sum`, `mkfs.ext4`, `ip`, `awk` (in Ubuntu by default) | — |
-| Build | Go 1.27 or newer and `make` (not needed with prebuilt binaries or `--release`) | `go version` |
+| Build | Go 1.27 or newer and `make` (not needed with `--release`) | `go version` |
 | Privileges | root | — |
 | Ports | 7001, 7002, 7011, 7100, 7201, 7400, 9461–9464 and 9467 free | `ss -ltn` |
 | microVMs | `/dev/kvm`: bare metal, or a cloud VM with nested virtualization. Without it, containers only | `ls /dev/kvm` |

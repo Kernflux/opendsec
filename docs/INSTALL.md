@@ -12,7 +12,7 @@
 | cgroup | v2（unified） | `stat -fc %T /sys/fs/cgroup` 输出 `cgroup2fs` |
 | 文件系统 | 支持 overlay | `grep overlay /proc/filesystems` |
 | 命令 | `curl`、`tar`、`sha256sum`、`mkfs.ext4`、`ip`、`awk`（Ubuntu 自带） | — |
-| 编译 | Go 1.27 以上、`make`（使用预编译程序或 `--release` 时不需要） | `go version` |
+| 编译 | Go 1.27 以上、`make`（使用 `--release` 时不需要） | `go version` |
 | 权限 | root | — |
 | 端口 | 7001、7002、7011、7100、7201、7400、9461–9464、9467 未被占用 | `ss -ltn` |
 | microVM | `/dev/kvm`：裸金属，或开启了嵌套虚拟化的云主机。没有时只装容器 | `ls /dev/kvm` |

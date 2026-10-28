@@ -196,6 +196,22 @@ docs/OPERATIONS.md §6.4.
   argument`, and every microVM failed with `aether did not listen within
   30s`. The edge now reaches such a socket through its directory's file
   descriptor; full VMs' QEMU binds its QMP socket by a relative path.
+- **`deploy/quickstart.sh` installed stale binaries**: it built only when
+  `bin/opendsecctl` was missing, so a rerun after `git pull` installed the
+  binaries of the earlier run. It now always builds (Go rebuilds only what
+  changed). Packaging needs Go anyway, so binaries left in `bin/` never
+  spared it; and a packaging failure is no longer reported as the guest
+  kernel failing to download.
+- **`deploy/quickstart.sh` warns when the sandbox state has no reflink**
+  (ext4, say): forking a microVM then copies its memory, about 1 s instead
+  of 0.1 s on XFS.
+- **`deploy/quickstart.sh --uninstall` unmounted a disk mounted for the
+  state** (at `/var/lib/opendsec`, say): it lazily unmounted every mount
+  with `opendsec` in its path, then removed the directory under it, so the
+  disk's contents survived and showed up again when it was remounted; a
+  later quickstart then failed with `project "root/demo" exists`. It now
+  keeps the file systems in fstab and empties them; an image store that is
+  a mount (shared storage) is left as it is.
 - **Files and command output over 4 MB failed through the apiserver**: the
   apiserver, the edge and the internal clients kept gRPC's 4 MB message
   limit, so `write_file` and `read_file` of a larger file, and `run_shell`

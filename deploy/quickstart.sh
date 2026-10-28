@@ -66,14 +66,22 @@ if [ -n "$uninstall" ]; then
 	nft list tables 2>/dev/null | awk '/opendsec/ {print $2, $3}' | while read -r fam t; do nft delete table "$fam" "$t" || true; done
 	for l in $(ip -o link show 2>/dev/null | awk -F': ' '{print $2}' | sed 's/@.*//' | grep -E '^(ds[0-9a-f]{12}$|opendsec)'); do ip link delete "$l" 2>/dev/null || true; done
 	for d in $(ip netns list 2>/dev/null | awk '/^ods|^opendsec/ {print $1}'); do ip netns delete "$d" || true; done
-	awk '$2 ~ /opendsec/ {print $2}' /proc/mounts | sort -r | while read -r m; do umount -l "$m" 2>/dev/null || true; done
+	# The sandboxes' mounts; not a file system the machine mounts itself
+	# (fstab), such as local NVMe for the state directory.
+	awk '$2 ~ /opendsec/ {print $2}' /proc/mounts | sort -r | while read -r m; do
+		findmnt -sn "$m" >/dev/null || umount -l "$m" 2>/dev/null || true
+	done
 	systemctl disable -q opendsec-node-tuning 2>/dev/null || true
 	rm -rf /etc/systemd/system/opendsec-* /usr/local/bin/opendsec-* /usr/local/bin/opendsecctl /usr/local/sbin/opendsec-iam-backup \
 		/usr/local/sbin/opendsec-node-tuning
 	systemctl daemon-reload
 	[ -d /sys/fs/cgroup/opendsec ] && find /sys/fs/cgroup/opendsec -depth -type d -exec rmdir {} + 2>/dev/null || true
-	rm -rf /etc/opendsec /opt/opendsec /var/lib/opendsec /var/log/opendsec /var/backups/opendsec "$OPS" "$STORE"
-	[ -d /data/opendsec-state ] && rm -rf /data/opendsec-state
+	# A mount point (kept above) is emptied instead; but an image store that
+	# is a mount may be shared storage, and is left as it is.
+	for d in /etc/opendsec /opt/opendsec /var/lib/opendsec /var/log/opendsec /var/backups/opendsec "$OPS" /data/opendsec-state; do
+		if mountpoint -q "$d"; then find "$d" -mindepth 1 -maxdepth 1 -exec rm -rf {} +; else rm -rf "$d"; fi
+	done
+	if mountpoint -q "$STORE"; then warn "$STORE is a mount: its images are left in place"; else rm -rf "$STORE"; fi
 	say "removed. The node settings of deploy/node/install.sh (sysctl.d, udev rules, modules-load.d, networkd files) stay."
 	exit 0
 fi
@@ -90,10 +98,11 @@ need "cgroup v2 (unified hierarchy)" '[ "$(stat -fc %T /sys/fs/cgroup)" = cgroup
 need "Linux 5.15 or newer" '[ "$(printf "%s\n5.15\n" "$(uname -r | cut -d- -f1)" | sort -V | head -1)" = 5.15 ]'
 need "overlay filesystem" 'grep -qw overlay /proc/filesystems || modprobe overlay 2>/dev/null'
 for c in curl tar sha256sum mkfs.ext4 ip awk; do need "command $c" "command -v $c >/dev/null"; done
-# Building needs Go 1.27+ and make; prebuilt binaries in bin/ or --release DIR need neither.
+# Building and packaging need Go 1.27+ and make (packaging collects the Go
+# modules' licenses); --release DIR needs neither.
 gover() { v=$(PATH=$PATH:/usr/local/go/bin go env GOVERSION 2>/dev/null) && [ "$(printf "%s\ngo1.27\n" "$v" | sort -V | head -1)" = go1.27 ]; }
-if [ -z "$release" ] && [ ! -x "$REPO/bin/opendsecctl" ]; then
-	need "Go 1.27+ to build (https://go.dev/dl; or prebuilt binaries in bin/, or --release DIR)" gover
+if [ -z "$release" ]; then
+	need "Go 1.27+ to build (https://go.dev/dl; or --release DIR)" gover
 	need "command make (apt install make)" "command -v make >/dev/null"
 fi
 [ -e "$OPS/inventory" ] && { echo "  [x] $OPS already holds a cluster (run with --uninstall first, or use $OPSCMD)" >&2; bad=1; }
@@ -120,6 +129,17 @@ name=$(hostname -s | tr 'A-Z' 'a-z' | tr -c 'a-z0-9-\n' '-')
 [ -n "$name" ] || name=node1
 if mountpoint -q /data; then state=/data/opendsec-state; else state=/var/lib/opendsec/edge-state; fi
 echo "  node $name, address $ip, sandbox state in $state, microVMs: $microvm"
+# A microVM's snapshot (pause, fork) copies its memory file, by reflink where
+# the file system has it: about 0.1 s for a fork, against a second or so of
+# copying on ext4.
+if [ "$microvm" = yes ]; then
+	mkdir -p "$state"
+	probe=$(mktemp "$state/.reflink.XXXXXX")
+	if ! cp --reflink=always "$probe" "$probe.copy" 2>/dev/null; then
+		warn "$state is on $(findmnt -no FSTYPE -T "$state"), which has no reflink: forking a microVM copies its memory (about 1 s instead of 0.1 s). For the faster forks, mount local NVMe with XFS at /data, where the state then goes, and run again."
+	fi
+	rm -f "$probe" "$probe.copy"
+fi
 
 # ---- build and package ------------------------------------------------------------------
 
@@ -132,10 +152,10 @@ if [ -n "$release" ]; then
 	fi
 else
 	say "building"
-	if [ ! -x "$REPO/bin/opendsecctl" ]; then
-		export PATH=$PATH:/usr/local/go/bin
-		make -C "$REPO" build >/dev/null
-	fi
+	# Always: go build only rebuilds what changed, and binaries left in bin/
+	# by an earlier run would otherwise be installed in place of this tree's.
+	export PATH=$PATH:/usr/local/go/bin
+	make -C "$REPO" build >/dev/null
 	if [ "$microvm" = no ]; then
 		export OPENDSEC_DEPS_SKIP="guest-kernel"
 	elif [ -n "$kernel" ]; then
@@ -143,9 +163,9 @@ else
 	fi
 	if ! "$OPSCMD" release "$REPO/bin"; then
 		if [ "$microvm" = yes ] && [ -z "$kernel" ]; then
-			die "could not fetch the guest kernel pinned in deploy/deps.lock: rerun with --build-kernel, --kernel FILE, or --no-microvm"
+			die "packaging the release failed (the error is above); if it is the guest kernel pinned in deploy/deps.lock that could not be fetched, rerun with --build-kernel, --kernel FILE, or --no-microvm"
 		fi
-		die "packaging the release failed"
+		die "packaging the release failed (the error is above)"
 	fi
 fi
 
