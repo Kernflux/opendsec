@@ -5,6 +5,7 @@ an OpenDsec token. NETWORK=1 adds the network checks, for edges with
 networking and a way out to the internet.
 Prints "OK <n> checks" on success.
 """
+import inspect
 import json
 import os
 import time
@@ -85,9 +86,15 @@ try:
     check(api("POST", f"/sandboxes/{r.sandbox_id}/refreshes", {"duration": 600}) == 204, "refresh")
     check(r.get_info().end_at.timestamp() - time.time() > 500, "refresh extends")
 
-    # Filesystem-only pauses are refused, not silently made full.
-    raises(lambda: r.pause(mode="filesystem"), "filesystem-only pause refused")
-    raises(lambda: Sandbox.create(timeout=30, lifecycle={"on_timeout": {"action": "pause", "mode": "filesystem"}}),
+    # Filesystem-only pauses are refused, not silently made full. The SDK
+    # asks for one with keep_memory=False (2.34 and 2.46; mode="filesystem" in
+    # older ones, which newer SDKs drop silently, so it must not be used there).
+    if "keep_memory" in inspect.signature(Sandbox.pause).parameters:
+        fs_pause, fs_lifecycle = {"keep_memory": False}, {"action": "pause", "keep_memory": False}
+    else:
+        fs_pause, fs_lifecycle = {"mode": "filesystem"}, {"action": "pause", "mode": "filesystem"}
+    raises(lambda: r.pause(**fs_pause), "filesystem-only pause refused")
+    raises(lambda: Sandbox.create(timeout=30, lifecycle={"on_timeout": fs_lifecycle}),
            "filesystem-only auto-pause refused")
 
     if os.environ.get("NETWORK") == "1":

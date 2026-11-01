@@ -264,7 +264,8 @@ export OPENDSEC_PROJECT=root/demo
 # E2B's SDKs, through the E2B gateway (docs/E2B.md)
 export E2B_API_URL=http://$ip:7400
 export E2B_SANDBOX_URL=http://$ip:7400
-export E2B_API_KEY=$tok
+# The token in the form E2B's SDKs accept as a key: e2b_ and its hex (docs/E2B.md)
+export E2B_API_KEY=e2b_$(printf %s "$tok" | od -An -tx1 -v | tr -d ' \n')
 EOF
 umask 022
 

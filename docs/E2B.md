@@ -7,8 +7,10 @@ OpenDsec 的 E2B 网关（`opendsec-e2b`）提供 E2B SDK 调用的那套 API。
 ```sh
 export E2B_API_URL=http://<网关>:7400            # 开了 TLS 时用 https://...
 export E2B_SANDBOX_URL=http://<网关>:7400
-export E2B_API_KEY=<你的 OpenDsec token>          # dsk.<id>.<secret>
+export E2B_API_KEY=e2b_$(printf %s "$OPENDSEC_TOKEN" | od -An -tx1 -v | tr -d ' \n')
 ```
+
+API key 就是你的 OpenDsec token（`dsk.<id>.<secret>`），写成 `e2b_` 加上 token 的十六进制。E2B 的 SDK 发送前会检查 key 是不是这种格式（E2B Python SDK 2.25 到 2.45 会检查，不符合就报 `Invalid API key format`），网关收到后再解码。直接用 token 也可以，前提是 SDK 不做这个检查，或者关掉了检查（`E2B_VALIDATE_API_KEY=false`）。`deploy/quickstart.sh` 写的 `demo.env` 里已经是这种格式的 key。
 
 ```python
 from e2b import Sandbox

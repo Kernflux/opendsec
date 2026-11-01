@@ -265,7 +265,7 @@ Before upgrading, read [CHANGELOG.md](CHANGELOG.md) and [docs/en/VERSIONING.md](
 The E2B gateway (`opendsec-e2b`, SPEC §37) serves E2B's API, so programs written for E2B's SDKs, and agent frameworks built on them, run on OpenDsec unchanged:
 
 ```sh
-export E2B_API_URL=http://<gateway>:7400 E2B_SANDBOX_URL=http://<gateway>:7400 E2B_API_KEY=<OpenDsec token>
+export E2B_API_URL=http://<gateway>:7400 E2B_SANDBOX_URL=http://<gateway>:7400 E2B_API_KEY=e2b_<OpenDsec token in hex>   # see docs/en/E2B.md
 python -c 'from e2b import Sandbox; print(Sandbox.create().commands.run("echo hi").stdout)'
 ```
 

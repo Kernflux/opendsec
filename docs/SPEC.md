@@ -2785,8 +2785,10 @@ SDK sb.fork(count=8)
 目的：用 E2B SDK 的程序（以及基于它的 Agent 框架）不改代码就能在 OpenDsec 上跑。用户设置
 
 ```sh
-E2B_API_URL=http(s)://<网关>  E2B_SANDBOX_URL=http(s)://<网关>  E2B_API_KEY=<OpenDsec token>
+E2B_API_URL=http(s)://<网关>  E2B_SANDBOX_URL=http(s)://<网关>  E2B_API_KEY=e2b_<OpenDsec token 的十六进制>
 ```
+
+**[决定]** key 写成 `e2b_` 加 token 的十六进制，网关解码（`fromE2BKey`）；不是这种形式的 key 原样当作 token。原因：E2B 的 SDK 在发送前检查 key 是否为 `e2b_` 加十六进制（Python SDK 2.25 到 2.45；2026-11-01 在 2.34 上遇到），`dsk.<id>.<secret>` 过不了这一关。
 
 ### 37.1 结构
 

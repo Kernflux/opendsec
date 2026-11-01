@@ -189,7 +189,7 @@ microVM（需要 `/dev/kvm`、firecracker + jailer、guest 内核，见 deploy/R
 E2B 网关（`opendsec-e2b`，SPEC §37）提供 E2B 的 API，按 E2B SDK 写的程序和基于它的 Agent 框架不用改代码就能在 OpenDsec 上运行：
 
 ```sh
-export E2B_API_URL=http://<网关>:7400 E2B_SANDBOX_URL=http://<网关>:7400 E2B_API_KEY=<OpenDsec token>
+export E2B_API_URL=http://<网关>:7400 E2B_SANDBOX_URL=http://<网关>:7400 E2B_API_KEY=e2b_<OpenDsec token 的十六进制>   # 见 docs/E2B.md
 python -c 'from e2b import Sandbox; print(Sandbox.create().commands.run("echo hi").stdout)'
 ```
 

@@ -116,7 +116,8 @@ curl -s <节点>:9463/readyz                            # 未就绪时返回原�
 |---|---|---|
 | `401: ... API key is malformed: expected the "e2b_" prefix` | 没有设置 `E2B_API_URL`，SDK 在连 E2B 官方服务 | 设置 `E2B_API_URL` 和 `E2B_SANDBOX_URL` 指向网关 |
 | JS SDK 报语法错误或启动失败 | Node 版本太低 | E2B 的 JS SDK 需要 Node 22.19 以上 |
-| `pause(mode="filesystem")` 没有报错，而是做了完整暂停 | E2B Python SDK 2.46 不认 `mode` 参数，悄悄忽略 | 升级 E2B SDK 到 2.59 以上；OpenDsec 会拒绝只暂停文件系统的请求 |
+| `Invalid API key format: expected "e2b_" followed by hex characters` | E2B Python SDK 2.25 到 2.45 发送前只接受这种格式的 key，而 OpenDsec 的 token 是 `dsk.<id>.<secret>` | 把 `E2B_API_KEY` 设成 `e2b_` 形式的 token（[E2B.md](E2B.md)）；quickstart 生成的 `demo.env` 已经是这种形式 |
+| `pause(mode="filesystem")` 没有报错，而是做了完整暂停 | 现在的 E2B Python SDK（核对过 2.34 和 2.46）用 `keep_memory=False` 表示只暂停文件系统，不认识的 `mode` 参数被悄悄忽略 | 改用 `pause(keep_memory=False)`，OpenDsec 会拒绝它（不支持只暂停文件系统） |
 | E2B sandbox 连不了外网 | 0.11 之前的网关沿用集群的默认网络规则 | 升级；新版与 E2B 一致，默认放行公网 |
 | code interpreter 模板构建失败 | 构建需要访问外网和 `layer.publish` 权限 | 新版构建脚本会为构建用的 sandbox 放行外网；检查权限 |
 | `Sandbox.create(snapshot_id)` 超时 | 跨节点使用刚做好的快照时，要等它发布到镜像库 | 加大 `timeout`；镜像库慢时尤其如此 |

@@ -7,8 +7,10 @@ OpenDsec's E2B gateway (`opendsec-e2b`) serves the API that E2B's SDKs talk to. 
 ```sh
 export E2B_API_URL=http://<gateway>:7400       # https://... when TLS is on
 export E2B_SANDBOX_URL=http://<gateway>:7400
-export E2B_API_KEY=<your OpenDsec token>         # dsk.<id>.<secret>
+export E2B_API_KEY=e2b_$(printf %s "$OPENDSEC_TOKEN" | od -An -tx1 -v | tr -d ' \n')
 ```
+
+The API key is your OpenDsec token (`dsk.<id>.<secret>`) written as `e2b_` and the token in hex. E2B's SDKs check that a key has that form before sending it (E2B's Python SDK 2.25 to 2.45 do, refusing anything else with `Invalid API key format`), and the gateway decodes it. A plain token works too, with SDKs that do not check or with the check turned off (`E2B_VALIDATE_API_KEY=false`). The `demo.env` that `deploy/quickstart.sh` writes already holds the key in this form.
 
 ```python
 from e2b import Sandbox

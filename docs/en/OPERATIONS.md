@@ -195,7 +195,7 @@ Lets callers using the E2B SDK connect directly.
    ```
 2. Give machines the role, one at a time: `opendsecctl fleet node set <name> -roles <existing roles>,e2b=<index>` (the index is the position in `gateways`), then `opendsecctl fleet node sync <name>`. The node agent brings the machine to its desired release and config and enables and starts `opendsec-e2b@<index>`; once it is ready, do the next machine.
 3. Put an LB in front: forward TCP 7400, health check HTTP 9467 `/readyz`, idle timeout at least 60 s (the SDK's streams send keepalives every 50 s). For HTTPS from outside, terminate TLS on the LB, or set `tls_cert` and `tls_key` in `gateways` (the files come in as systemd credentials; see the E2B guide).
-4. Callers set `E2B_API_URL` and `E2B_SANDBOX_URL` to the gateway and `E2B_API_KEY` to their OpenDsec token. The token needs `sandbox.create` and `sandbox.operate` on `project` and `layer.use` on the images' project; for snapshots (`create_snapshot()`), also `layer.publish` on `project`, where snapshots are stored as images.
+4. Callers set `E2B_API_URL` and `E2B_SANDBOX_URL` to the gateway and `E2B_API_KEY` to their OpenDsec token, written as `e2b_` and the token in hex (E2B.md). The token needs `sandbox.create` and `sandbox.operate` on `project` and `layer.use` on the images' project; for snapshots (`create_snapshot()`), also `layer.publish` on `project`, where snapshots are stored as images.
 
 The gateway is stateless and calls the apiserver with each caller's own token, so permissions, quotas and audit are exactly as with the OpenDsec SDK.
 

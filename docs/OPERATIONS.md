@@ -195,7 +195,7 @@ opendsecctl usage root -from 2026-10-01 -daily -csv > usage.csv        # 按天�
    ```
 2. 给机器加上角色，一台一台来：`opendsecctl fleet node set <名字> -roles <原有角色>,e2b=<序号>`（序号对应 `gateways` 里的位置），再执行 `opendsecctl fleet node sync <名字>`。节点代理会把这台机器同步到它应有的版本和配置，启用并启动 `opendsec-e2b@<序号>`，就绪后再做下一台。
 3. 前面放 LB：转发 TCP 7400，健康检查用 HTTP 9467 的 `/readyz`，空闲超时不低于 60 秒（SDK 的流每 50 秒保活一次）。对外要用 HTTPS 时，在 LB 上终止 TLS，或者在 `gateways` 里配 `tls_cert` 和 `tls_key`（证书通过 systemd 凭据传入，见 E2B 文档）。
-4. 调用方的设置：`E2B_API_URL` 和 `E2B_SANDBOX_URL` 都指向网关，`E2B_API_KEY` 用他的 OpenDsec token。这个 token 需要在 `project` 上有 `sandbox.create`、`sandbox.operate`，在镜像所在项目上有 `layer.use`。要用快照（`create_snapshot()`）的，还要在 `project` 上有 `layer.publish`：快照存成这个项目里的镜像。
+4. 调用方的设置：`E2B_API_URL` 和 `E2B_SANDBOX_URL` 都指向网关，`E2B_API_KEY` 用他的 OpenDsec token，写成 `e2b_` 加 token 的十六进制（E2B.md）。这个 token 需要在 `project` 上有 `sandbox.create`、`sandbox.operate`，在镜像所在项目上有 `layer.use`。要用快照（`create_snapshot()`）的，还要在 `project` 上有 `layer.publish`：快照存成这个项目里的镜像。
 
 网关不保存状态，每个请求都用调用方自己的 token 调 apiserver，所以权限、配额、审计和直接用 OpenDsec SDK 完全一样。
 

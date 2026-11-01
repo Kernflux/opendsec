@@ -116,7 +116,8 @@ See [Network policy §6](NETWORK.md). The two most common:
 |---|---|---|
 | `401: ... API key is malformed: expected the "e2b_" prefix` | `E2B_API_URL` is not set, so the SDK talks to E2B's own service | Point `E2B_API_URL` and `E2B_SANDBOX_URL` at the gateway |
 | The JS SDK fails with a syntax error or does not start | Node is too old | E2B's JS SDK needs Node 22.19 or newer |
-| `pause(mode="filesystem")` does a full pause instead of failing | E2B's Python SDK 2.46 does not know `mode` and drops it silently | Use E2B SDK 2.59 or newer; OpenDsec refuses filesystem-only pauses |
+| `Invalid API key format: expected "e2b_" followed by hex characters` | E2B's Python SDK 2.25 to 2.45 refuse any other key before sending it, and an OpenDsec token is `dsk.<id>.<secret>` | Set `E2B_API_KEY` to the token in `e2b_` form ([E2B.md](E2B.md)); quickstart's `demo.env` already does |
+| `pause(mode="filesystem")` does a full pause instead of failing | Current E2B Python SDKs (2.34 and 2.46 checked) ask for a filesystem-only pause with `keep_memory=False` and drop an unknown `mode` silently | Use `pause(keep_memory=False)`, which OpenDsec refuses (filesystem-only pauses are not supported) |
 | E2B sandboxes cannot reach the internet | Gateways before 0.11 used the cluster's default network rules | Upgrade; gateways now allow the internet by default, as E2B does |
 | Building the code interpreter template fails | The build needs internet access and `layer.publish` | The newer build script allows internet for its build sandbox; check the permission |
 | `Sandbox.create(snapshot_id)` times out | Using a fresh snapshot on another node waits for it to reach the image store | Raise `timeout`, especially with a slow store |

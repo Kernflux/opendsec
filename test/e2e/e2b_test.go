@@ -51,7 +51,7 @@ func TestE2BSDK(t *testing.T) {
 		cx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 		defer cancel()
 		cmd := exec.CommandContext(cx, name, args...)
-		cmd.Env = append(os.Environ(), "E2B_API_URL="+srv.URL, "E2B_SANDBOX_URL="+srv.URL, "E2B_API_KEY="+l.AdminToken)
+		cmd.Env = append(os.Environ(), "E2B_API_URL="+srv.URL, "E2B_SANDBOX_URL="+srv.URL, "E2B_API_KEY="+e2b.E2BKey(l.AdminToken))
 		out, err := cmd.CombinedOutput()
 		if err != nil || !strings.Contains(string(out), "OK ") {
 			t.Fatalf("e2b SDK check: %v\n%s", err, out)
@@ -257,7 +257,7 @@ func TestE2BSnapshots(t *testing.T) {
 	cx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 	cmd := exec.CommandContext(cx, py, "testdata/e2b_snapshot_check.py")
-	cmd.Env = append(os.Environ(), "E2B_API_URL="+srv.URL, "E2B_SANDBOX_URL="+srv.URL, "E2B_API_KEY="+l.AdminToken)
+	cmd.Env = append(os.Environ(), "E2B_API_URL="+srv.URL, "E2B_SANDBOX_URL="+srv.URL, "E2B_API_KEY="+e2b.E2BKey(l.AdminToken))
 	out, err := cmd.CombinedOutput()
 	if err != nil || !strings.Contains(string(out), "OK ") {
 		t.Fatalf("e2b snapshot check: %v\n%s", err, out)

@@ -188,6 +188,13 @@ docs/OPERATIONS.md §6.4.
   they go to the image store.
 
 ### Fixed
+- **Recent E2B SDKs refused OpenDsec tokens** before sending a request:
+  E2B's Python SDK 2.25 to 2.45 accept only keys of the form `e2b_` and
+  hex, failing with `Invalid API key format`. The E2B gateway now also
+  takes the token hex-encoded behind `e2b_`
+  (`e2b_$(printf %s "$OPENDSEC_TOKEN" | od -An -tx1 -v | tr -d ' \n')`), and
+  the quickstart's `demo.env` sets `E2B_API_KEY` that way. Plain tokens
+  still work with SDKs that do not check.
 - **No microVM could start on a node with a long host name**: a microVM's
   vsock and API sockets sit under the edge's state directory, which holds
   the edge's name (the host name, on a quickstart node). With a cloud

@@ -15,6 +15,7 @@ package e2b
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -285,13 +286,34 @@ func (g *Gateway) sandboxTarget(r *http.Request) (id string, port int, ok bool) 
 func apiKey(r *http.Request) string {
 	for _, h := range []string{"X-API-KEY", "X-Access-Token", "E2B-Traffic-Access-Token"} {
 		if k := r.Header.Get(h); k != "" {
-			return k
+			return fromE2BKey(k)
 		}
 	}
 	if k, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer "); ok {
-		return k
+		return fromE2BKey(k)
 	}
 	return ""
+}
+
+// E2BKey is token in the form E2B's SDKs accept as an API key: they refuse
+// a key that is not "e2b_" and hex before sending it (the Python SDK 2.25
+// to 2.45), and an OpenDsec token is "dsk.<id>.<secret>". So the token goes
+// hex-encoded behind the prefix, and the gateway decodes it.
+func E2BKey(token string) string {
+	return "e2b_" + hex.EncodeToString([]byte(token))
+}
+
+// fromE2BKey undoes E2BKey; any other key is returned as it is.
+func fromE2BKey(k string) string {
+	h, ok := strings.CutPrefix(k, "e2b_")
+	if !ok {
+		return k
+	}
+	b, err := hex.DecodeString(h)
+	if err != nil || !strings.HasPrefix(string(b), "dsk.") {
+		return k
+	}
+	return string(b)
 }
 
 func (g *Gateway) project(r *http.Request) string {
