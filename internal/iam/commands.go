@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -296,7 +297,17 @@ func (m *IAM) CreatePrincipal(actor, project, id, kind string, ttl time.Duration
 	return "dsk." + id + "." + tid + "." + secret, v.(*Token), nil
 }
 
+// projectNameRe is the image store's rule for a project path's segments, so
+// that every project can hold images. It also keeps out "." and "..", which
+// would inherit permissions by name yet point elsewhere as a path.
+var projectNameRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
+
 func (m *IAM) CreateProject(actor, parent, name string, quota map[string]float64) (*Project, error) {
+	// Checked here, not when the command applies: replaying an old log must
+	// give the state it gave then.
+	if !projectNameRe.MatchString(name) {
+		return nil, rpcutil.Err(rpcutil.Invalid, "project name %q: use letters, digits, '.', '_' and '-', starting with a letter or digit, at most 64 characters", name)
+	}
 	v, err := m.propose(&Command{Op: opCreateProject, Actor: actor, Parent: parent, Name: name, Quota: quota})
 	if err != nil {
 		return nil, err

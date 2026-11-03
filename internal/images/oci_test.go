@@ -26,6 +26,7 @@ type tarEntry struct {
 	name, body, link string
 	typ              byte
 	mode             int64
+	major, minor     int64
 }
 
 func mkLayer(t *testing.T, entries []tarEntry) []byte {
@@ -34,7 +35,7 @@ func mkLayer(t *testing.T, entries []tarEntry) []byte {
 	gz := gzip.NewWriter(&buf)
 	tw := tar.NewWriter(gz)
 	for _, e := range entries {
-		h := &tar.Header{Name: e.name, Typeflag: e.typ, Mode: e.mode, Linkname: e.link, Size: int64(len(e.body))}
+		h := &tar.Header{Name: e.name, Typeflag: e.typ, Mode: e.mode, Linkname: e.link, Size: int64(len(e.body)), Devmajor: e.major, Devminor: e.minor}
 		if h.Typeflag == 0 {
 			h.Typeflag = tar.TypeReg
 		}
@@ -306,6 +307,33 @@ func TestExtractRejectsMaliciousLayers(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(root, "etc/abs")); err != nil {
 		t.Fatal("absolute name not confined to the layer")
+	}
+}
+
+// Device nodes in a layer are dropped, except overlay's whiteout.
+func TestExtractDropsDeviceNodes(t *testing.T) {
+	gz, _ := gzip.NewReader(bytes.NewReader(mkLayer(t, []tarEntry{
+		{name: "char", typ: tar.TypeChar, major: 1, minor: 3},
+		{name: "minor", typ: tar.TypeChar, minor: 1},
+		{name: "block", typ: tar.TypeBlock, major: 7, minor: 0},
+		{name: "block0", typ: tar.TypeBlock},
+		{name: "whiteout", typ: tar.TypeChar},
+		{name: "fifo", typ: tar.TypeFifo},
+		{name: "file", body: "x"},
+	})))
+	root := t.TempDir()
+	if _, err := ExtractLayer(gz, root); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"char", "minor", "block", "block0"} {
+		if _, err := os.Lstat(filepath.Join(root, name)); !os.IsNotExist(err) {
+			t.Errorf("%s: extracted (%v)", name, err)
+		}
+	}
+	for _, name := range []string{"whiteout", "fifo", "file"} {
+		if _, err := os.Lstat(filepath.Join(root, name)); err != nil {
+			t.Errorf("%s: %v", name, err)
+		}
 	}
 }
 

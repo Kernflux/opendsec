@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
@@ -639,6 +640,13 @@ func extractEntry(tr *tar.Reader, hdr *tar.Header, root string, opaque *[]string
 		}
 		return nil // shares inode, owner and mode with its target
 	case tar.TypeChar, tar.TypeBlock, tar.TypeFifo:
+		// A device node in an image would reach the host's device from a
+		// container. Only 0:0, overlay's whiteout, is kept: /dev in a sandbox
+		// is built at start, so images need no other.
+		if hdr.Typeflag != tar.TypeFifo && (hdr.Typeflag != tar.TypeChar || hdr.Devmajor != 0 || hdr.Devminor != 0) {
+			slog.Warn("image layer: skipping a device node", "path", hdr.Name, "major", hdr.Devmajor, "minor", hdr.Devminor)
+			return nil
+		}
 		os.RemoveAll(dst)
 		kind := map[byte]uint32{tar.TypeChar: unix.S_IFCHR, tar.TypeBlock: unix.S_IFBLK, tar.TypeFifo: unix.S_IFIFO}[hdr.Typeflag]
 		if err := unix.Mknod(dst, kind|mode, int(unix.Mkdev(uint32(hdr.Devmajor), uint32(hdr.Devminor)))); err != nil {

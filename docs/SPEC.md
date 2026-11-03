@@ -1494,6 +1494,7 @@ SDK sb.fork(count=8)
 ## 21. P3：容器加固与文件访问限制（2026-10-15）
 - **起因**：容器 sandbox 里的 root 原先保留全部 capability，`/proc/sys` 可写，写 `/proc/sys/kernel/core_pattern` 就能在宿主机上执行命令（逃逸）；这是 11.7 记下的「没有 seccomp」。容器的 setup 进程在 exec aether 之前做以下几件事，之后的所有进程都继承：
   - **capability**：bounding set 只留 Docker 的默认集合，去掉 `CAP_MKNOD`（没有 device cgroup，设备节点能直接读宿主机磁盘）。capability 是按线程的，setup 进程锁定在执行 exec 的线程上。
+  - **镜像里的设备节点**（2026-11-03）：去掉 `CAP_MKNOD` 挡不住镜像层里本来就有的节点。解压层和复制层缓存时只保留 overlay 的删除标记（字符设备 0:0）和 FIFO，其余设备节点丢弃并记日志。overlay 和可写盘都挂 `nodev`，这样已经在镜像库里的旧层也打不开；可写盘也要加，因为 chmod 会把节点 copy-up 进去，而可写盘在沙箱里的 `/.opendsec/disk` 能看到。沙箱的 `/dev` 是单独的 tmpfs，不受影响。
   - **seccomp**（BPF，拒绝时返回 EPERM，用 `TSYNC` 作用到所有线程）：
     - 非 x86_64 的入口（i386 / x32）一律拒绝，避免绕过系统调用号；
     - 拒绝 mount 及新的挂载 API、`pivot_root`、`setns`、模块加载、kexec、`bpf`、keyring、`open_by_handle_at`（shocker 逃逸）、`userfaultfd`、`perf_event_open`、I/O 端口、swap、quota、reboot、改时钟；
@@ -2622,7 +2623,7 @@ SDK sb.fork(count=8)
      - OPERATIONS §5 原来写的是「容器使用本地的 overlay，不受影响」，已更正。
      - 修复：容器层在节点本地缓存一份（`layercache.go`，后端配置 `layer_cache`，默认开启），和 microVM 的镜像盘一样。
        - 每一层第一次使用时整层复制到 `<state_dir>/<edge>/layers/<层 id>`，先复制到临时目录，完成后再改名；并发请求共用一次复制。
-       - 复制由 Go 实现（`copyTree`），保留内容、属主、权限（含 setuid）、时间、硬链接、符号链接和设备节点，不复制 ACL 和 xattr。不用 `cp -a`，是因为它会把 NFS 上的 NFSv4 ACL 也复制过来，本地 ext4 不接受，在线上镜像库上实测报「preserving permissions: Operation not supported」。
+       - 复制由 Go 实现（`copyTree`），保留内容、属主、权限（含 setuid）、时间、硬链接、符号链接和 overlay 的删除标记，不复制其他设备节点（§21）、ACL 和 xattr。不用 `cp -a`，是因为它会把 NFS 上的 NFSv4 ACL 也复制过来，本地 ext4 不接受，在线上镜像库上实测报「preserving permissions: Operation not supported」。
        - 在线上 NFS 镜像库里 python:3.12 的 4 层上验证（`TestCopyTreeReal`，只读镜像库）：每个条目的类型、属主、权限、大小、时间、链接目标、设备号和内容都一致；最大的一层 3271 个条目，1.35 秒。4 层并行复制，一个节点第一次用这个镜像时多花大约 1.4 秒。
        - overlay 的 lowerdir 改用本地副本；`pack_diff` 和快照读下层时也优先用本地副本。
        - 镜像库里的层没有 overlay xattr（不透明目录已展开成删除标记，§29.5），所以普通复制就能保留全部语义。

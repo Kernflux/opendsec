@@ -79,6 +79,11 @@ func TestStore(t *testing.T) {
 	if l, _ := s.List("root"); len(l) != 2 {
 		t.Fatalf("list root: %d", len(l))
 	}
+	for _, p := range []string{"root/rl/..", "root/x/../rl", "root/.", ".."} {
+		if _, err := s.List(p); rpcutil.Reason(err) != rpcutil.Invalid {
+			t.Errorf("List(%q): %v", p, err)
+		}
+	}
 	if l, err := s.List("root/none"); err != nil || len(l) != 0 {
 		t.Fatalf("list empty: %v %v", l, err)
 	}

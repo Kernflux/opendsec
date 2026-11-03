@@ -2,6 +2,7 @@ package iam
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -92,6 +93,20 @@ func TestMaxTokenTTL(t *testing.T) {
 	}
 	if _, _, err := m.CreateToken("admin", "a", 2*time.Hour, ""); rpcutil.Reason(err) != rpcutil.Invalid {
 		t.Fatalf("over-long TTL accepted: %v", err)
+	}
+}
+
+func TestProjectNames(t *testing.T) {
+	m, _ := setup(t)
+	for _, name := range []string{"", ".", "..", "a/b", "a b", ".hidden", "-x", strings.Repeat("a", 65)} {
+		if _, err := m.CreateProject("admin", "root", name, nil); rpcutil.Reason(err) != rpcutil.Invalid {
+			t.Errorf("project name %q: %v", name, err)
+		}
+	}
+	for _, name := range []string{"rl", "job-42", "a.b_c", "A1"} {
+		if _, err := m.CreateProject("admin", "root", name, nil); err != nil {
+			t.Errorf("project name %q: %v", name, err)
+		}
 	}
 }
 

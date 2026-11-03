@@ -26,6 +26,7 @@ OpenDsec 运行的是不可信的代码：强化学习里模型生成的命令�
 
 - Linux namespace（mount、pid、net、uts、ipc、cgroup）+ overlayfs + cgroup v2，共享宿主机内核。
 - **能力**：只保留 Docker 默认能力集，并去掉 `CAP_MKNOD`（没有设备 cgroup 时设备节点可能访问到宿主机磁盘）。
+- **镜像里的设备节点**：导入镜像时丢弃 overlay 删除标记以外的设备节点；rootfs 和可写盘都挂 `nodev`，已有镜像层里的节点也打不开。
 - **seccomp**：以下系统调用返回 EPERM：挂载与命名空间切换（`mount`、`umount2`、`pivot_root`、`setns`、新挂载 API）、内核模块和 kexec、`bpf`、keyring、文件句柄（`open_by_handle_at`，即「shocker」逃逸）、`userfaultfd`、`perf_event_open`、端口 IO、swap、quota、重启；带 `CLONE_NEWUSER` 的 `clone` 和 `unshare` 被拒绝（用户命名空间会拿回被去掉的能力）；`clone3` 返回 ENOSYS，libc 退回到 `clone`。
 - 进程数上限 `pids_max`（默认 4096），CPU、内存、磁盘 IO 由 cgroup 限制。
 - 默认开启核心调度。

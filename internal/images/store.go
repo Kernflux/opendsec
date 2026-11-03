@@ -404,6 +404,13 @@ func (s *Store) DeleteManifest(name string) error {
 
 // List returns the manifests under project (and its subprojects).
 func (s *Store) List(project string) ([]*Manifest, error) {
+	// Authorization is on the project's name and the walk on the cleaned
+	// path: "root/a/.." would pass as a child of root/a and list all of root.
+	for _, seg := range strings.Split(project, "/") {
+		if !segmentRe.MatchString(seg) {
+			return nil, rpcutil.Err(rpcutil.Invalid, "bad project %q", project)
+		}
+	}
 	return s.list(project, false)
 }
 

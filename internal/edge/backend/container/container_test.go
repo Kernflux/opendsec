@@ -424,6 +424,33 @@ func TestHardening(t *testing.T) {
 	}
 }
 
+// TestDeviceNodesInImage: a device node in an image's layer cannot be opened
+// in the sandbox, from the rootfs or, copied up by a chmod, from the writable
+// disk. The node is /dev/null's, so the test is harmless if it fails.
+func TestDeviceNodesInImage(t *testing.T) {
+	layer := t.TempDir()
+	if err := unix.Mknod(filepath.Join(layer, "devnode"), unix.S_IFCHR|0o666, int(unix.Mkdev(1, 3))); err != nil {
+		t.Fatal(err)
+	}
+	f := newBackendWith(t, func(o *Options) { o.Images["dev"] = []string{layer, "/"} })
+	sb := f.create(t, &pb.SandboxSpec{Image: "dev", Resources: &pb.Resources{CpuCores: 1, MemoryMb: 256}})
+	if r := sh(t, f, sb, `test -c /devnode`); r.ExitCode != 0 {
+		t.Fatalf("the node is not in the image: %q", r.Stderr)
+	}
+	if r := sh(t, f, sb, `cat /devnode`); r.ExitCode == 0 {
+		t.Error("opened a device node from the image")
+	}
+	if r := sh(t, f, sb, `chmod 600 /devnode; test -c /.opendsec/disk/upper/devnode`); r.ExitCode == 0 {
+		if r := sh(t, f, sb, `cat /.opendsec/disk/upper/devnode`); r.ExitCode == 0 {
+			t.Error("opened a device node copied up to the writable disk")
+		}
+	}
+	// The sandbox's own /dev still works.
+	if r := sh(t, f, sb, `echo x > /dev/null && head -c 1 /dev/zero | wc -c`); out(r) != "1" {
+		t.Errorf("/dev: %q %q", r.Stdout, r.Stderr)
+	}
+}
+
 // TestGPUs (spec §22.2) with stand-in device nodes: exclusive sandboxes get
 // whole devices, shared ones slots on the others; the devices, the extra
 // nodes and the driver mounts appear inside, with CUDA's variables.

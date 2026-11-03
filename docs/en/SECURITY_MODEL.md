@@ -26,6 +26,7 @@ To report a vulnerability, see `SECURITY.md` in the repository root; do not open
 
 - Linux namespaces (mount, pid, net, uts, ipc, cgroup) + overlayfs + cgroup v2, sharing the host kernel.
 - **Capabilities**: Docker's default set only, without `CAP_MKNOD` (without a device cgroup, a device node could reach the host's disks).
+- **Device nodes in images**: importing an image drops every device node except overlay's whiteouts, and the rootfs and writable disk are mounted `nodev`, so nodes in layers already stored cannot be opened either.
 - **seccomp**: these system calls return EPERM: mounting and namespace switching (`mount`, `umount2`, `pivot_root`, `setns`, the new mount API), kernel modules and kexec, `bpf`, keyrings, file handles (`open_by_handle_at`, the "shocker" escape), `userfaultfd`, `perf_event_open`, raw I/O ports, swap, quotas, reboot. `clone` and `unshare` with `CLONE_NEWUSER` are refused (a user namespace would give the dropped capabilities back); `clone3` returns ENOSYS so libc falls back to `clone`.
 - A process limit `pids_max` (default 4096); CPU, memory and disk I/O limited by cgroups.
 - Core scheduling on by default.

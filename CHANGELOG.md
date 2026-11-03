@@ -27,6 +27,17 @@ docs/OPERATIONS.md §6.4.
   error, malformed headers accepted). Upgrade clusters running earlier 0.11
   builds too.
 
+- **Device nodes in images no longer reach host devices from container
+  sandboxes.** Importing an image, or copying a layer into the node's cache,
+  now drops every device node except overlay's whiteout, and the sandbox's
+  rootfs and writable disk are mounted `nodev`, which also covers layers
+  already in the store. An image that relied on a device node outside `/dev`
+  no longer gets it. Upgrade every edge running the container backend.
+- **A project named `..` could list other projects' images.** New project
+  names follow the same rule as image names (letters, digits, `.`, `_`, `-`,
+  starting with a letter or digit, at most 64 characters), and listing images
+  refuses a project path with `.` or `..`.
+
 ### Breaking
 - **`opendsecctl exec <id> <command> ...`**: everything after the command
   name now goes to the command, each argument as given (quoted for the

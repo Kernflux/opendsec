@@ -44,6 +44,13 @@ func TestLayerCacheCopy(t *testing.T) {
 	if err := unix.Mknod(filepath.Join(r, "etc/gone"), unix.S_IFCHR, 0); err != nil {
 		t.Fatal(err)
 	}
+	if err := unix.Mknod(filepath.Join(r, "etc/null"), unix.S_IFCHR, int(unix.Mkdev(1, 3))); err != nil {
+		t.Fatal(err)
+	}
+	os.Link(filepath.Join(r, "etc/null"), filepath.Join(r, "etc/null.link"))
+	if err := unix.Mknod(filepath.Join(r, "etc/blk"), unix.S_IFBLK, int(unix.Mkdev(7, 0))); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := w.Commit(images.LayerMeta{}); err != nil {
 		t.Fatal(err)
 	}
@@ -81,6 +88,11 @@ func TestLayerCacheCopy(t *testing.T) {
 	unix.Lstat(filepath.Join(p, "etc/gone"), &wh)
 	if wh.Mode&syscall.S_IFMT != syscall.S_IFCHR || wh.Rdev != 0 {
 		t.Fatalf("whiteout lost: mode %o rdev %d", wh.Mode, wh.Rdev)
+	}
+	for _, name := range []string{"etc/null", "etc/null.link", "etc/blk"} {
+		if _, err := os.Lstat(filepath.Join(p, name)); !os.IsNotExist(err) {
+			t.Errorf("device node %s copied (%v)", name, err)
+		}
 	}
 	if fi, _ := os.Stat(filepath.Join(p, "etc/app")); fi.Mode().Perm() != 0o750 {
 		t.Fatalf("dir mode %v", fi.Mode())

@@ -75,12 +75,15 @@ func sandboxInit() error {
 	if err := unix.Mount("", "/", "", unix.MS_REC|unix.MS_PRIVATE, ""); err != nil {
 		return fmt.Errorf("make / private: %w", err)
 	}
-	if err := unix.Mount(cfg.Disk, cfg.DiskDir, "ext4", unix.MS_NOATIME, ""); err != nil {
+	// nodev on both mounts: without a device cgroup, a node from an image
+	// would reach the host's device. The writable disk needs it too, since a
+	// chmod copies a node up into it, and it is visible at /.opendsec/disk.
+	if err := unix.Mount(cfg.Disk, cfg.DiskDir, "ext4", unix.MS_NOATIME|unix.MS_NODEV, ""); err != nil {
 		return fmt.Errorf("mount writable disk %s: %w", cfg.Disk, err)
 	}
 	opts := fmt.Sprintf("lowerdir=%s,upperdir=%s,workdir=%s", strings.Join(cfg.Lower, ":"),
 		filepath.Join(cfg.DiskDir, "upper"), filepath.Join(cfg.DiskDir, "work"))
-	if err := unix.Mount("overlay", cfg.Rootfs, "overlay", 0, opts); err != nil {
+	if err := unix.Mount("overlay", cfg.Rootfs, "overlay", unix.MS_NODEV, opts); err != nil {
 		return fmt.Errorf("mount overlay (%s): %w", opts, err)
 	}
 	r := func(p string) string { return filepath.Join(cfg.Rootfs, p) }

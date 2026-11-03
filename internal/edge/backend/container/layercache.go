@@ -130,7 +130,7 @@ func (c *layerCache) copy(id, p string) error {
 
 // copyTree copies the directory tree src into the existing directory dst:
 // contents, owners, modes (with setuid and sticky bits), times, hard links,
-// symlinks, whiteouts and other device nodes. Not ACLs or xattrs: the
+// symlinks and whiteouts, but no other device nodes. Not ACLs or xattrs: the
 // store is NFS, whose NFSv4 ACLs a local file system refuses (cp -a fails
 // there), and store layers carry no xattrs that overlay needs (opaque
 // directories are expanded, spec §29.5).
@@ -148,6 +148,11 @@ func copyTree(src, dst string) error {
 			return err
 		}
 		mode := st.Mode & unix.S_IFMT
+		// Layers imported before extraction dropped device nodes may hold
+		// some: only overlay's whiteout (0:0) comes along.
+		if mode == unix.S_IFBLK || (mode == unix.S_IFCHR && st.Rdev != 0) {
+			return nil
+		}
 		if mode != unix.S_IFDIR && st.Nlink > 1 {
 			key := [2]uint64{uint64(st.Dev), st.Ino}
 			if first, ok := links[key]; ok {
@@ -176,7 +181,7 @@ func copyTree(src, dst string) error {
 			if err := os.Symlink(target, dp); err != nil {
 				return err
 			}
-		case unix.S_IFCHR, unix.S_IFBLK, unix.S_IFIFO, unix.S_IFSOCK:
+		case unix.S_IFCHR, unix.S_IFIFO, unix.S_IFSOCK:
 			if err := unix.Mknod(dp, st.Mode, int(st.Rdev)); err != nil {
 				return err
 			}
