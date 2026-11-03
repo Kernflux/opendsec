@@ -698,3 +698,169 @@ func TestMoveSurvivesRestart(t *testing.T) {
 }
 
 func fileExists(p string) bool { _, err := os.Stat(p); return err == nil }
+
+// slowPause is a sim whose Pause waits to be released, and which counts Stops.
+type slowPause struct {
+	*backend.Sim
+	started, release chan struct{}
+	mu               sync.Mutex
+	stops            int
+}
+
+func (s *slowPause) Pause(ctx context.Context, sb *backend.Sandbox) error {
+	close(s.started)
+	<-s.release
+	return s.Sim.Pause(ctx, sb)
+}
+
+func (s *slowPause) Stop(ctx context.Context, sb *backend.Sandbox) error {
+	s.mu.Lock()
+	s.stops++
+	s.mu.Unlock()
+	return s.Sim.Stop(ctx, sb)
+}
+
+func (s *slowPause) stopped() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.stops
+}
+
+func waitFor(t *testing.T, what string, ok func() bool) {
+	t.Helper()
+	for end := time.Now().Add(5 * time.Second); time.Now().Before(end); time.Sleep(5 * time.Millisecond) {
+		if ok() {
+			return
+		}
+	}
+	t.Fatalf("timed out waiting for %s", what)
+}
+
+func newSlowPause(t *testing.T) (*fixture, *slowPause, *pb.Sandbox) {
+	t.Helper()
+	f := newFixture(t, 10)
+	sp := &slowPause{Sim: f.sim, started: make(chan struct{}), release: make(chan struct{})}
+	f.e.backends["sim"] = sp
+	sb, err := f.create(t, &pb.SandboxSpec{Resources: cpu(1)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return f, sp, sb
+}
+
+// A sandbox found lost during a pause is stopped after the pause, and the
+// pause does not bring it back from FAILED.
+func TestLostDuringPause(t *testing.T) {
+	f, sp, sb := newSlowPause(t)
+	done := make(chan error, 1)
+	go func() { _, err := f.e.Pause(context.Background(), sb.Id); done <- err }()
+	<-sp.started
+	f.e.lost(sb.Id, "gone")
+	time.Sleep(50 * time.Millisecond)
+	if n := sp.stopped(); n != 0 {
+		t.Fatalf("%d Stops during the pause", n)
+	}
+	close(sp.release)
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if s, _ := f.e.Get(sb.Id); s.State != pb.SandboxState_FAILED {
+		t.Fatalf("state = %v", s.State)
+	}
+	waitFor(t, "the Stop", func() bool { return sp.stopped() == 1 })
+}
+
+// The sweep does not take a sandbox being paused for a lost one, though its
+// process is gone.
+func TestProbeSkipsBusySandbox(t *testing.T) {
+	f, sp, sb := newSlowPause(t)
+	done := make(chan error, 1)
+	go func() { _, err := f.e.Pause(context.Background(), sb.Id); done <- err }()
+	<-sp.started
+	f.mu.Lock()
+	f.dead[sb.Id] = true
+	f.mu.Unlock()
+	f.e.mu.Lock()
+	f.e.sbs[sb.Id].sb.State = pb.SandboxState_RUNNING // as the sweep may have seen it
+	f.e.mu.Unlock()
+	f.e.Sweep(context.Background())
+	if s, _ := f.e.Get(sb.Id); s.State == pb.SandboxState_FAILED {
+		t.Fatal("a sandbox being paused was failed")
+	}
+	close(sp.release)
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if s, _ := f.e.Get(sb.Id); s.State != pb.SandboxState_PAUSED {
+		t.Fatalf("state = %v", s.State)
+	}
+}
+
+// EndMove finishes cleaning up even if its caller stops waiting for a busy
+// sandbox; a retry cannot, since it finds the move done.
+func TestEndMoveBusy(t *testing.T) {
+	dir := t.TempDir()
+	f := newFixture(t, 10)
+	f.e.EnableStore(dir)
+	bg := context.Background()
+	sb, err := f.create(t, &pb.SandboxSpec{Resources: cpu(1)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.e.Pause(bg, sb.Id)
+	if _, err := f.e.BeginMove(bg, sb.Id, images.NewSnapshotID()); err != nil {
+		t.Fatal(err)
+	}
+	f.e.mu.Lock()
+	r := f.e.sbs[sb.Id]
+	f.e.mu.Unlock()
+	r.op <- struct{}{} // an operation in progress
+	ctx, cancel := context.WithCancel(bg)
+	cancel()
+	if err := f.e.EndMove(ctx, sb.Id, "e2"); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.e.EndMove(bg, sb.Id, "e2"); err != nil {
+		t.Fatalf("retry: %v", err)
+	}
+	<-r.op
+	_, lease, _ := ids.Parse(sb.Id)
+	allocated := func() bool {
+		f.e.mu.Lock()
+		defer f.e.mu.Unlock()
+		return f.e.alloc.CpuCores != 0
+	}
+	waitFor(t, "the clean-up", func() bool { return !allocated() && !fileExists(filepath.Join(dir, lease+".json")) })
+	if len(f.released) != 0 {
+		t.Fatal("released the lease the other edge holds")
+	}
+}
+
+// A balloon the edge has no record of is deflated too.
+func TestBalloonUnknown(t *testing.T) {
+	dir := t.TempDir()
+	f := newFixture(t, 10)
+	f.e.EnableStore(dir)
+	ctx := context.Background()
+	plain, _ := f.create(t, &pb.SandboxSpec{Resources: cpu(1)})
+
+	f2 := newFixture(t, 10) // restarted
+	f2.e.EnableStore(dir)
+	f2.clk.t = f.clk.now()
+	f2.e.Recover(ctx)
+	fork, err := f2.create(t, &pb.SandboxSpec{Resources: cpu(1), Snapshot: images.NewSnapshotID()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fresh, _ := f2.create(t, &pb.SandboxSpec{Resources: cpu(1)})
+	for _, id := range []string{plain.Id, fork.Id, fresh.Id} {
+		f2.sim.Squeeze(ctx, &backend.Sandbox{ID: id}, 256)
+	}
+	f2.e.balance(ctx, 5000, 1000)
+	if f2.sim.SqueezedMB(plain.Id) != 0 || f2.sim.SqueezedMB(fork.Id) != 0 {
+		t.Fatalf("adopted %d MB, from a snapshot %d MB", f2.sim.SqueezedMB(plain.Id), f2.sim.SqueezedMB(fork.Id))
+	}
+	if f2.sim.SqueezedMB(fresh.Id) != 256 {
+		t.Fatal("touched a balloon known to be empty")
+	}
+}

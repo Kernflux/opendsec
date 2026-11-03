@@ -38,10 +38,13 @@ type record struct {
 	lastActive time.Time
 	endedAt    time.Time
 	released   bool
-	inflight   int           // runtime calls in progress; blocks idle reaping
-	memRebate  int64         // memory not charged while paused (spec §24); guarded by Edge.mu
-	squeezedMB int64         // its balloon (spec §24); guarded by Edge.mu
-	op         chan struct{} // serializes lifecycle operations on this sandbox
+	inflight   int   // runtime calls in progress; blocks idle reaping
+	memRebate  int64 // memory not charged while paused (spec §24); guarded by Edge.mu
+	squeezedMB int64 // its balloon (spec §24); guarded by Edge.mu
+	// balloonUnknown: the balloon may be inflated though squeezedMB is 0 (the
+	// edge restarted, or it was restored from a snapshot of a squeezed VM).
+	balloonUnknown bool          // guarded by Edge.mu
+	op             chan struct{} // serializes lifecycle operations on this sandbox
 	// moving: frozen for a move to another edge (spec §26.2) since then;
 	// guarded by Edge.mu.
 	moving time.Time
@@ -144,7 +147,13 @@ func (e *Edge) fail(r *record, msg string) {
 		return // an in-progress stop is tearing it down anyway
 	}
 	e.terminate(r, pb.SandboxState_FAILED, msg)
-	go e.backends[r.sb.Spec.Backend].Stop(context.Background(), e.bsb(r))
+	go func() {
+		// After any operation in progress: backends do not expect a Stop
+		// during a Pause or a Resume.
+		r.op <- struct{}{}
+		defer func() { <-r.op }()
+		e.backends[r.sb.Spec.Backend].Stop(context.Background(), e.bsb(r))
+	}()
 }
 
 func (e *Edge) ID() string { return e.cfg.ID }
@@ -355,6 +364,7 @@ func (e *Edge) create(ctx context.Context, req *pb.EdgeCreateRequest) (*pb.Sandb
 		},
 		lease: lease, createdAt: created, lastActive: now,
 		op: make(chan struct{}, 1), peer: peer,
+		balloonUnknown: spec.Snapshot != "",
 	}
 	r.op <- struct{}{} // held until creation finishes
 	e.sbs[req.Id] = r
@@ -418,7 +428,9 @@ func (e *Edge) create(ctx context.Context, req *pb.EdgeCreateRequest) (*pb.Sandb
 	}
 	e.mu.Lock()
 	r.peer = nil
-	r.sb.State = pb.SandboxState_RUNNING
+	if !r.ended() {
+		r.sb.State = pb.SandboxState_RUNNING
+	}
 	r.lastActive = e.now()
 	e.mu.Unlock()
 	// Restarted with the record still saying CREATING, the edge would
@@ -559,9 +571,13 @@ func (e *Edge) state(r *record) pb.SandboxState {
 	return r.sb.State
 }
 
+// setState moves r to state s, unless it ended meanwhile (found lost while
+// an operation was running): an end is final.
 func (e *Edge) setState(r *record, s pb.SandboxState) {
 	e.mu.Lock()
-	r.sb.State = s
+	if !r.ended() {
+		r.sb.State = s
+	}
 	e.mu.Unlock()
 }
 
@@ -621,8 +637,10 @@ func (e *Edge) Pause(ctx context.Context, id string) (*pb.Sandbox, error) {
 		return nil, rpcutil.Err(rpcutil.Internal, "pause %s: %v", id, err)
 	}
 	e.mu.Lock()
-	r.sb.State = pb.SandboxState_PAUSED
-	e.rebateLocked(r, true)
+	if !r.ended() {
+		r.sb.State = pb.SandboxState_PAUSED
+		e.rebateLocked(r, true)
+	}
 	e.mu.Unlock()
 	e.persist(r)
 	return e.snapshot(r), nil
@@ -697,13 +715,17 @@ func (e *Edge) resumeLocked(ctx context.Context, r *record) (*pb.Sandbox, error)
 	e.mu.Unlock()
 	if err := e.timed(r, "resume", func() error { return e.backends[r.sb.Spec.Backend].Resume(ctx, e.bsb(r)) }); err != nil {
 		e.mu.Lock()
-		r.sb.State = pb.SandboxState_PAUSED
-		e.rebateLocked(r, true)
+		if !r.ended() {
+			r.sb.State = pb.SandboxState_PAUSED
+			e.rebateLocked(r, true)
+		}
 		e.mu.Unlock()
 		return nil, rpcutil.Err(rpcutil.Internal, "resume %s: %v", r.sb.Id, err)
 	}
 	e.mu.Lock()
-	r.sb.State = pb.SandboxState_RUNNING
+	if !r.ended() {
+		r.sb.State = pb.SandboxState_RUNNING
+	}
 	r.lastActive = e.now() // paused time does not count toward the idle TTL
 	e.mu.Unlock()
 	e.persist(r)
@@ -1122,9 +1144,17 @@ func (e *Edge) Sweep(ctx context.Context) {
 		go e.autoPause(context.WithoutCancel(ctx), j.r, j.msg)
 	}
 	for _, j := range probe {
-		if !e.backends[j.r.sb.Spec.Backend].Probe(ctx, e.bsb(j.r)) {
+		// A sandbox being paused has no process to probe and is not lost:
+		// one in an operation waits for the next sweep.
+		select {
+		case j.r.op <- struct{}{}:
+		default:
+			continue
+		}
+		if e.state(j.r) == pb.SandboxState_RUNNING && !e.backends[j.r.sb.Spec.Backend].Probe(ctx, e.bsb(j.r)) {
 			e.fail(j.r, "sandbox lost (liveness probe failed)")
 		}
+		<-j.r.op
 	}
 }
 

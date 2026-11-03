@@ -110,7 +110,7 @@
 |---|---|---|
 | `default_ttl_running_stop_s` | 3600 | 请求没有设置空闲超时时使用 |
 | `default_ttl_max_s` | 86400 | 请求没有设置最长寿命时使用 |
-| `max_ttl_max_s` | 604800（7 天） | 请求允许的最长寿命，超过返回 `invalid` |
+| `max_ttl_max_s` | 604800（7 天） | 请求允许的最长寿命，超过返回 `invalid`。设了 `ttl_paused_s` 的 sandbox 每次自动暂停都会续期，不受此限 |
 | `request_rate` | 10000 | 每个身份每秒的调用数（包括执行命令和文件调用） |
 | `request_burst` | 2 × `request_rate` | 突发 |
 | `create_rate` | 2000 | 每个身份每秒创建的 sandbox 数 |

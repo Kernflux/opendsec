@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -272,7 +273,8 @@ func (g *Gateway) sandboxTarget(r *http.Request) (id string, port int, ok bool) 
 	}
 	port = EnvdPort
 	if portS != "" {
-		if _, err := fmt.Sscanf(portS, "%d", &port); err != nil {
+		var err error
+		if port, err = strconv.Atoi(portS); err != nil || port < 1 || port > 65535 {
 			return "", 0, false
 		}
 	}

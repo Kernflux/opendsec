@@ -110,7 +110,7 @@ Creation policy each apiserver enforces. Timeouts: 0 means the built-in default,
 |---|---|---|
 | `default_ttl_running_stop_s` | 3600 | Idle timeout when a request sets none |
 | `default_ttl_max_s` | 86400 | Lifetime when a request sets none |
-| `max_ttl_max_s` | 604800 (7 days) | Longest lifetime a request may ask for; more is `invalid` |
+| `max_ttl_max_s` | 604800 (7 days) | Longest lifetime a request may ask for; more is `invalid`. A sandbox with `ttl_paused_s` renews its lifetime at each auto-pause, beyond this limit |
 | `request_rate` | 10000 | Calls per second per principal (commands and file calls included) |
 | `request_burst` | 2 × `request_rate` | Burst |
 | `create_rate` | 2000 | Sandbox creations per second per principal |

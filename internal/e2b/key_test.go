@@ -2,8 +2,11 @@ package e2b
 
 import (
 	"net/http"
+	"net/http/httptest"
 	"regexp"
 	"testing"
+
+	"github.com/kernflux/opendsec/internal/ids"
 )
 
 // TestE2BKey: E2BKey passes the E2B SDKs' format check, and the gateway
@@ -31,6 +34,22 @@ func TestE2BKey(t *testing.T) {
 		r.Header.Set("X-API-KEY", k)
 		if got := apiKey(r); got != k {
 			t.Errorf("%q: got %q", k, got)
+		}
+	}
+}
+
+func TestSandboxTargetPort(t *testing.T) {
+	g := &Gateway{}
+	id := ids.Sandbox("e000", ids.NewLease())
+	for port, want := range map[string]bool{"": true, "1": true, "49983": true, "65535": true,
+		"0": false, "65536": false, "-1": false, "49983abc": false, "abc": false, " 80": false} {
+		r := httptest.NewRequest("GET", "/", nil)
+		r.Header.Set("E2b-Sandbox-Id", toE2B(id))
+		if port != "" {
+			r.Header.Set("E2b-Sandbox-Port", port)
+		}
+		if _, _, ok := g.sandboxTarget(r); ok != want {
+			t.Errorf("port %q: ok = %v", port, ok)
 		}
 	}
 }

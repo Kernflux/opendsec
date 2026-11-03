@@ -136,6 +136,8 @@ func (e *Edge) recoverOne(ctx context.Context, lease string, sb *pb.Sandbox) err
 		createdAt:  time.Unix(0, int64(sb.CreatedAt*1e9)),
 		lastActive: now, // not persisted: give every adopted sandbox a fresh idle window
 		op:         make(chan struct{}, 1),
+		// squeezedMB is not persisted.
+		balloonUnknown: true,
 	}
 	// Frozen for a move when the edge stopped: still frozen, so it does not
 	// run here too while the edge it moves to starts it; that edge's EndMove

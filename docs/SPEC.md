@@ -226,7 +226,7 @@ P1 实现与运行时无关的部分；后端通过统一接口插入。
   对 PAUSED sandbox 发起任何操作会先透明 resume **[论文]**。
 - **TTL** **[论文：显式 stop 或 TTL 到期回收]**：
   - `ttl_running_stop`：空闲超时（距最后一次操作的秒数）**[论文示例注释为 idle timeout]**；PAUSED 期间不计时 **[决定]**。
-  - `ttl_max`：绝对生命周期上限（可选）**[决定]**。
+  - `ttl_max`：绝对生命周期上限（可选）**[决定]**。设了 `ttl_paused_s` 的 sandbox 例外：每次自动暂停都会续期，见 §37.11。
   - 后台 reaper 每秒扫描。
 - **资源释放**：终止时释放本地资源并 `iam.release(R)`（失败交给 reconcile 兜底）。
 - **健康** **[论文]**：P2 起监控 aether 通道，断开即标 FAILED。
@@ -2959,6 +2959,7 @@ E2B 的 `sandbox.fork()`、`create_snapshot()`、`Sandbox.create(snapshot_id)` �
 - 大于 0 时，运行中的 sandbox 到了 `ttl_max_s` 或空闲超时，edge 不停止它而是暂停，并保留 `ttl_paused_s` 秒：`ttl_max_s` 改成「暂停时的年龄 + ttl_paused_s」。到期后停止。
 - 暂停失败（后端不支持）就照常停止，消息里写明原因。
 - 暂停后任何调用都会自动恢复它，和其他暂停的 sandbox 一样。恢复后由空闲超时控制，空闲了会再次暂停。
+- **寿命不封顶**：每次暂停都重新计算 `ttl_max_s`，所以只要在保留期内恢复过，sandbox 可以一直存活，也不受准入的 `max_ttl_max_s` 限制。这和 E2B 的 auto-pause 一致；要硬性限制寿命，就不要设 `ttl_paused_s`。
 - apiserver 校验 `ttl_paused_s >= 0`，超过准入的寿命上限时截到上限。
 - 网关：`autoPause`（SDK 的 `lifecycle={"on_timeout": "pause"}`）设 `ttl_paused_s` 为 30 天，和手动暂停一致。sandbox 信息里返回 `lifecycle`：`onTimeout` 是 `pause` 或 `kill`，`autoResume` 总是 true。
 - **和 E2B 的差别**：

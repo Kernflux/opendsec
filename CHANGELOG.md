@@ -199,6 +199,15 @@ docs/OPERATIONS.md §6.4.
   they go to the image store.
 
 ### Fixed
+- **A sandbox's lifecycle during failures.** A sandbox found lost during a
+  pause or resume is now stopped after that operation and stays FAILED; the
+  liveness probe skips a sandbox in an operation, so one being paused is no
+  longer taken for lost. Ending a move no longer leaks the sandbox on the old
+  edge when the caller stops waiting.
+- **Balloons left inflated.** After an edge restart, or in a sandbox restored
+  from a snapshot of a squeezed microVM, the edge did not know about an
+  inflated balloon and never deflated it.
+- **E2B gateway:** a sandbox port such as `49983abc` or `70000` is refused.
 - **Recent E2B SDKs refused OpenDsec tokens** before sending a request:
   E2B's Python SDK 2.25 to 2.45 accept only keys of the form `e2b_` and
   hex, failing with `Invalid API key format`. The E2B gateway now also

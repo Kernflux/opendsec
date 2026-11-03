@@ -135,13 +135,23 @@ func (e *Edge) EndMove(ctx context.Context, id, to string) error {
 	e.moved[id] = moved{to: to, at: e.now()}
 	delete(e.sbs, id)
 	e.mu.Unlock()
-	if err := lock(ctx, r); err != nil {
-		return err
+	// The hand-off is done and only this call knows to clean up (a retry
+	// finds it in e.moved), so it finishes even if the caller stops waiting.
+	letGo := func() {
+		defer func() { <-r.op }()
+		e.setState(r, pb.SandboxState_STOPPING)
+		e.backends[r.sb.Spec.Backend].Stop(context.WithoutCancel(ctx), e.bsb(r))
+		e.terminate(r, pb.SandboxState_STOPPED, "moved to edge "+to)
 	}
-	defer func() { <-r.op }()
-	e.setState(r, pb.SandboxState_STOPPING)
-	e.backends[r.sb.Spec.Backend].Stop(context.WithoutCancel(ctx), e.bsb(r))
-	e.terminate(r, pb.SandboxState_STOPPED, "moved to edge "+to)
+	select {
+	case r.op <- struct{}{}:
+		letGo()
+	case <-ctx.Done():
+		go func() {
+			r.op <- struct{}{}
+			letGo()
+		}()
+	}
 	return nil
 }
 

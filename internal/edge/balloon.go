@@ -70,14 +70,16 @@ func (e *Edge) balance(ctx context.Context, avail, reserve int64) {
 		}
 	case float64(avail) > releaseAbove*float64(reserve):
 		for _, c := range cands {
-			if c.r.squeezedMB == 0 {
+			if c.r.squeezedMB == 0 && !c.r.balloonUnknown {
 				continue
 			}
-			if c.sq.Squeeze(ctx, e.bsb(c.r), 0) == nil {
-				e.mu.Lock()
+			err := c.sq.Squeeze(ctx, e.bsb(c.r), 0)
+			e.mu.Lock()
+			c.r.balloonUnknown = false // one try: a VM without a balloon always refuses
+			if err == nil {
 				c.r.squeezedMB = 0
-				e.mu.Unlock()
 			}
+			e.mu.Unlock()
 		}
 	}
 }
