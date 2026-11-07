@@ -2,6 +2,7 @@ package apiserver
 
 import (
 	"context"
+	"encoding/json"
 	"maps"
 	"time"
 
@@ -54,7 +55,7 @@ func (s *Server) ForkSandbox(r *pb.ForkSandboxRequest, stream pb.DSec_ForkSandbo
 	}
 	// The copies carry the source's image: the caller needs layer.use on it
 	// as for any creation (the image itself may since have been deleted).
-	if s.Images != nil && images.IsStoreName(spec.Image) {
+	if s.imagesOn && images.IsStoreName(spec.Image) {
 		p, err := s.principal(ctx)
 		if err != nil {
 			return err
@@ -83,6 +84,10 @@ func (s *Server) ForkSandbox(r *pb.ForkSandboxRequest, stream pb.DSec_ForkSandbo
 	if err != nil {
 		return err
 	}
+	rec, err := s.recordSnapshot(ctx, snap)
+	if err != nil {
+		return err
+	}
 	spec.Snapshot = snap.SnapshotId
 	var peer *pb.EdgePeer
 	if snap.Held {
@@ -95,10 +100,8 @@ func (s *Server) ForkSandbox(r *pb.ForkSandboxRequest, stream pb.DSec_ForkSandbo
 	// A memory snapshot is only needed to start the copies (they hold their
 	// own links and mappings); filesystem snapshots stay, as copies stack on
 	// their layers.
-	if snap.Memory && s.Images != nil {
-		if rec, gerr := s.Images.GetSnapshot(snap.SnapshotId); gerr == nil && rec.VM != nil {
-			s.Images.DeleteSnapshot(snap.SnapshotId)
-		}
+	if snap.Memory && rec != nil && rec.VM != nil {
+		s.catalog().DeleteSnapshot(context.WithoutCancel(ctx), snap.SnapshotId, src.EdgeId)
 	}
 	return err
 }
@@ -128,7 +131,7 @@ func (s *Server) CreateSnapshot(ctx context.Context, r *pb.CreateSnapshotRequest
 		return nil, rpcutil.Err(rpcutil.Invalid, "snapshot images need a sandbox started from a store image, not %q", sb.Spec.GetImage())
 	}
 	if !r.Overwrite {
-		if _, err := st.GetManifest(name); err == nil {
+		if _, err := st.Fresh(ctx, name); err == nil {
 			return nil, rpcutil.Err(rpcutil.Invalid, "image %s already exists", name)
 		}
 	}
@@ -136,7 +139,10 @@ func (s *Server) CreateSnapshot(ctx context.Context, r *pb.CreateSnapshotRequest
 	if err != nil {
 		return nil, err
 	}
-	snap, err := st.GetSnapshot(res.SnapshotId)
+	snap, err := s.recordSnapshot(ctx, res)
+	if err == nil && snap == nil {
+		err = rpcutil.Err(rpcutil.NotFound, "snapshot %s", res.SnapshotId)
+	}
 	if err != nil {
 		if rpcutil.Reason(err) == rpcutil.NotFound {
 			return nil, rpcutil.Err(rpcutil.Invalid, "backend %s does not keep snapshots in the image store", sb.Spec.GetBackend())
@@ -148,17 +154,38 @@ func (s *Server) CreateSnapshot(ctx context.Context, r *pb.CreateSnapshotRequest
 	}
 	m := &images.Manifest{Name: name, Layers: snap.Layers, Env: snap.Env, Workdir: snap.Workdir, User: snap.User,
 		Parent: sb.Spec.GetImage(), Source: "snapshot " + sb.Id, CreatedBy: p, Snapshot: snap.ID, Memory: snap.Memory}
-	if err := st.PutManifest(m, r.Overwrite); err != nil {
+	if err := st.Put(ctx, m, r.Overwrite); err != nil {
 		return nil, err
 	}
 	return infoPB(m), nil
 }
 
+// recordSnapshot keeps the record of a snapshot an edge just took in the
+// catalog (spec §42) and returns it; nil without an image store. Edges
+// older than the catalog return no record: the store's file is it.
+func (s *Server) recordSnapshot(ctx context.Context, res *pb.EdgeSnapshotResponse) (*images.Snapshot, error) {
+	c := s.catalog()
+	if c == nil {
+		return nil, nil
+	}
+	if len(res.Record) == 0 {
+		return c.GetSnapshot(ctx, res.SnapshotId)
+	}
+	var snap images.Snapshot
+	if err := json.Unmarshal(res.Record, &snap); err != nil || snap.ID != res.SnapshotId {
+		return nil, rpcutil.Err(rpcutil.Internal, "edge returned a bad record for snapshot %s: %v", res.SnapshotId, err)
+	}
+	if err := c.PutSnapshot(ctx, &snap); err != nil {
+		return nil, err
+	}
+	return &snap, nil
+}
+
 // runningImage describes the layers sandbox sb runs on, as a manifest: its
 // snapshot's for a fork copy, else its image's.
-func runningImage(st *images.Store, sb *pb.Sandbox) (*images.Manifest, error) {
+func (s *Server) runningImage(ctx context.Context, sb *pb.Sandbox) (*images.Manifest, error) {
 	if id := sb.Spec.GetSnapshot(); id != "" {
-		snap, err := st.GetSnapshot(id)
+		snap, err := s.catalog().GetSnapshot(ctx, id)
 		if err != nil {
 			return nil, err
 		}
@@ -170,5 +197,5 @@ func runningImage(st *images.Store, sb *pb.Sandbox) (*images.Manifest, error) {
 	if !images.IsStoreName(sb.Spec.GetImage()) {
 		return nil, rpcutil.Err(rpcutil.Invalid, "pack_diff needs a sandbox started from a store image, not %q", sb.Spec.GetImage())
 	}
-	return st.GetManifest(sb.Spec.GetImage())
+	return s.catalog().Get(ctx, sb.Spec.GetImage())
 }

@@ -347,9 +347,9 @@ func (b *Backend) start(ctx context.Context, sb *backend.Sandbox, lease string, 
 	spec := sb.Spec
 	var img *resolved
 	if spec.Snapshot != "" {
-		img, err = b.resolveSnapshot(spec.Snapshot)
+		img, err = b.resolveSnapshot(spec.Snapshot, sb.SnapRecord)
 	} else {
-		img, err = b.resolve(spec.Image)
+		img, err = b.resolve(spec.Image, sb)
 	}
 	if err != nil {
 		return nil, err
@@ -675,14 +675,14 @@ type imageState struct {
 // resolve maps an image name to overlay layers: "<project>/<repo>:<tag>"
 // from the shared store (on-demand, spec §17.2), anything else from the
 // edge's static image config.
-func (b *Backend) resolve(image string) (*resolved, error) {
+func (b *Backend) resolve(image string, sb *backend.Sandbox) (*resolved, error) {
 	if b.opt.Store != nil && images.IsStoreName(image) {
-		m, err := b.opt.Store.GetManifest(image)
+		m, err := b.opt.Store.ManifestFor(image, sb.Manifest)
 		if err != nil {
 			return nil, err
 		}
 		if m.Snapshot != "" {
-			if snap, err := b.opt.Store.GetSnapshot(m.Snapshot); err == nil && snap.VM != nil {
+			if snap, err := b.opt.Store.SnapshotFor(m.Snapshot, sb.SnapRecord); err == nil && snap.VM != nil {
 				return nil, rpcutil.Err(rpcutil.Invalid, "image %s is a microvm snapshot; use backend microvm", image)
 			}
 		}
@@ -701,11 +701,11 @@ func (b *Backend) resolve(image string) (*resolved, error) {
 
 // resolveSnapshot maps a snapshot (spec §19) to overlay layers: its store
 // layers, on top of its edge-local base image if it has one.
-func (b *Backend) resolveSnapshot(id string) (*resolved, error) {
+func (b *Backend) resolveSnapshot(id string, given *images.Snapshot) (*resolved, error) {
 	if b.opt.Store == nil {
 		return nil, rpcutil.Err(rpcutil.Unavailable, "edge %s has no image store", b.opt.EdgeID)
 	}
-	snap, err := b.opt.Store.GetSnapshot(id)
+	snap, err := b.opt.Store.SnapshotFor(id, given)
 	if err != nil {
 		return nil, err
 	}

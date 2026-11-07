@@ -1,15 +1,17 @@
 # One apiserver instance: systemctl enable --now opendsec-apiserver@0  (instance = index in "apiserver")
 [Unit]
 Description=OpenDsec apiserver %i
-After=network-online.target
-RequiresMountsFor=/mnt/opendsec-images
+# After the shared image store is mounted at boot, but not depending on it:
+# the image catalog is in IAM, and the apiserver only writes manifest files
+# there for older edges (image_store.manifest_files, spec §42).
+After=network-online.target remote-fs.target
 Wants=network-online.target
 
 [Service]
-# Root, but holding only file-access capabilities: the apiserver deletes
-# snapshot directories in the shared store that edges (root) created.
+# Root, but holding only CAP_FOWNER: with manifest files, the apiserver
+# marks layers used in the shared store when no edge can (spec §42).
 User=root
-CapabilityBoundingSet=CAP_DAC_OVERRIDE CAP_FOWNER
+CapabilityBoundingSet=CAP_FOWNER
 AmbientCapabilities=
 # -metrics also serves /readyz, the load balancer's health check (spec §27.1).
 ExecStart=/usr/local/bin/opendsec-apiserver -config /etc/opendsec/opendsec.json -index %i -metrics :9463
@@ -32,8 +34,10 @@ ProtectKernelModules=yes
 ProtectControlGroups=yes
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
 ReadOnlyPaths=/etc/opendsec
-# Shared image store (image_store.root): apiservers write image manifests.
-ReadWritePaths=/mnt/opendsec-images
+# Shared image store (image_store.root): with image_store.manifest_files,
+# apiservers write image manifests there for older edges. "-": it may be
+# absent (not mounted, or not used).
+ReadWritePaths=-/mnt/opendsec-images
 
 [Install]
 WantedBy=multi-user.target

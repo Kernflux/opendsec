@@ -79,12 +79,14 @@ func (s *Service) KVDelete(ctx context.Context, r *pb.KVDeleteRequest) (*pb.Empt
 	return &pb.Empty{}, s.IAM.KVDeleteFenced(r.Key, r.Check, r.ExpectRev, fenceOf(r.Fence))
 }
 
-// kvScope keeps apiservers to the extensions' keys (ext/): the rest is
-// the fleet service's, which says what runs on every node. It is checked
-// where the call comes in, before any forwarding to the leader.
+// kvScope keeps apiservers to the extensions' keys (ext/) and the image
+// catalog (img/): the rest is the fleet service's, which says what runs on
+// every node. It is checked where the call comes in, before any forwarding
+// to the leader.
 func kvScope(ctx context.Context, key string) error {
-	if id, ok := rpcutil.PeerIdentity(ctx); ok && id.Role == pki.RoleAPIServer && !strings.HasPrefix(key, "ext/") {
-		return rpcutil.Err(rpcutil.Forbidden, "%s may use only ext/ keys, not %q", id, key)
+	if id, ok := rpcutil.PeerIdentity(ctx); ok && id.Role == pki.RoleAPIServer &&
+		!strings.HasPrefix(key, "ext/") && !strings.HasPrefix(key, "img/") {
+		return rpcutil.Err(rpcutil.Forbidden, "%s may use only ext/ and img/ keys, not %q", id, key)
 	}
 	return nil
 }

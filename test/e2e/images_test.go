@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -109,7 +110,7 @@ func TestStoreImagesAndPackDiff(t *testing.T) {
 	state, _ := os.MkdirTemp("", "opendsec")
 	t.Cleanup(func() { os.RemoveAll(state) })
 	cfg := cluster.SimConfig(2, 1, 8, 16*1024, 64)
-	cfg.ImageStore.Root = storeRoot
+	useStore(cfg, storeRoot)
 	for i := range cfg.Edges {
 		cfg.Edges[i].StateDir, cfg.Edges[i].AgentDir = state, agentDir
 		// The state dir is on a small tmpfs: sparse 256 MB disks, small reserve.
@@ -132,6 +133,10 @@ func TestStoreImagesAndPackDiff(t *testing.T) {
 		t.Fatal(err)
 	}
 	admin.RegisterImage(cx, &pb.RegisterImageRequest{Image: &pb.ImageInfo{Name: "root/rl/ws:1", Layers: []string{layerID("workspace")}}})
+	// Manifest files exactly when the apiservers keep them (spec §42).
+	if _, err := st.GetManifest("root/rl/base:1"); (err == nil) == noManifestFiles() {
+		t.Fatalf("manifest file of root/rl/base:1 with manifest_files=%v: %v", !noManifestFiles(), err)
+	}
 	app, err := admin.ComposeImage(cx, &pb.ComposeImageRequest{Name: "root/rl/app:1", Parts: []string{"root/rl/base:1", "root/rl/ws:1"}})
 	if err != nil || len(app.Layers) != 2 || app.Env["GREETING"] != "hi" {
 		t.Fatalf("compose: %v %v", app, err)
@@ -204,4 +209,43 @@ func TestStoreImagesAndPackDiff(t *testing.T) {
 	if list, err := admin.ListImages(cx, &pb.ListImagesRequest{Project: "root/rl"}); err != nil || len(list.Images) != 4 {
 		t.Fatalf("list images: %v %v", list, err)
 	}
+
+	// Garbage collection takes its references from the catalog (spec §42),
+	// which only cluster admins read: nothing an image names would go.
+	if _, err := runner.ListCatalog(cx, &pb.Empty{}); rpcutil.Reason(err) != rpcutil.Forbidden {
+		t.Fatalf("runner read the catalog: %v", err)
+	}
+	cat, err := admin.ListCatalog(cx, &pb.Empty{})
+	if err != nil || len(cat.Images) != 4 {
+		t.Fatalf("catalog: %v %v", cat, err)
+	}
+	refs := &images.Refs{}
+	for _, m := range cat.Images {
+		refs.Images = append(refs.Images, &images.Manifest{Name: m.Name, Layers: m.Layers, Snapshot: m.Snapshot})
+	}
+	res, err := st.GCRefs(refs, 0, true, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range cat.Images {
+		for _, l := range m.Layers {
+			if slices.Contains(res.Layers, l) {
+				t.Fatalf("gc would remove layer %s of %s", l, m.Name)
+			}
+		}
+	}
 }
+
+// useStore gives cfg the shared image store at root. With
+// OPENDSEC_TEST_MANIFEST_FILES=0 the apiservers keep no manifest files
+// (image_store.manifest_files false): the catalog is only IAM's, and the
+// store is reached only through edges (spec §42).
+func useStore(cfg *config.Cluster, root string) {
+	cfg.ImageStore.Root = root
+	if noManifestFiles() {
+		f := false
+		cfg.ImageStore.ManifestFiles = &f
+	}
+}
+
+func noManifestFiles() bool { return os.Getenv("OPENDSEC_TEST_MANIFEST_FILES") == "0" }

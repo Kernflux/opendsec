@@ -13,11 +13,77 @@ import (
 // layer.use on the image's project: runtime accounts that only hold
 // layer.use cannot publish (builder/runtime separation, paper §5).
 
-func (s *Server) imageStore() (*images.Store, error) {
-	if s.Images == nil {
-		return nil, rpcutil.Err(rpcutil.Unavailable, "no image store configured (image_store.root)")
+func (s *Server) imageStore() (*catalog, error) {
+	if c := s.catalog(); c != nil {
+		return c, nil
 	}
-	return s.Images, nil
+	return nil, rpcutil.Err(rpcutil.Unavailable, "no image store configured (image_store.root)")
+}
+
+// EnableImages turns on store images (spec §17), kept in the image catalog
+// (spec §42). files is the store as this apiserver mounts it, for edges and
+// apiservers older than the catalog (image_store.manifest_files); nil when
+// the apiserver does not access the store. Call before Run.
+func (s *Server) EnableImages(files *images.Store) {
+	s.imagesOn, s.filesStore = true, files
+}
+
+// catalog is the image catalog, nil without an image store.
+func (s *Server) catalog() *catalog {
+	if !s.imagesOn {
+		return nil
+	}
+	s.catOnce.Do(func() { s.cat = newCatalog(s.filesStore, s.iam, s, s.log) })
+	return s.cat
+}
+
+// storeEdgeIDs lists the healthy edges, prefer first if among them.
+func (s *Server) storeEdgeIDs(prefer string) []string {
+	var ids []string
+	for _, e := range s.Engine.Snapshot().Edges {
+		if e.Healthy {
+			ids = append(ids, e.Id)
+		}
+	}
+	return shuffled(ids, prefer)
+}
+
+// ListCatalog returns every image manifest and snapshot record, for the
+// image store's garbage collection. Cluster admins only.
+func (s *Server) ListCatalog(ctx context.Context, _ *pb.Empty) (*pb.Catalog, error) {
+	c, err := s.imageStore()
+	if err != nil {
+		return nil, err
+	}
+	if _, err := s.clusterAdmin(ctx); err != nil {
+		return nil, err
+	}
+	refs, err := c.Refs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := &pb.Catalog{}
+	for _, m := range refs.Images {
+		out.Images = append(out.Images, infoPB(m))
+	}
+	for _, snap := range refs.Snapshots {
+		out.Snapshots = append(out.Snapshots, &pb.SnapshotRecord{Id: snap.ID, Layers: snap.Layers, CreatedAt: snap.CreatedAt,
+			Memory: snap.Memory, Holder: snap.Holder})
+	}
+	return out, nil
+}
+
+// ForgetSnapshots drops snapshot records: garbage collection removes
+// their files. Cluster admins only.
+func (s *Server) ForgetSnapshots(ctx context.Context, r *pb.ForgetSnapshotsRequest) (*pb.Empty, error) {
+	c, err := s.imageStore()
+	if err != nil {
+		return nil, err
+	}
+	if _, err := s.clusterAdmin(ctx); err != nil {
+		return nil, err
+	}
+	return &pb.Empty{}, c.ForgetSnapshots(ctx, r.SnapshotIds)
 }
 
 // authorizeImage checks perm on the project that owns image name.
@@ -37,10 +103,10 @@ func (s *Server) authorizeImage(ctx context.Context, principal, name, perm strin
 // images need layer.use and must exist. Without a store, every name is an
 // edge-local (static or simulated) image, as before the store existed.
 func (s *Server) checkImageUse(ctx context.Context, image string) error {
-	if s.Images == nil || !images.IsStoreName(image) {
+	if !s.imagesOn || !images.IsStoreName(image) {
 		return nil
 	}
-	st := s.Images
+	st := s.catalog()
 	p, err := s.principal(ctx)
 	if err != nil {
 		return err
@@ -49,7 +115,7 @@ func (s *Server) checkImageUse(ctx context.Context, image string) error {
 	if err != nil {
 		return err
 	}
-	_, err = st.GetManifest(canon)
+	_, err = st.Get(ctx, canon)
 	return err
 }
 
@@ -75,7 +141,7 @@ func (s *Server) RegisterImage(ctx context.Context, r *pb.RegisterImageRequest) 
 	}
 	m := &images.Manifest{Name: name, Layers: img.Layers, Env: img.Env, Workdir: img.Workdir, User: img.User,
 		Source: img.Source, CreatedBy: p}
-	if err := st.PutManifest(m, r.Overwrite); err != nil {
+	if err := st.Put(ctx, m, r.Overwrite); err != nil {
 		return nil, err
 	}
 	return infoPB(m), nil
@@ -104,7 +170,7 @@ func (s *Server) ComposeImage(ctx context.Context, r *pb.ComposeImageRequest) (*
 		if err != nil {
 			return nil, err
 		}
-		pm, err := st.GetManifest(pn)
+		pm, err := st.Get(ctx, pn)
 		if err != nil {
 			return nil, err
 		}
@@ -133,7 +199,7 @@ func (s *Server) ComposeImage(ctx context.Context, r *pb.ComposeImageRequest) (*
 	if r.User != "" {
 		m.User = r.User
 	}
-	if err := st.PutManifest(m, r.Overwrite); err != nil {
+	if err := st.Put(ctx, m, r.Overwrite); err != nil {
 		return nil, err
 	}
 	return infoPB(m), nil
@@ -152,8 +218,7 @@ func (s *Server) GetImage(ctx context.Context, r *pb.ImageRef) (*pb.ImageInfo, e
 	if err != nil {
 		return nil, err
 	}
-	st.Refresh(name) // another apiserver may have overwritten it
-	m, err := st.GetManifest(name)
+	m, err := st.Fresh(ctx, name) // another apiserver may have overwritten it
 	if err != nil {
 		return nil, err
 	}
@@ -175,7 +240,7 @@ func (s *Server) ListImages(ctx context.Context, r *pb.ListImagesRequest) (*pb.I
 	if err := s.authorize(ctx, p, r.Project, iam.LayerUse); err != nil {
 		return nil, err
 	}
-	ms, err := st.List(r.Project)
+	ms, err := st.List(ctx, r.Project)
 	if err != nil {
 		return nil, err
 	}
@@ -199,7 +264,7 @@ func (s *Server) DeleteImage(ctx context.Context, r *pb.ImageRef) (*pb.Empty, er
 	if err != nil {
 		return nil, err
 	}
-	return &pb.Empty{}, st.DeleteManifest(name)
+	return &pb.Empty{}, st.Delete(ctx, name)
 }
 
 // PackDiff snapshots a sandbox's writable layer as a new image stacked on the
@@ -227,12 +292,12 @@ func (s *Server) PackDiff(ctx context.Context, r *pb.PackDiffRequest) (*pb.Image
 			return nil, err
 		}
 	}
-	parent, err := runningImage(st, sb)
+	parent, err := s.runningImage(ctx, sb)
 	if err != nil {
 		return nil, err
 	}
 	if !r.Overwrite {
-		if _, err := st.GetManifest(name); err == nil {
+		if _, err := st.Fresh(ctx, name); err == nil {
 			return nil, rpcutil.Err(rpcutil.Invalid, "image %s already exists", name)
 		}
 	}
@@ -243,7 +308,7 @@ func (s *Server) PackDiff(ctx context.Context, r *pb.PackDiffRequest) (*pb.Image
 	m := &images.Manifest{Name: name, Layers: append(append([]string{}, parent.Layers...), res.LayerId),
 		Env: parent.Env, Workdir: parent.Workdir, User: parent.User, Parent: parent.Name,
 		Source: "pack_diff " + r.SandboxId, CreatedBy: p}
-	if err := st.PutManifest(m, r.Overwrite); err != nil {
+	if err := st.Put(ctx, m, r.Overwrite); err != nil {
 		return nil, err
 	}
 	return infoPB(m), nil

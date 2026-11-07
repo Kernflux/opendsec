@@ -2,6 +2,7 @@ package edge
 
 import (
 	"context"
+	"encoding/json"
 
 	pb "github.com/kernflux/opendsec/gen/go/opendsec/v1"
 	"github.com/kernflux/opendsec/internal/edge/backend"
@@ -173,6 +174,36 @@ func (e *Edge) PackDiff(ctx context.Context, id, layerID string, scrub []string)
 	return &pb.EdgePackDiffResponse{LayerId: meta.ID, SizeBytes: meta.Size}, nil
 }
 
+// CheckLayers reports which of r's layers the image store lacks (spec §42).
+func (s *Service) CheckLayers(ctx context.Context, r *pb.CheckLayersRequest) (*pb.CheckLayersResponse, error) {
+	st := s.Edge.Images
+	if st == nil {
+		return nil, rpcutil.Err(rpcutil.Unavailable, "edge %s has no image store", s.Edge.cfg.ID)
+	}
+	out := &pb.CheckLayersResponse{}
+	var found []string
+	for _, id := range r.LayerIds {
+		if !images.ValidLayerID(id) || !st.HasLayer(id) {
+			out.Missing = append(out.Missing, id)
+		} else {
+			found = append(found, id)
+		}
+	}
+	st.Touch(found, r.SnapshotId)
+	return out, nil
+}
+
+// DeleteSnapshot removes a snapshot's files from the image store. Copies
+// on nodes (this edge's, others') follow: their caches drop snapshots the
+// store no longer has.
+func (s *Service) DeleteSnapshot(ctx context.Context, r *pb.DeleteSnapshotRequest) (*pb.Empty, error) {
+	st := s.Edge.Images
+	if st == nil {
+		return nil, rpcutil.Err(rpcutil.Unavailable, "edge %s has no image store", s.Edge.cfg.ID)
+	}
+	return &pb.Empty{}, st.DeleteSnapshot(r.SnapshotId)
+}
+
 func (s *Service) PackDiff(ctx context.Context, r *pb.EdgePackDiffRequest) (*pb.EdgePackDiffResponse, error) {
 	return s.Edge.PackDiff(ctx, r.SandboxId, r.LayerId, r.Scrub)
 }
@@ -220,7 +251,13 @@ func (e *Edge) Snapshot(ctx context.Context, id, snapID string, memory, preferMe
 	e.mu.Lock()
 	r.lastActive = e.now()
 	e.mu.Unlock()
-	return &pb.EdgeSnapshotResponse{SnapshotId: snap.ID, Memory: snap.Memory, SizeBytes: snap.Size, Held: held}, nil
+	return &pb.EdgeSnapshotResponse{SnapshotId: snap.ID, Memory: snap.Memory, SizeBytes: snap.Size, Held: held, Record: recordJSON(snap)}, nil
+}
+
+// recordJSON is snap as the apiserver keeps it in its catalog (spec §42).
+func recordJSON(snap *images.Snapshot) []byte {
+	b, _ := json.Marshal(snap)
+	return b
 }
 
 func (s *Service) Snapshot(ctx context.Context, r *pb.EdgeSnapshotRequest) (*pb.EdgeSnapshotResponse, error) {

@@ -1828,7 +1828,7 @@ SDK sb.fork(count=8)
 ### 27.3 配置与密钥
 - 新增 `iam.admin_token_file`：集群配置里不再写 token 本身。只有 IAM 节点有这个文件；其他组件读不到时直接忽略。
 - 每个节点只拿到 `ca.crt` 和本机组件的证书与私钥，CA 私钥只留在运维机。
-- apiserver 以 root 运行，但只保留 `CAP_DAC_OVERRIDE` 和 `CAP_FOWNER` 两项 capability：它要删除 edge（root）在共享存储里创建的快照目录。其余 systemd 防护选项不变。
+- apiserver 以 root 运行，但只保留 `CAP_DAC_OVERRIDE` 和 `CAP_FOWNER` 两项 capability：它要删除 edge（root）在共享存储里创建的快照目录。其余 systemd 防护选项不变。（2026-11-07 起只保留 `CAP_FOWNER`，快照目录由 edge 删除，见 §42。）
 - 生产配置开启 `keep_sandboxes_on_exit` 和 `persist_state`：edge 重启或升级不影响 sandbox。
 
 ### 27.4 部署工具（`deploy/prod/opendsecops`）
@@ -3158,6 +3158,45 @@ E2B 的 `sandbox.fork()`、`create_snapshot()`、`Sandbox.create(snapshot_id)` �
   - `TestUsage`（IAM）：跨午夜的租约分到两天；运行中的算到当前时刻；包含子项目、不含其他项目；按日期过滤；没有 `project.admin` 被拒绝；快照恢复后数据不变；超过 400 天的行被删除。
   - `TestUsageReport`（e2e，经 apiserver）：已停止和运行中的 sandbox 都计入；CPU 核·小时恰好是 sandbox·小时的 2 倍（2 核），内存同理；没有权限被拒绝。
   - `TestPrintUsage`：命令行按项目汇总、按天、CSV 三种输出。
+
+## 42. 镜像目录放进 IAM（2026-11-07）
+
+- **起因**：镜像清单和快照记录原来是共享存储上的 JSON 文件，apiserver 在请求路径上直接读写这些文件。
+  - 共享存储卡住时（NFS 用的是 `hard` 挂载，调用不报错，而是一直等），创建 sandbox、查询镜像的请求跟着卡住；
+  - 并发发布靠 `link`、`rename` 这些文件操作来保证，覆盖 tag 时后写的赢，其他 apiserver 何时看到新内容取决于 NFS 的属性缓存；
+  - apiserver 的单元依赖这个挂载（`RequiresMountsFor`），还要 `CAP_DAC_OVERRIDE` 才能删 edge 建的快照目录。
+- **业界的做法**：控制面只读写元数据库，镜像的实际数据由节点访问。Kubernetes 的状态只在 etcd 里，containerd 分开元数据库和按内容寻址的数据，Harbor 的 tag 和项目在 Postgres、数据在对象存储。数据写入后不再修改，可变的只有名字到清单的映射，放在强一致的存储里；GC 以元数据为准。
+- **分工**：
+  | | 放在哪里 | 谁访问 |
+  |---|---|---|
+  | 镜像目录（名字 → 清单）、快照记录 | IAM 键值区 `img/m/<镜像名>`、`img/s/<快照 id>`，经 Raft 复制，随 IAM 备份 | apiserver |
+  | 层、快照文件、快照描述文件 `snapshot.json`、in-use 登记 | 共享存储 | edge（以及构建机上的 `opendsecctl image import`、`image gc`） |
+  - apiserver 可以访问键值区的 `ext/` 和 `img/`，不能访问 `fleet/`。
+  - `snapshot.json` 留在快照目录里，作为数据的一部分：edge 之间靠它的 `publishing`、`holder` 协调快照文件是否可用（§19.14、§26），和以前一样。
+- **四步**：
+  1. **镜像目录**（`internal/apiserver/catalog.go`）：
+     - 新名字用「版本为 0 才写入」占用，两个 apiserver 同时发布同一个名字，只有一个成功；覆盖时后写的赢。
+     - apiserver 读到的条目最多复用 2 秒：其他 apiserver 覆盖的 tag，2 秒内可见。`GetImage` 和名字是否被占用的检查不走这个缓存。
+     - 访问 IAM 和 edge 的调用限时 5 秒，访问共享存储的限时 10 秒。卡在共享存储上的调用没法中断，但请求会按时返回 `unavailable`。
+  2. **edge 不再读清单**：
+     - apiserver 创建 sandbox 时把清单和起点快照的记录（JSON）放进 `EdgeCreateRequest.manifest`、`snapshot_record`。edge 用这两份，不读共享存储上的清单；没有时（旧 apiserver）照旧读文件。
+     - edge 做完快照，把记录放在 `EdgeSnapshotResponse.record` 里返回（fork、`CreateSnapshot`、迁移的 `BeginMove`），apiserver 写进 `img/s/`。
+  3. **apiserver 不依赖共享存储**：
+     - 发布镜像时，层是否存在由 edge 检查（新的 edge RPC `CheckLayers`，同时刷新层和快照的时间，让并发的 GC 保留它们）；删除快照时，先删记录，再由拍快照的 edge 删文件（`DeleteSnapshot`）。edge 调不通时，有挂载的 apiserver 自己做；都不行就留给 GC，按「没有记录的文件」清理。
+     - 单元文件去掉 `RequiresMountsFor`（改为 `After=remote-fs.target`）和 `CAP_DAC_OVERRIDE`，`ReadWritePaths` 改成可以不存在的 `-/mnt/opendsec-images`。卸载或 NFS 故障不再停掉或卡住 apiserver。
+     - apiserver 不在共享存储里创建任何东西就能启动：访问文件前检查 `layers/` 在不在，没挂上时只有发布失败（`unavailable`），读和创建照常。
+  4. **GC 以目录为准**：
+     - 新的公开 RPC `ListCatalog`、`ForgetSnapshots`，只给集群管理员。`opendsecctl image gc` 从 apiserver 取全部清单和快照记录作为引用，删快照时先 `ForgetSnapshots` 删记录，再删文件。in-use 登记仍是 edge 写在共享存储上的文件。
+     - 记录在目录里、文件不在共享存储上的快照（edge 持有的，§26），超过宽限期且没有镜像引用时只删记录。
+     - 连的是旧 apiserver（没有 `ListCatalog`）时，照旧以文件为准。
+- **升级和兼容**（`image_store.manifest_files`，默认 true）：
+  - 默认值下，apiserver 每次写目录后都把清单写进共享存储上的文件，写文件失败就把目录条目恢复原样并返回 `unavailable`；两个 apiserver 同时覆盖时，写完文件再读一次目录，版本变了就写最新的，两份文件不会停在旧内容上。这样升级期间还没升级的 edge 和 apiserver 照常工作。
+  - apiserver 启动后先试着写 `img/version`。IAM 还是旧版本、不接受 `img/` 时，目录照旧是文件，每分钟再试一次。IAM 接受以后，先把共享存储上的清单和快照记录导入（只导入目录里没有的），再切换；之后每分钟再导入一次，接住旧版组件在升级期间写的文件。读的时候目录里没有、文件里有，也会当场导入。
+  - 已知的窗口：滚动升级的几分钟里，旧版 apiserver 覆盖或删除的镜像，新版不会跟着改，以目录为准。
+  - 所有节点都升级以后，把 `manifest_files` 设为 false：apiserver 不再访问共享存储，可以不挂载。
+- **测试**：
+  - 单元：`TestCatalogImportsAndMirrors`、`TestCatalogFindsFileOnlyImages`、`TestCatalogWithOlderIAM`、`TestCatalogTakesBackUnwrittenEntry`、`TestCatalogWithoutFiles`、`TestCatalogStoreNotMounted`、`TestCatalogWithOlderEdges`、`TestGCWithCatalogRefs`、`TestWithTimeoutGivesUp`。
+  - e2e：`TestInternalMTLS` 检查 apiserver 能用 `img/`、不能用 `fleet/`；`TestStoreImagesAndPackDiff` 检查清单文件只在 `manifest_files` 开着时写，`ListCatalog` 只给管理员，GC 不会删镜像引用的层。整套 e2e 再用 `OPENDSEC_TEST_MANIFEST_FILES=0` 跑一遍，覆盖 apiserver 不访问共享存储的情况（镜像、pack_diff、fork、快照镜像、跨节点、迁移、E2B）。
 
 ## 12. 已确认决定
 1. 语言：Go（服务端 + sandbox agent），Python（SDK）；协议 gRPC。

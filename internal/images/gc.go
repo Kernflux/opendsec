@@ -7,8 +7,6 @@ import (
 	"slices"
 	"strings"
 	"time"
-
-	"github.com/kernflux/opendsec/internal/rpcutil"
 )
 
 // Garbage collection (spec §24). Layers and snapshots stay while anything
@@ -70,22 +68,55 @@ type GCResult struct {
 	Bytes                      int64
 }
 
-// GC removes what nothing references and is older than grace. A reference
-// it cannot read (a shared store failing for a moment) stops it before it
-// removes anything: what it missed might be the only reference to a layer.
-func (s *Store) GC(grace time.Duration, dryRun bool) (*GCResult, error) {
-	keepLayers, keepSnaps := map[string]bool{}, map[string]bool{}
+// Refs are what garbage collection keeps, besides in-use markers: image
+// manifests and snapshot records. They come from the image catalog
+// (spec §42); FileRefs reads them from the store's own files.
+type Refs struct {
+	Images    []*Manifest
+	Snapshots []*Snapshot
+}
+
+// FileRefs reads the references from the store's files: the manifests and
+// snapshot records written there (the only ones before spec §42).
+func (s *Store) FileRefs() (*Refs, error) {
 	ms, err := s.list("", true)
 	if err != nil {
 		return nil, fmt.Errorf("gc stopped, nothing removed: %w", err)
 	}
-	for _, m := range ms {
+	snaps, err := s.ListSnapshots(true)
+	if err != nil {
+		return nil, fmt.Errorf("gc stopped, nothing removed: %w", err)
+	}
+	return &Refs{Images: ms, Snapshots: snaps}, nil
+}
+
+// GC is GCRefs with the references in the store's files.
+func (s *Store) GC(grace time.Duration, dryRun bool) (*GCResult, error) {
+	refs, err := s.FileRefs()
+	if err != nil {
+		return nil, err
+	}
+	return s.GCRefs(refs, grace, dryRun, nil)
+}
+
+// GCRefs removes what nothing references and is older than grace. A
+// reference it cannot read (a shared store failing for a moment) stops it
+// before it removes anything: what it missed might be the only reference
+// to a layer. Snapshots it removes are first dropped from the catalog with
+// forget (nil: their records are only the store's files).
+func (s *Store) GCRefs(refs *Refs, grace time.Duration, dryRun bool, forget func(ids []string) error) (*GCResult, error) {
+	keepLayers, keepSnaps := map[string]bool{}, map[string]bool{}
+	for _, m := range refs.Images {
 		for _, l := range m.Layers {
 			keepLayers[l] = true
 		}
 		if m.Snapshot != "" {
 			keepSnaps[m.Snapshot] = true
 		}
+	}
+	recorded := map[string]*Snapshot{}
+	for _, snap := range refs.Snapshots {
+		recorded[snap.ID] = snap
 	}
 	cutoff := time.Now().Add(-grace)
 	old := func(p string) bool {
@@ -97,6 +128,7 @@ func (s *Store) GC(grace time.Duration, dryRun bool) (*GCResult, error) {
 	if err != nil {
 		return nil, err
 	}
+	withFiles := map[string]bool{}
 	for _, e := range snaps {
 		id := e.Name()
 		p := filepath.Join(s.Root, "snapshots", id)
@@ -106,17 +138,19 @@ func (s *Store) GC(grace time.Duration, dryRun bool) (*GCResult, error) {
 			}
 			continue
 		}
-		snap, err := s.GetSnapshot(id)
-		if err != nil {
-			if rpcutil.Reason(err) != rpcutil.NotFound {
-				return nil, fmt.Errorf("gc stopped, nothing removed: snapshot %s: %w", id, err)
-			}
+		withFiles[id] = true
+		snap := recorded[id]
+		if snap == nil {
 			if old(p) { // files without a record: an interrupted snapshot
 				res.Partial = append(res.Partial, p)
 			}
 			continue
 		}
-		if keepSnaps[id] || !old(filepath.Join(p, "snapshot.json")) {
+		since := filepath.Join(p, "snapshot.json")
+		if _, err := os.Stat(since); err != nil {
+			since = p
+		}
+		if keepSnaps[id] || !old(since) {
 			for _, l := range snap.Layers {
 				keepLayers[l] = true
 			}
@@ -124,6 +158,21 @@ func (s *Store) GC(grace time.Duration, dryRun bool) (*GCResult, error) {
 		}
 		res.Snapshots = append(res.Snapshots, id)
 		res.Bytes += du(p)
+	}
+	// Records without files in the store (held by an edge, spec §26, or
+	// files removed): dropped from the catalog once old and unnamed.
+	for id, snap := range recorded {
+		if withFiles[id] {
+			continue
+		}
+		created := time.Unix(0, int64(snap.CreatedAt*1e9))
+		if keepSnaps[id] || !created.Before(cutoff) {
+			for _, l := range snap.Layers {
+				keepLayers[l] = true
+			}
+			continue
+		}
+		res.Snapshots = append(res.Snapshots, id)
 	}
 	ents, err := readDir(s.inuseDir())
 	if err != nil {
@@ -187,18 +236,28 @@ func (s *Store) GC(grace time.Duration, dryRun bool) (*GCResult, error) {
 	revived := map[string]bool{}
 	var snapsGone []string
 	for _, id := range res.Snapshots {
-		if !old(filepath.Join(s.snapshotDir(id), "snapshot.json")) {
-			if snap, err := s.GetSnapshot(id); err == nil {
-				for _, l := range snap.Layers {
-					revived[l] = true
-				}
+		if withFiles[id] && !old(filepath.Join(s.snapshotDir(id), "snapshot.json")) {
+			for _, l := range recorded[id].Layers {
+				revived[l] = true
 			}
+			continue
+		}
+		snapsGone = append(snapsGone, id)
+	}
+	// The records go first: files without a record are removed by a later
+	// run, a record without files would name a snapshot nobody can start.
+	if forget != nil && len(snapsGone) > 0 {
+		if err := forget(snapsGone); err != nil {
+			return res, fmt.Errorf("gc stopped, no snapshot removed: dropping their records: %w", err)
+		}
+	}
+	for _, id := range snapsGone {
+		if !withFiles[id] {
 			continue
 		}
 		if err := s.DeleteSnapshot(id); err != nil {
 			return res, fmt.Errorf("snapshot %s: %w", id, err)
 		}
-		snapsGone = append(snapsGone, id)
 	}
 	res.Snapshots = snapsGone
 	var layersGone []string

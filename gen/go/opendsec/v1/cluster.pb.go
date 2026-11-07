@@ -151,6 +151,149 @@ func (x *RegisterEdgeRequest) GetZone() string {
 	return ""
 }
 
+type CheckLayersRequest struct {
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	LayerIds []string               `protobuf:"bytes,1,rep,name=layer_ids,json=layerIds,proto3" json:"layer_ids,omitempty"`
+	// Also mark this snapshot used. Layers and snapshots found are marked
+	// used (their time reset), so a concurrent garbage collection, which
+	// read the references before, keeps them.
+	SnapshotId    string `protobuf:"bytes,2,opt,name=snapshot_id,json=snapshotId,proto3" json:"snapshot_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CheckLayersRequest) Reset() {
+	*x = CheckLayersRequest{}
+	mi := &file_opendsec_v1_cluster_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CheckLayersRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CheckLayersRequest) ProtoMessage() {}
+
+func (x *CheckLayersRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_opendsec_v1_cluster_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CheckLayersRequest.ProtoReflect.Descriptor instead.
+func (*CheckLayersRequest) Descriptor() ([]byte, []int) {
+	return file_opendsec_v1_cluster_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *CheckLayersRequest) GetLayerIds() []string {
+	if x != nil {
+		return x.LayerIds
+	}
+	return nil
+}
+
+func (x *CheckLayersRequest) GetSnapshotId() string {
+	if x != nil {
+		return x.SnapshotId
+	}
+	return ""
+}
+
+type CheckLayersResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Missing       []string               `protobuf:"bytes,1,rep,name=missing,proto3" json:"missing,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CheckLayersResponse) Reset() {
+	*x = CheckLayersResponse{}
+	mi := &file_opendsec_v1_cluster_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CheckLayersResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CheckLayersResponse) ProtoMessage() {}
+
+func (x *CheckLayersResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_opendsec_v1_cluster_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CheckLayersResponse.ProtoReflect.Descriptor instead.
+func (*CheckLayersResponse) Descriptor() ([]byte, []int) {
+	return file_opendsec_v1_cluster_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *CheckLayersResponse) GetMissing() []string {
+	if x != nil {
+		return x.Missing
+	}
+	return nil
+}
+
+type DeleteSnapshotRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SnapshotId    string                 `protobuf:"bytes,1,opt,name=snapshot_id,json=snapshotId,proto3" json:"snapshot_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteSnapshotRequest) Reset() {
+	*x = DeleteSnapshotRequest{}
+	mi := &file_opendsec_v1_cluster_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteSnapshotRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteSnapshotRequest) ProtoMessage() {}
+
+func (x *DeleteSnapshotRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_opendsec_v1_cluster_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteSnapshotRequest.ProtoReflect.Descriptor instead.
+func (*DeleteSnapshotRequest) Descriptor() ([]byte, []int) {
+	return file_opendsec_v1_cluster_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *DeleteSnapshotRequest) GetSnapshotId() string {
+	if x != nil {
+		return x.SnapshotId
+	}
+	return ""
+}
+
 type FetchSnapshotRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	SnapshotId    string                 `protobuf:"bytes,1,opt,name=snapshot_id,json=snapshotId,proto3" json:"snapshot_id,omitempty"`
@@ -161,7 +304,7 @@ type FetchSnapshotRequest struct {
 
 func (x *FetchSnapshotRequest) Reset() {
 	*x = FetchSnapshotRequest{}
-	mi := &file_opendsec_v1_cluster_proto_msgTypes[2]
+	mi := &file_opendsec_v1_cluster_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -173,7 +316,7 @@ func (x *FetchSnapshotRequest) String() string {
 func (*FetchSnapshotRequest) ProtoMessage() {}
 
 func (x *FetchSnapshotRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_opendsec_v1_cluster_proto_msgTypes[2]
+	mi := &file_opendsec_v1_cluster_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -186,7 +329,7 @@ func (x *FetchSnapshotRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FetchSnapshotRequest.ProtoReflect.Descriptor instead.
 func (*FetchSnapshotRequest) Descriptor() ([]byte, []int) {
-	return file_opendsec_v1_cluster_proto_rawDescGZIP(), []int{2}
+	return file_opendsec_v1_cluster_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *FetchSnapshotRequest) GetSnapshotId() string {
@@ -217,7 +360,7 @@ type SnapshotChunk struct {
 
 func (x *SnapshotChunk) Reset() {
 	*x = SnapshotChunk{}
-	mi := &file_opendsec_v1_cluster_proto_msgTypes[3]
+	mi := &file_opendsec_v1_cluster_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -229,7 +372,7 @@ func (x *SnapshotChunk) String() string {
 func (*SnapshotChunk) ProtoMessage() {}
 
 func (x *SnapshotChunk) ProtoReflect() protoreflect.Message {
-	mi := &file_opendsec_v1_cluster_proto_msgTypes[3]
+	mi := &file_opendsec_v1_cluster_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -242,7 +385,7 @@ func (x *SnapshotChunk) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SnapshotChunk.ProtoReflect.Descriptor instead.
 func (*SnapshotChunk) Descriptor() ([]byte, []int) {
-	return file_opendsec_v1_cluster_proto_rawDescGZIP(), []int{3}
+	return file_opendsec_v1_cluster_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *SnapshotChunk) GetSize() int64 {
@@ -283,7 +426,7 @@ type BeginMoveRequest struct {
 
 func (x *BeginMoveRequest) Reset() {
 	*x = BeginMoveRequest{}
-	mi := &file_opendsec_v1_cluster_proto_msgTypes[4]
+	mi := &file_opendsec_v1_cluster_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -295,7 +438,7 @@ func (x *BeginMoveRequest) String() string {
 func (*BeginMoveRequest) ProtoMessage() {}
 
 func (x *BeginMoveRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_opendsec_v1_cluster_proto_msgTypes[4]
+	mi := &file_opendsec_v1_cluster_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -308,7 +451,7 @@ func (x *BeginMoveRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BeginMoveRequest.ProtoReflect.Descriptor instead.
 func (*BeginMoveRequest) Descriptor() ([]byte, []int) {
-	return file_opendsec_v1_cluster_proto_rawDescGZIP(), []int{4}
+	return file_opendsec_v1_cluster_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *BeginMoveRequest) GetSandboxId() string {
@@ -335,7 +478,7 @@ type EndMoveRequest struct {
 
 func (x *EndMoveRequest) Reset() {
 	*x = EndMoveRequest{}
-	mi := &file_opendsec_v1_cluster_proto_msgTypes[5]
+	mi := &file_opendsec_v1_cluster_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -347,7 +490,7 @@ func (x *EndMoveRequest) String() string {
 func (*EndMoveRequest) ProtoMessage() {}
 
 func (x *EndMoveRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_opendsec_v1_cluster_proto_msgTypes[5]
+	mi := &file_opendsec_v1_cluster_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -360,7 +503,7 @@ func (x *EndMoveRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EndMoveRequest.ProtoReflect.Descriptor instead.
 func (*EndMoveRequest) Descriptor() ([]byte, []int) {
-	return file_opendsec_v1_cluster_proto_rawDescGZIP(), []int{5}
+	return file_opendsec_v1_cluster_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *EndMoveRequest) GetSandboxId() string {
@@ -388,7 +531,7 @@ type EdgePeer struct {
 
 func (x *EdgePeer) Reset() {
 	*x = EdgePeer{}
-	mi := &file_opendsec_v1_cluster_proto_msgTypes[6]
+	mi := &file_opendsec_v1_cluster_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -400,7 +543,7 @@ func (x *EdgePeer) String() string {
 func (*EdgePeer) ProtoMessage() {}
 
 func (x *EdgePeer) ProtoReflect() protoreflect.Message {
-	mi := &file_opendsec_v1_cluster_proto_msgTypes[6]
+	mi := &file_opendsec_v1_cluster_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -413,7 +556,7 @@ func (x *EdgePeer) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EdgePeer.ProtoReflect.Descriptor instead.
 func (*EdgePeer) Descriptor() ([]byte, []int) {
-	return file_opendsec_v1_cluster_proto_rawDescGZIP(), []int{6}
+	return file_opendsec_v1_cluster_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *EdgePeer) GetId() string {
@@ -445,7 +588,7 @@ type EdgeSnapshotRequest struct {
 
 func (x *EdgeSnapshotRequest) Reset() {
 	*x = EdgeSnapshotRequest{}
-	mi := &file_opendsec_v1_cluster_proto_msgTypes[7]
+	mi := &file_opendsec_v1_cluster_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -457,7 +600,7 @@ func (x *EdgeSnapshotRequest) String() string {
 func (*EdgeSnapshotRequest) ProtoMessage() {}
 
 func (x *EdgeSnapshotRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_opendsec_v1_cluster_proto_msgTypes[7]
+	mi := &file_opendsec_v1_cluster_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -470,7 +613,7 @@ func (x *EdgeSnapshotRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EdgeSnapshotRequest.ProtoReflect.Descriptor instead.
 func (*EdgeSnapshotRequest) Descriptor() ([]byte, []int) {
-	return file_opendsec_v1_cluster_proto_rawDescGZIP(), []int{7}
+	return file_opendsec_v1_cluster_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *EdgeSnapshotRequest) GetSandboxId() string {
@@ -509,18 +652,21 @@ func (x *EdgeSnapshotRequest) GetEphemeral() bool {
 }
 
 type EdgeSnapshotResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	SnapshotId    string                 `protobuf:"bytes,1,opt,name=snapshot_id,json=snapshotId,proto3" json:"snapshot_id,omitempty"`
-	Memory        bool                   `protobuf:"varint,2,opt,name=memory,proto3" json:"memory,omitempty"`
-	SizeBytes     int64                  `protobuf:"varint,3,opt,name=size_bytes,json=sizeBytes,proto3" json:"size_bytes,omitempty"`
-	Held          bool                   `protobuf:"varint,4,opt,name=held,proto3" json:"held,omitempty"` // ephemeral: the files are on this edge only
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	SnapshotId string                 `protobuf:"bytes,1,opt,name=snapshot_id,json=snapshotId,proto3" json:"snapshot_id,omitempty"`
+	Memory     bool                   `protobuf:"varint,2,opt,name=memory,proto3" json:"memory,omitempty"`
+	SizeBytes  int64                  `protobuf:"varint,3,opt,name=size_bytes,json=sizeBytes,proto3" json:"size_bytes,omitempty"`
+	Held       bool                   `protobuf:"varint,4,opt,name=held,proto3" json:"held,omitempty"` // ephemeral: the files are on this edge only
+	// The snapshot's record (images.Snapshot as JSON), which the apiserver
+	// keeps in its catalog (spec §42).
+	Record        []byte `protobuf:"bytes,5,opt,name=record,proto3" json:"record,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *EdgeSnapshotResponse) Reset() {
 	*x = EdgeSnapshotResponse{}
-	mi := &file_opendsec_v1_cluster_proto_msgTypes[8]
+	mi := &file_opendsec_v1_cluster_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -532,7 +678,7 @@ func (x *EdgeSnapshotResponse) String() string {
 func (*EdgeSnapshotResponse) ProtoMessage() {}
 
 func (x *EdgeSnapshotResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_opendsec_v1_cluster_proto_msgTypes[8]
+	mi := &file_opendsec_v1_cluster_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -545,7 +691,7 @@ func (x *EdgeSnapshotResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EdgeSnapshotResponse.ProtoReflect.Descriptor instead.
 func (*EdgeSnapshotResponse) Descriptor() ([]byte, []int) {
-	return file_opendsec_v1_cluster_proto_rawDescGZIP(), []int{8}
+	return file_opendsec_v1_cluster_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *EdgeSnapshotResponse) GetSnapshotId() string {
@@ -576,6 +722,13 @@ func (x *EdgeSnapshotResponse) GetHeld() bool {
 	return false
 }
 
+func (x *EdgeSnapshotResponse) GetRecord() []byte {
+	if x != nil {
+		return x.Record
+	}
+	return nil
+}
+
 type EdgePackDiffRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	SandboxId     string                 `protobuf:"bytes,1,opt,name=sandbox_id,json=sandboxId,proto3" json:"sandbox_id,omitempty"`
@@ -587,7 +740,7 @@ type EdgePackDiffRequest struct {
 
 func (x *EdgePackDiffRequest) Reset() {
 	*x = EdgePackDiffRequest{}
-	mi := &file_opendsec_v1_cluster_proto_msgTypes[9]
+	mi := &file_opendsec_v1_cluster_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -599,7 +752,7 @@ func (x *EdgePackDiffRequest) String() string {
 func (*EdgePackDiffRequest) ProtoMessage() {}
 
 func (x *EdgePackDiffRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_opendsec_v1_cluster_proto_msgTypes[9]
+	mi := &file_opendsec_v1_cluster_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -612,7 +765,7 @@ func (x *EdgePackDiffRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EdgePackDiffRequest.ProtoReflect.Descriptor instead.
 func (*EdgePackDiffRequest) Descriptor() ([]byte, []int) {
-	return file_opendsec_v1_cluster_proto_rawDescGZIP(), []int{9}
+	return file_opendsec_v1_cluster_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *EdgePackDiffRequest) GetSandboxId() string {
@@ -646,7 +799,7 @@ type EdgePackDiffResponse struct {
 
 func (x *EdgePackDiffResponse) Reset() {
 	*x = EdgePackDiffResponse{}
-	mi := &file_opendsec_v1_cluster_proto_msgTypes[10]
+	mi := &file_opendsec_v1_cluster_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -658,7 +811,7 @@ func (x *EdgePackDiffResponse) String() string {
 func (*EdgePackDiffResponse) ProtoMessage() {}
 
 func (x *EdgePackDiffResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_opendsec_v1_cluster_proto_msgTypes[10]
+	mi := &file_opendsec_v1_cluster_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -671,7 +824,7 @@ func (x *EdgePackDiffResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EdgePackDiffResponse.ProtoReflect.Descriptor instead.
 func (*EdgePackDiffResponse) Descriptor() ([]byte, []int) {
-	return file_opendsec_v1_cluster_proto_rawDescGZIP(), []int{10}
+	return file_opendsec_v1_cluster_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *EdgePackDiffResponse) GetLayerId() string {
@@ -697,7 +850,7 @@ type EdgeStatusRequest struct {
 
 func (x *EdgeStatusRequest) Reset() {
 	*x = EdgeStatusRequest{}
-	mi := &file_opendsec_v1_cluster_proto_msgTypes[11]
+	mi := &file_opendsec_v1_cluster_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -709,7 +862,7 @@ func (x *EdgeStatusRequest) String() string {
 func (*EdgeStatusRequest) ProtoMessage() {}
 
 func (x *EdgeStatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_opendsec_v1_cluster_proto_msgTypes[11]
+	mi := &file_opendsec_v1_cluster_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -722,7 +875,7 @@ func (x *EdgeStatusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EdgeStatusRequest.ProtoReflect.Descriptor instead.
 func (*EdgeStatusRequest) Descriptor() ([]byte, []int) {
-	return file_opendsec_v1_cluster_proto_rawDescGZIP(), []int{11}
+	return file_opendsec_v1_cluster_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *EdgeStatusRequest) GetIncludeLeases() bool {
@@ -742,7 +895,7 @@ type EdgeStatusResponse struct {
 
 func (x *EdgeStatusResponse) Reset() {
 	*x = EdgeStatusResponse{}
-	mi := &file_opendsec_v1_cluster_proto_msgTypes[12]
+	mi := &file_opendsec_v1_cluster_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -754,7 +907,7 @@ func (x *EdgeStatusResponse) String() string {
 func (*EdgeStatusResponse) ProtoMessage() {}
 
 func (x *EdgeStatusResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_opendsec_v1_cluster_proto_msgTypes[12]
+	mi := &file_opendsec_v1_cluster_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -767,7 +920,7 @@ func (x *EdgeStatusResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EdgeStatusResponse.ProtoReflect.Descriptor instead.
 func (*EdgeStatusResponse) Descriptor() ([]byte, []int) {
-	return file_opendsec_v1_cluster_proto_rawDescGZIP(), []int{12}
+	return file_opendsec_v1_cluster_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *EdgeStatusResponse) GetState() *EdgeState {
@@ -795,15 +948,21 @@ type EdgeCreateRequest struct {
 	SnapshotPeer *EdgePeer `protobuf:"bytes,5,opt,name=snapshot_peer,json=snapshotPeer,proto3" json:"snapshot_peer,omitempty"`
 	// The sandbox moves here from snapshot_peer (spec §26.2): id names that
 	// edge, and the sandbox keeps its creation time.
-	Move          bool    `protobuf:"varint,6,opt,name=move,proto3" json:"move,omitempty"`
-	CreatedAt     float64 `protobuf:"fixed64,7,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Move      bool    `protobuf:"varint,6,opt,name=move,proto3" json:"move,omitempty"`
+	CreatedAt float64 `protobuf:"fixed64,7,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	// The manifest of spec.image (images.Manifest as JSON), resolved by the
+	// apiserver from its catalog (spec §42); empty for edge-local images.
+	Manifest []byte `protobuf:"bytes,8,opt,name=manifest,proto3" json:"manifest,omitempty"`
+	// The record of the snapshot the sandbox starts from (spec.snapshot, or
+	// the image's), as JSON; empty if none.
+	SnapshotRecord []byte `protobuf:"bytes,9,opt,name=snapshot_record,json=snapshotRecord,proto3" json:"snapshot_record,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *EdgeCreateRequest) Reset() {
 	*x = EdgeCreateRequest{}
-	mi := &file_opendsec_v1_cluster_proto_msgTypes[13]
+	mi := &file_opendsec_v1_cluster_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -815,7 +974,7 @@ func (x *EdgeCreateRequest) String() string {
 func (*EdgeCreateRequest) ProtoMessage() {}
 
 func (x *EdgeCreateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_opendsec_v1_cluster_proto_msgTypes[13]
+	mi := &file_opendsec_v1_cluster_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -828,7 +987,7 @@ func (x *EdgeCreateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EdgeCreateRequest.ProtoReflect.Descriptor instead.
 func (*EdgeCreateRequest) Descriptor() ([]byte, []int) {
-	return file_opendsec_v1_cluster_proto_rawDescGZIP(), []int{13}
+	return file_opendsec_v1_cluster_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *EdgeCreateRequest) GetId() string {
@@ -880,6 +1039,20 @@ func (x *EdgeCreateRequest) GetCreatedAt() float64 {
 	return 0
 }
 
+func (x *EdgeCreateRequest) GetManifest() []byte {
+	if x != nil {
+		return x.Manifest
+	}
+	return nil
+}
+
+func (x *EdgeCreateRequest) GetSnapshotRecord() []byte {
+	if x != nil {
+		return x.SnapshotRecord
+	}
+	return nil
+}
+
 type EdgeTaskActionRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Project       string                 `protobuf:"bytes,1,opt,name=project,proto3" json:"project,omitempty"` // only sandboxes in this project subtree
@@ -891,7 +1064,7 @@ type EdgeTaskActionRequest struct {
 
 func (x *EdgeTaskActionRequest) Reset() {
 	*x = EdgeTaskActionRequest{}
-	mi := &file_opendsec_v1_cluster_proto_msgTypes[14]
+	mi := &file_opendsec_v1_cluster_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -903,7 +1076,7 @@ func (x *EdgeTaskActionRequest) String() string {
 func (*EdgeTaskActionRequest) ProtoMessage() {}
 
 func (x *EdgeTaskActionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_opendsec_v1_cluster_proto_msgTypes[14]
+	mi := &file_opendsec_v1_cluster_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -916,7 +1089,7 @@ func (x *EdgeTaskActionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EdgeTaskActionRequest.ProtoReflect.Descriptor instead.
 func (*EdgeTaskActionRequest) Descriptor() ([]byte, []int) {
-	return file_opendsec_v1_cluster_proto_rawDescGZIP(), []int{14}
+	return file_opendsec_v1_cluster_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *EdgeTaskActionRequest) GetProject() string {
@@ -949,7 +1122,7 @@ type DrainRequest struct {
 
 func (x *DrainRequest) Reset() {
 	*x = DrainRequest{}
-	mi := &file_opendsec_v1_cluster_proto_msgTypes[15]
+	mi := &file_opendsec_v1_cluster_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -961,7 +1134,7 @@ func (x *DrainRequest) String() string {
 func (*DrainRequest) ProtoMessage() {}
 
 func (x *DrainRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_opendsec_v1_cluster_proto_msgTypes[15]
+	mi := &file_opendsec_v1_cluster_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -974,7 +1147,7 @@ func (x *DrainRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DrainRequest.ProtoReflect.Descriptor instead.
 func (*DrainRequest) Descriptor() ([]byte, []int) {
-	return file_opendsec_v1_cluster_proto_rawDescGZIP(), []int{15}
+	return file_opendsec_v1_cluster_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *DrainRequest) GetDraining() bool {
@@ -997,7 +1170,16 @@ const file_opendsec_v1_cluster_proto_rawDesc = "" +
 	"\x13RegisterEdgeRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04addr\x18\x02 \x01(\tR\x04addr\x12\x12\n" +
-	"\x04zone\x18\x03 \x01(\tR\x04zone\"K\n" +
+	"\x04zone\x18\x03 \x01(\tR\x04zone\"R\n" +
+	"\x12CheckLayersRequest\x12\x1b\n" +
+	"\tlayer_ids\x18\x01 \x03(\tR\blayerIds\x12\x1f\n" +
+	"\vsnapshot_id\x18\x02 \x01(\tR\n" +
+	"snapshotId\"/\n" +
+	"\x13CheckLayersResponse\x12\x18\n" +
+	"\amissing\x18\x01 \x03(\tR\amissing\"8\n" +
+	"\x15DeleteSnapshotRequest\x12\x1f\n" +
+	"\vsnapshot_id\x18\x01 \x01(\tR\n" +
+	"snapshotId\"K\n" +
 	"\x14FetchSnapshotRequest\x12\x1f\n" +
 	"\vsnapshot_id\x18\x01 \x01(\tR\n" +
 	"snapshotId\x12\x12\n" +
@@ -1027,14 +1209,15 @@ const file_opendsec_v1_cluster_proto_rawDesc = "" +
 	"snapshotId\x12\x16\n" +
 	"\x06memory\x18\x03 \x01(\bR\x06memory\x12#\n" +
 	"\rprefer_memory\x18\x04 \x01(\bR\fpreferMemory\x12\x1c\n" +
-	"\tephemeral\x18\x05 \x01(\bR\tephemeral\"\x82\x01\n" +
+	"\tephemeral\x18\x05 \x01(\bR\tephemeral\"\x9a\x01\n" +
 	"\x14EdgeSnapshotResponse\x12\x1f\n" +
 	"\vsnapshot_id\x18\x01 \x01(\tR\n" +
 	"snapshotId\x12\x16\n" +
 	"\x06memory\x18\x02 \x01(\bR\x06memory\x12\x1d\n" +
 	"\n" +
 	"size_bytes\x18\x03 \x01(\x03R\tsizeBytes\x12\x12\n" +
-	"\x04held\x18\x04 \x01(\bR\x04held\"e\n" +
+	"\x04held\x18\x04 \x01(\bR\x04held\x12\x16\n" +
+	"\x06record\x18\x05 \x01(\fR\x06record\"e\n" +
 	"\x13EdgePackDiffRequest\x12\x1d\n" +
 	"\n" +
 	"sandbox_id\x18\x01 \x01(\tR\tsandboxId\x12\x19\n" +
@@ -1048,7 +1231,7 @@ const file_opendsec_v1_cluster_proto_rawDesc = "" +
 	"\x0einclude_leases\x18\x01 \x01(\bR\rincludeLeases\"r\n" +
 	"\x12EdgeStatusResponse\x12,\n" +
 	"\x05state\x18\x01 \x01(\v2\x16.opendsec.v1.EdgeStateR\x05state\x12.\n" +
-	"\x06leases\x18\x02 \x03(\v2\x16.opendsec.v1.LeaseInfoR\x06leases\"\xf8\x01\n" +
+	"\x06leases\x18\x02 \x03(\v2\x16.opendsec.v1.LeaseInfoR\x06leases\"\xbd\x02\n" +
 	"\x11EdgeCreateRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x18\n" +
 	"\aproject\x18\x02 \x01(\tR\aproject\x12\x1c\n" +
@@ -1057,7 +1240,9 @@ const file_opendsec_v1_cluster_proto_rawDesc = "" +
 	"\rsnapshot_peer\x18\x05 \x01(\v2\x15.opendsec.v1.EdgePeerR\fsnapshotPeer\x12\x12\n" +
 	"\x04move\x18\x06 \x01(\bR\x04move\x12\x1d\n" +
 	"\n" +
-	"created_at\x18\a \x01(\x01R\tcreatedAt\"{\n" +
+	"created_at\x18\a \x01(\x01R\tcreatedAt\x12\x1a\n" +
+	"\bmanifest\x18\b \x01(\fR\bmanifest\x12'\n" +
+	"\x0fsnapshot_record\x18\t \x01(\fR\x0esnapshotRecord\"{\n" +
 	"\x15EdgeTaskActionRequest\x12\x18\n" +
 	"\aproject\x18\x01 \x01(\tR\aproject\x12\x17\n" +
 	"\atask_id\x18\x02 \x01(\tR\x06taskId\x12/\n" +
@@ -1066,7 +1251,7 @@ const file_opendsec_v1_cluster_proto_rawDesc = "" +
 	"\bdraining\x18\x01 \x01(\bR\bdraining2\x85\x01\n" +
 	"\aWatcher\x128\n" +
 	"\vGetSnapshot\x12\x12.opendsec.v1.Empty\x1a\x15.opendsec.v1.Snapshot\x12@\n" +
-	"\bRegister\x12 .opendsec.v1.RegisterEdgeRequest\x1a\x12.opendsec.v1.Empty2\xfd\x13\n" +
+	"\bRegister\x12 .opendsec.v1.RegisterEdgeRequest\x1a\x12.opendsec.v1.Empty2\x99\x15\n" +
 	"\x04Edge\x12I\n" +
 	"\x06Status\x12\x1e.opendsec.v1.EdgeStatusRequest\x1a\x1f.opendsec.v1.EdgeStatusResponse\x12E\n" +
 	"\rCreateSandbox\x12\x1e.opendsec.v1.EdgeCreateRequest\x1a\x14.opendsec.v1.Sandbox\x12;\n" +
@@ -1107,7 +1292,9 @@ const file_opendsec_v1_cluster_proto_rawDesc = "" +
 	"\rUpdateNetwork\x12!.opendsec.v1.UpdateNetworkRequest\x1a\x14.opendsec.v1.Sandbox\x12P\n" +
 	"\rFetchSnapshot\x12!.opendsec.v1.FetchSnapshotRequest\x1a\x1a.opendsec.v1.SnapshotChunk0\x01\x12M\n" +
 	"\tBeginMove\x12\x1d.opendsec.v1.BeginMoveRequest\x1a!.opendsec.v1.EdgeSnapshotResponse\x12:\n" +
-	"\aEndMove\x12\x1b.opendsec.v1.EndMoveRequest\x1a\x12.opendsec.v1.EmptyB<Z:github.com/kernflux/opendsec/gen/go/opendsec/v1;opendsecv1b\x06proto3"
+	"\aEndMove\x12\x1b.opendsec.v1.EndMoveRequest\x1a\x12.opendsec.v1.Empty\x12P\n" +
+	"\vCheckLayers\x12\x1f.opendsec.v1.CheckLayersRequest\x1a .opendsec.v1.CheckLayersResponse\x12H\n" +
+	"\x0eDeleteSnapshot\x12\".opendsec.v1.DeleteSnapshotRequest\x1a\x12.opendsec.v1.EmptyB<Z:github.com/kernflux/opendsec/gen/go/opendsec/v1;opendsecv1b\x06proto3"
 
 var (
 	file_opendsec_v1_cluster_proto_rawDescOnce sync.Once
@@ -1121,148 +1308,155 @@ func file_opendsec_v1_cluster_proto_rawDescGZIP() []byte {
 	return file_opendsec_v1_cluster_proto_rawDescData
 }
 
-var file_opendsec_v1_cluster_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
+var file_opendsec_v1_cluster_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
 var file_opendsec_v1_cluster_proto_goTypes = []any{
 	(*Snapshot)(nil),              // 0: opendsec.v1.Snapshot
 	(*RegisterEdgeRequest)(nil),   // 1: opendsec.v1.RegisterEdgeRequest
-	(*FetchSnapshotRequest)(nil),  // 2: opendsec.v1.FetchSnapshotRequest
-	(*SnapshotChunk)(nil),         // 3: opendsec.v1.SnapshotChunk
-	(*BeginMoveRequest)(nil),      // 4: opendsec.v1.BeginMoveRequest
-	(*EndMoveRequest)(nil),        // 5: opendsec.v1.EndMoveRequest
-	(*EdgePeer)(nil),              // 6: opendsec.v1.EdgePeer
-	(*EdgeSnapshotRequest)(nil),   // 7: opendsec.v1.EdgeSnapshotRequest
-	(*EdgeSnapshotResponse)(nil),  // 8: opendsec.v1.EdgeSnapshotResponse
-	(*EdgePackDiffRequest)(nil),   // 9: opendsec.v1.EdgePackDiffRequest
-	(*EdgePackDiffResponse)(nil),  // 10: opendsec.v1.EdgePackDiffResponse
-	(*EdgeStatusRequest)(nil),     // 11: opendsec.v1.EdgeStatusRequest
-	(*EdgeStatusResponse)(nil),    // 12: opendsec.v1.EdgeStatusResponse
-	(*EdgeCreateRequest)(nil),     // 13: opendsec.v1.EdgeCreateRequest
-	(*EdgeTaskActionRequest)(nil), // 14: opendsec.v1.EdgeTaskActionRequest
-	(*DrainRequest)(nil),          // 15: opendsec.v1.DrainRequest
-	(*EdgeState)(nil),             // 16: opendsec.v1.EdgeState
-	(*LeaseInfo)(nil),             // 17: opendsec.v1.LeaseInfo
-	(*SandboxSpec)(nil),           // 18: opendsec.v1.SandboxSpec
-	(TaskAction)(0),               // 19: opendsec.v1.TaskAction
-	(*Empty)(nil),                 // 20: opendsec.v1.Empty
-	(*SandboxRef)(nil),            // 21: opendsec.v1.SandboxRef
-	(*SandboxFilter)(nil),         // 22: opendsec.v1.SandboxFilter
-	(*SetTimeoutRequest)(nil),     // 23: opendsec.v1.SetTimeoutRequest
-	(*ExecRequest)(nil),           // 24: opendsec.v1.ExecRequest
-	(*OutputRequest)(nil),         // 25: opendsec.v1.OutputRequest
-	(*FileRequest)(nil),           // 26: opendsec.v1.FileRequest
-	(*WriteFileRequest)(nil),      // 27: opendsec.v1.WriteFileRequest
-	(*HttpRequest)(nil),           // 28: opendsec.v1.HttpRequest
-	(*SessionRef)(nil),            // 29: opendsec.v1.SessionRef
-	(*MoveRequest)(nil),           // 30: opendsec.v1.MoveRequest
-	(*StartProcessRequest)(nil),   // 31: opendsec.v1.StartProcessRequest
-	(*ProcessRef)(nil),            // 32: opendsec.v1.ProcessRef
-	(*ProcessInput)(nil),          // 33: opendsec.v1.ProcessInput
-	(*ProcessSignal)(nil),         // 34: opendsec.v1.ProcessSignal
-	(*ProcessResize)(nil),         // 35: opendsec.v1.ProcessResize
-	(*PortData)(nil),              // 36: opendsec.v1.PortData
-	(*UpdateNetworkRequest)(nil),  // 37: opendsec.v1.UpdateNetworkRequest
-	(*Sandbox)(nil),               // 38: opendsec.v1.Sandbox
-	(*SandboxList)(nil),           // 39: opendsec.v1.SandboxList
-	(*TaskActionResult)(nil),      // 40: opendsec.v1.TaskActionResult
-	(*ExecResult)(nil),            // 41: opendsec.v1.ExecResult
-	(*ExecEvent)(nil),             // 42: opendsec.v1.ExecEvent
-	(*FileData)(nil),              // 43: opendsec.v1.FileData
-	(*FileInfo)(nil),              // 44: opendsec.v1.FileInfo
-	(*DirListing)(nil),            // 45: opendsec.v1.DirListing
-	(*HttpResponse)(nil),          // 46: opendsec.v1.HttpResponse
-	(*SessionList)(nil),           // 47: opendsec.v1.SessionList
-	(*ProcessEvent)(nil),          // 48: opendsec.v1.ProcessEvent
-	(*ProcessList)(nil),           // 49: opendsec.v1.ProcessList
+	(*CheckLayersRequest)(nil),    // 2: opendsec.v1.CheckLayersRequest
+	(*CheckLayersResponse)(nil),   // 3: opendsec.v1.CheckLayersResponse
+	(*DeleteSnapshotRequest)(nil), // 4: opendsec.v1.DeleteSnapshotRequest
+	(*FetchSnapshotRequest)(nil),  // 5: opendsec.v1.FetchSnapshotRequest
+	(*SnapshotChunk)(nil),         // 6: opendsec.v1.SnapshotChunk
+	(*BeginMoveRequest)(nil),      // 7: opendsec.v1.BeginMoveRequest
+	(*EndMoveRequest)(nil),        // 8: opendsec.v1.EndMoveRequest
+	(*EdgePeer)(nil),              // 9: opendsec.v1.EdgePeer
+	(*EdgeSnapshotRequest)(nil),   // 10: opendsec.v1.EdgeSnapshotRequest
+	(*EdgeSnapshotResponse)(nil),  // 11: opendsec.v1.EdgeSnapshotResponse
+	(*EdgePackDiffRequest)(nil),   // 12: opendsec.v1.EdgePackDiffRequest
+	(*EdgePackDiffResponse)(nil),  // 13: opendsec.v1.EdgePackDiffResponse
+	(*EdgeStatusRequest)(nil),     // 14: opendsec.v1.EdgeStatusRequest
+	(*EdgeStatusResponse)(nil),    // 15: opendsec.v1.EdgeStatusResponse
+	(*EdgeCreateRequest)(nil),     // 16: opendsec.v1.EdgeCreateRequest
+	(*EdgeTaskActionRequest)(nil), // 17: opendsec.v1.EdgeTaskActionRequest
+	(*DrainRequest)(nil),          // 18: opendsec.v1.DrainRequest
+	(*EdgeState)(nil),             // 19: opendsec.v1.EdgeState
+	(*LeaseInfo)(nil),             // 20: opendsec.v1.LeaseInfo
+	(*SandboxSpec)(nil),           // 21: opendsec.v1.SandboxSpec
+	(TaskAction)(0),               // 22: opendsec.v1.TaskAction
+	(*Empty)(nil),                 // 23: opendsec.v1.Empty
+	(*SandboxRef)(nil),            // 24: opendsec.v1.SandboxRef
+	(*SandboxFilter)(nil),         // 25: opendsec.v1.SandboxFilter
+	(*SetTimeoutRequest)(nil),     // 26: opendsec.v1.SetTimeoutRequest
+	(*ExecRequest)(nil),           // 27: opendsec.v1.ExecRequest
+	(*OutputRequest)(nil),         // 28: opendsec.v1.OutputRequest
+	(*FileRequest)(nil),           // 29: opendsec.v1.FileRequest
+	(*WriteFileRequest)(nil),      // 30: opendsec.v1.WriteFileRequest
+	(*HttpRequest)(nil),           // 31: opendsec.v1.HttpRequest
+	(*SessionRef)(nil),            // 32: opendsec.v1.SessionRef
+	(*MoveRequest)(nil),           // 33: opendsec.v1.MoveRequest
+	(*StartProcessRequest)(nil),   // 34: opendsec.v1.StartProcessRequest
+	(*ProcessRef)(nil),            // 35: opendsec.v1.ProcessRef
+	(*ProcessInput)(nil),          // 36: opendsec.v1.ProcessInput
+	(*ProcessSignal)(nil),         // 37: opendsec.v1.ProcessSignal
+	(*ProcessResize)(nil),         // 38: opendsec.v1.ProcessResize
+	(*PortData)(nil),              // 39: opendsec.v1.PortData
+	(*UpdateNetworkRequest)(nil),  // 40: opendsec.v1.UpdateNetworkRequest
+	(*Sandbox)(nil),               // 41: opendsec.v1.Sandbox
+	(*SandboxList)(nil),           // 42: opendsec.v1.SandboxList
+	(*TaskActionResult)(nil),      // 43: opendsec.v1.TaskActionResult
+	(*ExecResult)(nil),            // 44: opendsec.v1.ExecResult
+	(*ExecEvent)(nil),             // 45: opendsec.v1.ExecEvent
+	(*FileData)(nil),              // 46: opendsec.v1.FileData
+	(*FileInfo)(nil),              // 47: opendsec.v1.FileInfo
+	(*DirListing)(nil),            // 48: opendsec.v1.DirListing
+	(*HttpResponse)(nil),          // 49: opendsec.v1.HttpResponse
+	(*SessionList)(nil),           // 50: opendsec.v1.SessionList
+	(*ProcessEvent)(nil),          // 51: opendsec.v1.ProcessEvent
+	(*ProcessList)(nil),           // 52: opendsec.v1.ProcessList
 }
 var file_opendsec_v1_cluster_proto_depIdxs = []int32{
-	16, // 0: opendsec.v1.Snapshot.edges:type_name -> opendsec.v1.EdgeState
-	16, // 1: opendsec.v1.EdgeStatusResponse.state:type_name -> opendsec.v1.EdgeState
-	17, // 2: opendsec.v1.EdgeStatusResponse.leases:type_name -> opendsec.v1.LeaseInfo
-	18, // 3: opendsec.v1.EdgeCreateRequest.spec:type_name -> opendsec.v1.SandboxSpec
-	6,  // 4: opendsec.v1.EdgeCreateRequest.snapshot_peer:type_name -> opendsec.v1.EdgePeer
-	19, // 5: opendsec.v1.EdgeTaskActionRequest.action:type_name -> opendsec.v1.TaskAction
-	20, // 6: opendsec.v1.Watcher.GetSnapshot:input_type -> opendsec.v1.Empty
+	19, // 0: opendsec.v1.Snapshot.edges:type_name -> opendsec.v1.EdgeState
+	19, // 1: opendsec.v1.EdgeStatusResponse.state:type_name -> opendsec.v1.EdgeState
+	20, // 2: opendsec.v1.EdgeStatusResponse.leases:type_name -> opendsec.v1.LeaseInfo
+	21, // 3: opendsec.v1.EdgeCreateRequest.spec:type_name -> opendsec.v1.SandboxSpec
+	9,  // 4: opendsec.v1.EdgeCreateRequest.snapshot_peer:type_name -> opendsec.v1.EdgePeer
+	22, // 5: opendsec.v1.EdgeTaskActionRequest.action:type_name -> opendsec.v1.TaskAction
+	23, // 6: opendsec.v1.Watcher.GetSnapshot:input_type -> opendsec.v1.Empty
 	1,  // 7: opendsec.v1.Watcher.Register:input_type -> opendsec.v1.RegisterEdgeRequest
-	11, // 8: opendsec.v1.Edge.Status:input_type -> opendsec.v1.EdgeStatusRequest
-	13, // 9: opendsec.v1.Edge.CreateSandbox:input_type -> opendsec.v1.EdgeCreateRequest
-	21, // 10: opendsec.v1.Edge.GetSandbox:input_type -> opendsec.v1.SandboxRef
-	22, // 11: opendsec.v1.Edge.ListSandboxes:input_type -> opendsec.v1.SandboxFilter
-	21, // 12: opendsec.v1.Edge.StopSandbox:input_type -> opendsec.v1.SandboxRef
-	21, // 13: opendsec.v1.Edge.PauseSandbox:input_type -> opendsec.v1.SandboxRef
-	21, // 14: opendsec.v1.Edge.ResumeSandbox:input_type -> opendsec.v1.SandboxRef
-	21, // 15: opendsec.v1.Edge.TouchSandbox:input_type -> opendsec.v1.SandboxRef
-	23, // 16: opendsec.v1.Edge.SetSandboxTimeout:input_type -> opendsec.v1.SetTimeoutRequest
-	14, // 17: opendsec.v1.Edge.ApplyTaskAction:input_type -> opendsec.v1.EdgeTaskActionRequest
-	15, // 18: opendsec.v1.Edge.Drain:input_type -> opendsec.v1.DrainRequest
-	24, // 19: opendsec.v1.Edge.Exec:input_type -> opendsec.v1.ExecRequest
-	24, // 20: opendsec.v1.Edge.ExecStream:input_type -> opendsec.v1.ExecRequest
-	25, // 21: opendsec.v1.Edge.GetOutput:input_type -> opendsec.v1.OutputRequest
-	26, // 22: opendsec.v1.Edge.ReadFile:input_type -> opendsec.v1.FileRequest
-	27, // 23: opendsec.v1.Edge.WriteFile:input_type -> opendsec.v1.WriteFileRequest
-	26, // 24: opendsec.v1.Edge.ListDir:input_type -> opendsec.v1.FileRequest
-	26, // 25: opendsec.v1.Edge.Stat:input_type -> opendsec.v1.FileRequest
-	26, // 26: opendsec.v1.Edge.Remove:input_type -> opendsec.v1.FileRequest
-	28, // 27: opendsec.v1.Edge.Http:input_type -> opendsec.v1.HttpRequest
-	29, // 28: opendsec.v1.Edge.ListSessions:input_type -> opendsec.v1.SessionRef
-	29, // 29: opendsec.v1.Edge.CloseSession:input_type -> opendsec.v1.SessionRef
-	26, // 30: opendsec.v1.Edge.MakeDir:input_type -> opendsec.v1.FileRequest
-	30, // 31: opendsec.v1.Edge.Move:input_type -> opendsec.v1.MoveRequest
-	31, // 32: opendsec.v1.Edge.StartProcess:input_type -> opendsec.v1.StartProcessRequest
-	32, // 33: opendsec.v1.Edge.ConnectProcess:input_type -> opendsec.v1.ProcessRef
-	32, // 34: opendsec.v1.Edge.ListProcesses:input_type -> opendsec.v1.ProcessRef
-	33, // 35: opendsec.v1.Edge.SendProcessInput:input_type -> opendsec.v1.ProcessInput
-	32, // 36: opendsec.v1.Edge.CloseProcessStdin:input_type -> opendsec.v1.ProcessRef
-	34, // 37: opendsec.v1.Edge.SignalProcess:input_type -> opendsec.v1.ProcessSignal
-	35, // 38: opendsec.v1.Edge.ResizeProcess:input_type -> opendsec.v1.ProcessResize
-	36, // 39: opendsec.v1.Edge.ConnectPort:input_type -> opendsec.v1.PortData
-	9,  // 40: opendsec.v1.Edge.PackDiff:input_type -> opendsec.v1.EdgePackDiffRequest
-	7,  // 41: opendsec.v1.Edge.Snapshot:input_type -> opendsec.v1.EdgeSnapshotRequest
-	37, // 42: opendsec.v1.Edge.UpdateNetwork:input_type -> opendsec.v1.UpdateNetworkRequest
-	2,  // 43: opendsec.v1.Edge.FetchSnapshot:input_type -> opendsec.v1.FetchSnapshotRequest
-	4,  // 44: opendsec.v1.Edge.BeginMove:input_type -> opendsec.v1.BeginMoveRequest
-	5,  // 45: opendsec.v1.Edge.EndMove:input_type -> opendsec.v1.EndMoveRequest
-	0,  // 46: opendsec.v1.Watcher.GetSnapshot:output_type -> opendsec.v1.Snapshot
-	20, // 47: opendsec.v1.Watcher.Register:output_type -> opendsec.v1.Empty
-	12, // 48: opendsec.v1.Edge.Status:output_type -> opendsec.v1.EdgeStatusResponse
-	38, // 49: opendsec.v1.Edge.CreateSandbox:output_type -> opendsec.v1.Sandbox
-	38, // 50: opendsec.v1.Edge.GetSandbox:output_type -> opendsec.v1.Sandbox
-	39, // 51: opendsec.v1.Edge.ListSandboxes:output_type -> opendsec.v1.SandboxList
-	38, // 52: opendsec.v1.Edge.StopSandbox:output_type -> opendsec.v1.Sandbox
-	38, // 53: opendsec.v1.Edge.PauseSandbox:output_type -> opendsec.v1.Sandbox
-	38, // 54: opendsec.v1.Edge.ResumeSandbox:output_type -> opendsec.v1.Sandbox
-	38, // 55: opendsec.v1.Edge.TouchSandbox:output_type -> opendsec.v1.Sandbox
-	38, // 56: opendsec.v1.Edge.SetSandboxTimeout:output_type -> opendsec.v1.Sandbox
-	40, // 57: opendsec.v1.Edge.ApplyTaskAction:output_type -> opendsec.v1.TaskActionResult
-	20, // 58: opendsec.v1.Edge.Drain:output_type -> opendsec.v1.Empty
-	41, // 59: opendsec.v1.Edge.Exec:output_type -> opendsec.v1.ExecResult
-	42, // 60: opendsec.v1.Edge.ExecStream:output_type -> opendsec.v1.ExecEvent
-	41, // 61: opendsec.v1.Edge.GetOutput:output_type -> opendsec.v1.ExecResult
-	43, // 62: opendsec.v1.Edge.ReadFile:output_type -> opendsec.v1.FileData
-	44, // 63: opendsec.v1.Edge.WriteFile:output_type -> opendsec.v1.FileInfo
-	45, // 64: opendsec.v1.Edge.ListDir:output_type -> opendsec.v1.DirListing
-	44, // 65: opendsec.v1.Edge.Stat:output_type -> opendsec.v1.FileInfo
-	20, // 66: opendsec.v1.Edge.Remove:output_type -> opendsec.v1.Empty
-	46, // 67: opendsec.v1.Edge.Http:output_type -> opendsec.v1.HttpResponse
-	47, // 68: opendsec.v1.Edge.ListSessions:output_type -> opendsec.v1.SessionList
-	20, // 69: opendsec.v1.Edge.CloseSession:output_type -> opendsec.v1.Empty
-	44, // 70: opendsec.v1.Edge.MakeDir:output_type -> opendsec.v1.FileInfo
-	44, // 71: opendsec.v1.Edge.Move:output_type -> opendsec.v1.FileInfo
-	48, // 72: opendsec.v1.Edge.StartProcess:output_type -> opendsec.v1.ProcessEvent
-	48, // 73: opendsec.v1.Edge.ConnectProcess:output_type -> opendsec.v1.ProcessEvent
-	49, // 74: opendsec.v1.Edge.ListProcesses:output_type -> opendsec.v1.ProcessList
-	20, // 75: opendsec.v1.Edge.SendProcessInput:output_type -> opendsec.v1.Empty
-	20, // 76: opendsec.v1.Edge.CloseProcessStdin:output_type -> opendsec.v1.Empty
-	20, // 77: opendsec.v1.Edge.SignalProcess:output_type -> opendsec.v1.Empty
-	20, // 78: opendsec.v1.Edge.ResizeProcess:output_type -> opendsec.v1.Empty
-	36, // 79: opendsec.v1.Edge.ConnectPort:output_type -> opendsec.v1.PortData
-	10, // 80: opendsec.v1.Edge.PackDiff:output_type -> opendsec.v1.EdgePackDiffResponse
-	8,  // 81: opendsec.v1.Edge.Snapshot:output_type -> opendsec.v1.EdgeSnapshotResponse
-	38, // 82: opendsec.v1.Edge.UpdateNetwork:output_type -> opendsec.v1.Sandbox
-	3,  // 83: opendsec.v1.Edge.FetchSnapshot:output_type -> opendsec.v1.SnapshotChunk
-	8,  // 84: opendsec.v1.Edge.BeginMove:output_type -> opendsec.v1.EdgeSnapshotResponse
-	20, // 85: opendsec.v1.Edge.EndMove:output_type -> opendsec.v1.Empty
-	46, // [46:86] is the sub-list for method output_type
-	6,  // [6:46] is the sub-list for method input_type
+	14, // 8: opendsec.v1.Edge.Status:input_type -> opendsec.v1.EdgeStatusRequest
+	16, // 9: opendsec.v1.Edge.CreateSandbox:input_type -> opendsec.v1.EdgeCreateRequest
+	24, // 10: opendsec.v1.Edge.GetSandbox:input_type -> opendsec.v1.SandboxRef
+	25, // 11: opendsec.v1.Edge.ListSandboxes:input_type -> opendsec.v1.SandboxFilter
+	24, // 12: opendsec.v1.Edge.StopSandbox:input_type -> opendsec.v1.SandboxRef
+	24, // 13: opendsec.v1.Edge.PauseSandbox:input_type -> opendsec.v1.SandboxRef
+	24, // 14: opendsec.v1.Edge.ResumeSandbox:input_type -> opendsec.v1.SandboxRef
+	24, // 15: opendsec.v1.Edge.TouchSandbox:input_type -> opendsec.v1.SandboxRef
+	26, // 16: opendsec.v1.Edge.SetSandboxTimeout:input_type -> opendsec.v1.SetTimeoutRequest
+	17, // 17: opendsec.v1.Edge.ApplyTaskAction:input_type -> opendsec.v1.EdgeTaskActionRequest
+	18, // 18: opendsec.v1.Edge.Drain:input_type -> opendsec.v1.DrainRequest
+	27, // 19: opendsec.v1.Edge.Exec:input_type -> opendsec.v1.ExecRequest
+	27, // 20: opendsec.v1.Edge.ExecStream:input_type -> opendsec.v1.ExecRequest
+	28, // 21: opendsec.v1.Edge.GetOutput:input_type -> opendsec.v1.OutputRequest
+	29, // 22: opendsec.v1.Edge.ReadFile:input_type -> opendsec.v1.FileRequest
+	30, // 23: opendsec.v1.Edge.WriteFile:input_type -> opendsec.v1.WriteFileRequest
+	29, // 24: opendsec.v1.Edge.ListDir:input_type -> opendsec.v1.FileRequest
+	29, // 25: opendsec.v1.Edge.Stat:input_type -> opendsec.v1.FileRequest
+	29, // 26: opendsec.v1.Edge.Remove:input_type -> opendsec.v1.FileRequest
+	31, // 27: opendsec.v1.Edge.Http:input_type -> opendsec.v1.HttpRequest
+	32, // 28: opendsec.v1.Edge.ListSessions:input_type -> opendsec.v1.SessionRef
+	32, // 29: opendsec.v1.Edge.CloseSession:input_type -> opendsec.v1.SessionRef
+	29, // 30: opendsec.v1.Edge.MakeDir:input_type -> opendsec.v1.FileRequest
+	33, // 31: opendsec.v1.Edge.Move:input_type -> opendsec.v1.MoveRequest
+	34, // 32: opendsec.v1.Edge.StartProcess:input_type -> opendsec.v1.StartProcessRequest
+	35, // 33: opendsec.v1.Edge.ConnectProcess:input_type -> opendsec.v1.ProcessRef
+	35, // 34: opendsec.v1.Edge.ListProcesses:input_type -> opendsec.v1.ProcessRef
+	36, // 35: opendsec.v1.Edge.SendProcessInput:input_type -> opendsec.v1.ProcessInput
+	35, // 36: opendsec.v1.Edge.CloseProcessStdin:input_type -> opendsec.v1.ProcessRef
+	37, // 37: opendsec.v1.Edge.SignalProcess:input_type -> opendsec.v1.ProcessSignal
+	38, // 38: opendsec.v1.Edge.ResizeProcess:input_type -> opendsec.v1.ProcessResize
+	39, // 39: opendsec.v1.Edge.ConnectPort:input_type -> opendsec.v1.PortData
+	12, // 40: opendsec.v1.Edge.PackDiff:input_type -> opendsec.v1.EdgePackDiffRequest
+	10, // 41: opendsec.v1.Edge.Snapshot:input_type -> opendsec.v1.EdgeSnapshotRequest
+	40, // 42: opendsec.v1.Edge.UpdateNetwork:input_type -> opendsec.v1.UpdateNetworkRequest
+	5,  // 43: opendsec.v1.Edge.FetchSnapshot:input_type -> opendsec.v1.FetchSnapshotRequest
+	7,  // 44: opendsec.v1.Edge.BeginMove:input_type -> opendsec.v1.BeginMoveRequest
+	8,  // 45: opendsec.v1.Edge.EndMove:input_type -> opendsec.v1.EndMoveRequest
+	2,  // 46: opendsec.v1.Edge.CheckLayers:input_type -> opendsec.v1.CheckLayersRequest
+	4,  // 47: opendsec.v1.Edge.DeleteSnapshot:input_type -> opendsec.v1.DeleteSnapshotRequest
+	0,  // 48: opendsec.v1.Watcher.GetSnapshot:output_type -> opendsec.v1.Snapshot
+	23, // 49: opendsec.v1.Watcher.Register:output_type -> opendsec.v1.Empty
+	15, // 50: opendsec.v1.Edge.Status:output_type -> opendsec.v1.EdgeStatusResponse
+	41, // 51: opendsec.v1.Edge.CreateSandbox:output_type -> opendsec.v1.Sandbox
+	41, // 52: opendsec.v1.Edge.GetSandbox:output_type -> opendsec.v1.Sandbox
+	42, // 53: opendsec.v1.Edge.ListSandboxes:output_type -> opendsec.v1.SandboxList
+	41, // 54: opendsec.v1.Edge.StopSandbox:output_type -> opendsec.v1.Sandbox
+	41, // 55: opendsec.v1.Edge.PauseSandbox:output_type -> opendsec.v1.Sandbox
+	41, // 56: opendsec.v1.Edge.ResumeSandbox:output_type -> opendsec.v1.Sandbox
+	41, // 57: opendsec.v1.Edge.TouchSandbox:output_type -> opendsec.v1.Sandbox
+	41, // 58: opendsec.v1.Edge.SetSandboxTimeout:output_type -> opendsec.v1.Sandbox
+	43, // 59: opendsec.v1.Edge.ApplyTaskAction:output_type -> opendsec.v1.TaskActionResult
+	23, // 60: opendsec.v1.Edge.Drain:output_type -> opendsec.v1.Empty
+	44, // 61: opendsec.v1.Edge.Exec:output_type -> opendsec.v1.ExecResult
+	45, // 62: opendsec.v1.Edge.ExecStream:output_type -> opendsec.v1.ExecEvent
+	44, // 63: opendsec.v1.Edge.GetOutput:output_type -> opendsec.v1.ExecResult
+	46, // 64: opendsec.v1.Edge.ReadFile:output_type -> opendsec.v1.FileData
+	47, // 65: opendsec.v1.Edge.WriteFile:output_type -> opendsec.v1.FileInfo
+	48, // 66: opendsec.v1.Edge.ListDir:output_type -> opendsec.v1.DirListing
+	47, // 67: opendsec.v1.Edge.Stat:output_type -> opendsec.v1.FileInfo
+	23, // 68: opendsec.v1.Edge.Remove:output_type -> opendsec.v1.Empty
+	49, // 69: opendsec.v1.Edge.Http:output_type -> opendsec.v1.HttpResponse
+	50, // 70: opendsec.v1.Edge.ListSessions:output_type -> opendsec.v1.SessionList
+	23, // 71: opendsec.v1.Edge.CloseSession:output_type -> opendsec.v1.Empty
+	47, // 72: opendsec.v1.Edge.MakeDir:output_type -> opendsec.v1.FileInfo
+	47, // 73: opendsec.v1.Edge.Move:output_type -> opendsec.v1.FileInfo
+	51, // 74: opendsec.v1.Edge.StartProcess:output_type -> opendsec.v1.ProcessEvent
+	51, // 75: opendsec.v1.Edge.ConnectProcess:output_type -> opendsec.v1.ProcessEvent
+	52, // 76: opendsec.v1.Edge.ListProcesses:output_type -> opendsec.v1.ProcessList
+	23, // 77: opendsec.v1.Edge.SendProcessInput:output_type -> opendsec.v1.Empty
+	23, // 78: opendsec.v1.Edge.CloseProcessStdin:output_type -> opendsec.v1.Empty
+	23, // 79: opendsec.v1.Edge.SignalProcess:output_type -> opendsec.v1.Empty
+	23, // 80: opendsec.v1.Edge.ResizeProcess:output_type -> opendsec.v1.Empty
+	39, // 81: opendsec.v1.Edge.ConnectPort:output_type -> opendsec.v1.PortData
+	13, // 82: opendsec.v1.Edge.PackDiff:output_type -> opendsec.v1.EdgePackDiffResponse
+	11, // 83: opendsec.v1.Edge.Snapshot:output_type -> opendsec.v1.EdgeSnapshotResponse
+	41, // 84: opendsec.v1.Edge.UpdateNetwork:output_type -> opendsec.v1.Sandbox
+	6,  // 85: opendsec.v1.Edge.FetchSnapshot:output_type -> opendsec.v1.SnapshotChunk
+	11, // 86: opendsec.v1.Edge.BeginMove:output_type -> opendsec.v1.EdgeSnapshotResponse
+	23, // 87: opendsec.v1.Edge.EndMove:output_type -> opendsec.v1.Empty
+	3,  // 88: opendsec.v1.Edge.CheckLayers:output_type -> opendsec.v1.CheckLayersResponse
+	23, // 89: opendsec.v1.Edge.DeleteSnapshot:output_type -> opendsec.v1.Empty
+	48, // [48:90] is the sub-list for method output_type
+	6,  // [6:48] is the sub-list for method input_type
 	6,  // [6:6] is the sub-list for extension type_name
 	6,  // [6:6] is the sub-list for extension extendee
 	0,  // [0:6] is the sub-list for field type_name
@@ -1281,7 +1475,7 @@ func file_opendsec_v1_cluster_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_opendsec_v1_cluster_proto_rawDesc), len(file_opendsec_v1_cluster_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   16,
+			NumMessages:   19,
 			NumExtensions: 0,
 			NumServices:   2,
 		},

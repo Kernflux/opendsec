@@ -104,7 +104,7 @@ func (e *Edge) BeginMove(ctx context.Context, id, snapID string) (*pb.EdgeSnapsh
 	e.mu.Lock()
 	r.moving = since
 	e.mu.Unlock()
-	return &pb.EdgeSnapshotResponse{SnapshotId: snap.ID, Memory: true, SizeBytes: snap.Size, Held: true}, nil
+	return &pb.EdgeSnapshotResponse{SnapshotId: snap.ID, Memory: true, SizeBytes: snap.Size, Held: true, Record: recordJSON(snap)}, nil
 }
 
 // EndMove completes the move of sandbox id to edge to (it runs there now:

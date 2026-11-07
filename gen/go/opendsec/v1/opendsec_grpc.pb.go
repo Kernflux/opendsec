@@ -76,6 +76,8 @@ const (
 	DSec_ListImages_FullMethodName        = "/opendsec.v1.DSec/ListImages"
 	DSec_DeleteImage_FullMethodName       = "/opendsec.v1.DSec/DeleteImage"
 	DSec_PackDiff_FullMethodName          = "/opendsec.v1.DSec/PackDiff"
+	DSec_ListCatalog_FullMethodName       = "/opendsec.v1.DSec/ListCatalog"
+	DSec_ForgetSnapshots_FullMethodName   = "/opendsec.v1.DSec/ForgetSnapshots"
 	DSec_ForkSandbox_FullMethodName       = "/opendsec.v1.DSec/ForkSandbox"
 	DSec_CreateSnapshot_FullMethodName    = "/opendsec.v1.DSec/CreateSnapshot"
 	DSec_UpdateNetwork_FullMethodName     = "/opendsec.v1.DSec/UpdateNetwork"
@@ -169,6 +171,10 @@ type DSecClient interface {
 	DeleteImage(ctx context.Context, in *ImageRef, opts ...grpc.CallOption) (*Empty, error)
 	// Snapshot a sandbox's writable layer as a new image on top of its own.
 	PackDiff(ctx context.Context, in *PackDiffRequest, opts ...grpc.CallOption) (*ImageInfo, error)
+	// The whole image catalog, and dropping snapshot records: for the image
+	// store's garbage collection (opendsecctl image gc). Cluster admins only.
+	ListCatalog(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*Catalog, error)
+	ForgetSnapshots(ctx context.Context, in *ForgetSnapshotsRequest, opts ...grpc.CallOption) (*Empty, error)
 	// Snapshots and fork (spec §19). ForkSandbox copies a running sandbox into
 	// count running sandboxes; the source pauses briefly and keeps its id and
 	// TTLs. One result per copy, streamed as each completes.
@@ -810,6 +816,26 @@ func (c *dSecClient) PackDiff(ctx context.Context, in *PackDiffRequest, opts ...
 	return out, nil
 }
 
+func (c *dSecClient) ListCatalog(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*Catalog, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Catalog)
+	err := c.cc.Invoke(ctx, DSec_ListCatalog_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dSecClient) ForgetSnapshots(ctx context.Context, in *ForgetSnapshotsRequest, opts ...grpc.CallOption) (*Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Empty)
+	err := c.cc.Invoke(ctx, DSec_ForgetSnapshots_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *dSecClient) ForkSandbox(ctx context.Context, in *ForkSandboxRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[CreateSandboxResult], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	stream, err := c.cc.NewStream(ctx, &DSec_ServiceDesc.Streams[7], DSec_ForkSandbox_FullMethodName, cOpts...)
@@ -937,6 +963,10 @@ type DSecServer interface {
 	DeleteImage(context.Context, *ImageRef) (*Empty, error)
 	// Snapshot a sandbox's writable layer as a new image on top of its own.
 	PackDiff(context.Context, *PackDiffRequest) (*ImageInfo, error)
+	// The whole image catalog, and dropping snapshot records: for the image
+	// store's garbage collection (opendsecctl image gc). Cluster admins only.
+	ListCatalog(context.Context, *Empty) (*Catalog, error)
+	ForgetSnapshots(context.Context, *ForgetSnapshotsRequest) (*Empty, error)
 	// Snapshots and fork (spec §19). ForkSandbox copies a running sandbox into
 	// count running sandboxes; the source pauses briefly and keeps its id and
 	// TTLs. One result per copy, streamed as each completes.
@@ -1127,6 +1157,12 @@ func (UnimplementedDSecServer) DeleteImage(context.Context, *ImageRef) (*Empty, 
 }
 func (UnimplementedDSecServer) PackDiff(context.Context, *PackDiffRequest) (*ImageInfo, error) {
 	return nil, status.Error(codes.Unimplemented, "method PackDiff not implemented")
+}
+func (UnimplementedDSecServer) ListCatalog(context.Context, *Empty) (*Catalog, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListCatalog not implemented")
+}
+func (UnimplementedDSecServer) ForgetSnapshots(context.Context, *ForgetSnapshotsRequest) (*Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method ForgetSnapshots not implemented")
 }
 func (UnimplementedDSecServer) ForkSandbox(*ForkSandboxRequest, grpc.ServerStreamingServer[CreateSandboxResult]) error {
 	return status.Error(codes.Unimplemented, "method ForkSandbox not implemented")
@@ -2127,6 +2163,42 @@ func _DSec_PackDiff_Handler(srv interface{}, ctx context.Context, dec func(inter
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DSec_ListCatalog_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(Empty)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DSecServer).ListCatalog(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DSec_ListCatalog_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DSecServer).ListCatalog(ctx, req.(*Empty))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DSec_ForgetSnapshots_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ForgetSnapshotsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DSecServer).ForgetSnapshots(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DSec_ForgetSnapshots_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DSecServer).ForgetSnapshots(ctx, req.(*ForgetSnapshotsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _DSec_ForkSandbox_Handler(srv interface{}, stream grpc.ServerStream) error {
 	m := new(ForkSandboxRequest)
 	if err := stream.RecvMsg(m); err != nil {
@@ -2380,6 +2452,14 @@ var DSec_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "PackDiff",
 			Handler:    _DSec_PackDiff_Handler,
+		},
+		{
+			MethodName: "ListCatalog",
+			Handler:    _DSec_ListCatalog_Handler,
+		},
+		{
+			MethodName: "ForgetSnapshots",
+			Handler:    _DSec_ForgetSnapshots_Handler,
 		},
 		{
 			MethodName: "CreateSnapshot",

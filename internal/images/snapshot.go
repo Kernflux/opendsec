@@ -2,6 +2,7 @@ package images
 
 import (
 	"crypto/rand"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -129,6 +130,39 @@ func (s *Store) GetSnapshot(id string) (*Snapshot, error) {
 		return nil, err
 	}
 	return &snap, nil
+}
+
+// ListSnapshots returns the records of the store's snapshots. strict
+// fails on a record it cannot read (GC must not miss a reference); else
+// those are skipped, as are directories without a record.
+func (s *Store) ListSnapshots(strict bool) ([]*Snapshot, error) {
+	ents, err := readDir(filepath.Join(s.Root, "snapshots"))
+	if err != nil {
+		return nil, err
+	}
+	var out []*Snapshot
+	for _, e := range ents {
+		if !ValidSnapshotID(e.Name()) {
+			continue
+		}
+		snap, err := s.GetSnapshot(e.Name())
+		switch {
+		case err == nil:
+			out = append(out, snap)
+		case strict && rpcutil.Reason(err) != rpcutil.NotFound:
+			return nil, fmt.Errorf("snapshot %s: %w", e.Name(), err)
+		}
+	}
+	return out, nil
+}
+
+// SnapshotFor returns the record of snapshot id: given, when the apiserver
+// sent it with the request (spec §42), else the store's.
+func (s *Store) SnapshotFor(id string, given *Snapshot) (*Snapshot, error) {
+	if given != nil && given.ID == id {
+		return given, nil
+	}
+	return s.GetSnapshot(id)
 }
 
 // SnapshotLowerdirs returns snap's store layers as overlay lowerdirs, topmost

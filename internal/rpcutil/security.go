@@ -140,7 +140,7 @@ var (
 		"/opendsec.v1.IAM/ReleaseLock":   {pki.RoleWatcher, pki.RoleFleet, pki.RoleIAM},
 		// The key-value area holds the fleet service's state (spec §28.3);
 		// apiservers reach only its ext/ keys (IAM checks), their
-		// extensions' state.
+		// extensions' state, and img/, the image catalog.
 		"/opendsec.v1.IAM/KVGet":    {pki.RoleFleet, pki.RoleAPIServer, pki.RoleIAM},
 		"/opendsec.v1.IAM/KVList":   {pki.RoleFleet, pki.RoleAPIServer, pki.RoleIAM},
 		"/opendsec.v1.IAM/KVPut":    {pki.RoleFleet, pki.RoleAPIServer, pki.RoleIAM},

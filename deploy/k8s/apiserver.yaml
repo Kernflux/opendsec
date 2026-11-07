@@ -52,12 +52,12 @@ spec:
           livenessProbe: {tcpSocket: {port: 7100}, periodSeconds: 10, failureThreshold: 6}
           resources:
             requests: {cpu: "4", memory: 4Gi}
-          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL], add: [DAC_OVERRIDE, FOWNER]}}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL], add: [FOWNER]}}
           volumeMounts:
             - {name: config, mountPath: /etc/opendsec/opendsec.json, subPath: opendsec.json, readOnly: true}
             - {name: pki, mountPath: /etc/opendsec/pki, readOnly: true}
             - {name: audit, mountPath: /var/log/opendsec/audit}
-            - {name: images, mountPath: /mnt/opendsec-images}   # writes image manifests
+            - {name: images, mountPath: /mnt/opendsec-images}   # manifest files for older edges (image_store.manifest_files, spec §42)
       volumes:
         - name: config
           secret: {secretName: opendsec-config}

@@ -61,7 +61,7 @@ func TestMicroVMEndToEnd(t *testing.T) {
 	state, _ := os.MkdirTemp("", "opendsec")
 	t.Cleanup(func() { os.RemoveAll(state) })
 	cfg := cluster.SimConfig(2, 1, 8, 16*1024, 64)
-	cfg.ImageStore.Root = storeRoot
+	useStore(cfg, storeRoot)
 	// OPENDSEC_TEST_XSTATE puts the second edge's state on another filesystem
 	// than the store: it pulls snapshots into its node cache (spec §19.12).
 	xstate := state

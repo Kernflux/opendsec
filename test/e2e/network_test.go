@@ -47,7 +47,7 @@ func TestNetworkPolicy(t *testing.T) {
 	state, _ := os.MkdirTemp("", "opendsec")
 	t.Cleanup(func() { os.RemoveAll(state) })
 	cfg := cluster.SimConfig(1, 1, 8, 16*1024, 64)
-	cfg.ImageStore.Root = storeRoot
+	useStore(cfg, storeRoot)
 	cfg.Network = config.NetworkPolicy{RuleSets: map[string][]string{"pypi": {"pypi.org", "files.pythonhosted.org"}}}
 	vmOpt := microvm.Options{Kernel: fcKernel(), Firecracker: "firecracker", Jailer: "jailer"}
 	withVM := microvm.Check(&vmOpt) == nil

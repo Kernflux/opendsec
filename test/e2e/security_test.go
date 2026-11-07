@@ -133,10 +133,13 @@ func TestInternalMTLS(t *testing.T) {
 	if _, err := asAPI.Admit(short(t), &pb.AdmitRequest{Token: tc.AdminToken, Project: "root"}); err != nil {
 		t.Fatalf("apiserver Admit: %v", err)
 	}
-	// The key-value area: apiservers reach only their extensions' ext/ keys,
-	// never the fleet service's state.
+	// The key-value area: apiservers reach only their extensions' ext/ keys
+	// and the image catalog's img/ keys, never the fleet service's state.
 	if _, err := asAPI.KVPut(short(t), &pb.KVPutRequest{Key: "ext/sso/users/x", Value: []byte("{}")}); err != nil {
 		t.Fatalf("apiserver KVPut ext/: %v", err)
+	}
+	if _, err := asAPI.KVPut(short(t), &pb.KVPutRequest{Key: "img/m/root/x:v1", Value: []byte("{}")}); err != nil {
+		t.Fatalf("apiserver KVPut img/: %v", err)
 	}
 	if e, err := asAPI.KVGet(short(t), &pb.KVGetRequest{Key: "ext/sso/users/x"}); err != nil || string(e.Value) != "{}" {
 		t.Fatalf("apiserver KVGet ext/: %v %v", e, err)
@@ -151,7 +154,7 @@ func TestInternalMTLS(t *testing.T) {
 		"KVDelete": func() error { _, err := asAPI.KVDelete(short(t), &pb.KVDeleteRequest{Key: "fleet/node/x"}); return err },
 	} {
 		if err := call(); rpcutil.Reason(err) != rpcutil.Forbidden {
-			t.Fatalf("apiserver %s outside ext/: %v", name, err)
+			t.Fatalf("apiserver %s outside ext/ and img/: %v", name, err)
 		}
 	}
 

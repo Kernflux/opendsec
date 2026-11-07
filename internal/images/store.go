@@ -172,6 +172,21 @@ type Store struct {
 	cache map[string]cachedManifest
 }
 
+// OpenStore is the store at root without creating anything there: for an
+// apiserver, where root may be a mount point with nothing mounted (Check).
+func OpenStore(root string) *Store {
+	return &Store{Root: root, cache: map[string]cachedManifest{}}
+}
+
+// Check fails unless the store is there: root holds its layers directory
+// (an unmounted mount point does not).
+func (s *Store) Check() error {
+	if _, err := os.Stat(filepath.Join(s.Root, "layers")); err != nil {
+		return rpcutil.Err(rpcutil.Unavailable, "the image store is not at %s (not mounted?): %v", s.Root, err)
+	}
+	return nil
+}
+
 func NewStore(root string) (*Store, error) {
 	for _, d := range []string{"layers", "images"} {
 		if err := os.MkdirAll(filepath.Join(root, d), 0o755); err != nil {
@@ -299,6 +314,30 @@ func (s *Store) manifestPath(name string) (string, error) {
 
 // PutManifest validates and writes m. Existing names are only replaced with overwrite.
 func (s *Store) PutManifest(m *Manifest, overwrite bool) error {
+	if err := s.PrepareManifest(m); err != nil {
+		return err
+	}
+	return s.WriteManifest(m, overwrite)
+}
+
+// PrepareManifest validates m (ValidateManifest) and checks its layers are
+// in the store, marking them used (for GC's grace period).
+func (s *Store) PrepareManifest(m *Manifest) error {
+	if err := ValidateManifest(m); err != nil {
+		return err
+	}
+	s.touch(m.Layers, m.Snapshot)
+	for _, l := range m.Layers {
+		if !s.HasLayer(l) {
+			return MissingLayer(l, m.Name)
+		}
+	}
+	return nil
+}
+
+// ValidateManifest canonicalizes m's name and checks it can be published:
+// a sane number of valid layer ids. It sets CreatedAt if unset.
+func ValidateManifest(m *Manifest) error {
 	name, err := Canonical(m.Name)
 	if err != nil {
 		return err
@@ -310,16 +349,33 @@ func (s *Store) PutManifest(m *Manifest, overwrite bool) error {
 	if len(m.Layers) > 125 { // overlayfs supports at most ~500 lowerdirs; keep stacks shallow
 		return rpcutil.Err(rpcutil.Invalid, "image %s has %d layers (max 125)", name, len(m.Layers))
 	}
-	s.touch(m.Layers, m.Snapshot)
 	for _, l := range m.Layers {
-		if !ValidLayerID(l) || !s.HasLayer(l) {
-			return rpcutil.Err(rpcutil.NotFound, "layer %q (needed by %s) is not in the image store", l, name)
+		if !ValidLayerID(l) {
+			return MissingLayer(l, name)
 		}
+	}
+	if m.Snapshot != "" && !ValidSnapshotID(m.Snapshot) {
+		return rpcutil.Err(rpcutil.Invalid, "image %s: bad snapshot id %q", name, m.Snapshot)
 	}
 	if m.CreatedAt == 0 {
 		m.CreatedAt = float64(time.Now().UnixNano()) / 1e9
 	}
-	path, _ := s.manifestPath(name)
+	return nil
+}
+
+// MissingLayer is the error for a layer image needs that the store lacks.
+func MissingLayer(layer, image string) error {
+	return rpcutil.Err(rpcutil.NotFound, "layer %q (needed by %s) is not in the image store", layer, image)
+}
+
+// WriteManifest writes the file of a prepared manifest. Without overwrite,
+// the name is taken atomically: of two at once, one fails.
+func (s *Store) WriteManifest(m *Manifest, overwrite bool) error {
+	name := m.Name
+	path, err := s.manifestPath(name)
+	if err != nil {
+		return err
+	}
 	if !overwrite {
 		if _, err := os.Stat(path); err == nil {
 			return rpcutil.Err(rpcutil.Invalid, "image %s already exists", name)
@@ -328,7 +384,6 @@ func (s *Store) PutManifest(m *Manifest, overwrite bool) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	// Without overwrite, the name is taken atomically: of two at once, one fails.
 	if err := writeJSONAs(path, m, overwrite); err != nil {
 		if errors.Is(err, fs.ErrExist) {
 			return rpcutil.Err(rpcutil.Invalid, "image %s already exists", name)
@@ -377,6 +432,17 @@ func (s *Store) GetManifest(name string) (*Manifest, error) {
 	return &m, nil
 }
 
+// ManifestFor returns the manifest of image name: given, when the apiserver
+// sent it with the request (spec §42), else the store's.
+func (s *Store) ManifestFor(name string, given *Manifest) (*Manifest, error) {
+	if given != nil {
+		if c, err := Canonical(name); err == nil && c == given.Name {
+			return given, nil
+		}
+	}
+	return s.GetManifest(name)
+}
+
 // Refresh drops a cached manifest (e.g. after another apiserver overwrote it).
 func (s *Store) Refresh(name string) {
 	if n, err := Canonical(name); err == nil {
@@ -404,15 +470,26 @@ func (s *Store) DeleteManifest(name string) error {
 
 // List returns the manifests under project (and its subprojects).
 func (s *Store) List(project string) ([]*Manifest, error) {
-	// Authorization is on the project's name and the walk on the cleaned
-	// path: "root/a/.." would pass as a child of root/a and list all of root.
-	for _, seg := range strings.Split(project, "/") {
-		if !segmentRe.MatchString(seg) {
-			return nil, rpcutil.Err(rpcutil.Invalid, "bad project %q", project)
-		}
+	if err := ValidProject(project); err != nil {
+		return nil, err
 	}
 	return s.list(project, false)
 }
+
+// ValidProject checks a project name used to list images. Authorization is
+// on the project's name and the listing on the cleaned path: "root/a/.."
+// would pass as a child of root/a and list all of root.
+func ValidProject(project string) error {
+	for _, seg := range strings.Split(project, "/") {
+		if !segmentRe.MatchString(seg) {
+			return rpcutil.Err(rpcutil.Invalid, "bad project %q", project)
+		}
+	}
+	return nil
+}
+
+// ListAll returns every manifest in the store.
+func (s *Store) ListAll() ([]*Manifest, error) { return s.list("", false) }
 
 // list is List; strict fails on a manifest it cannot read instead of
 // skipping it (GC must not miss a reference).
@@ -501,6 +578,10 @@ func writeJSONAs(path string, v any, replace bool) error {
 // touch marks the layers (and snapshot) a record about to be written
 // names as used now: GC, which read the references before, checks again
 // right before it removes anything, and keeps what was touched since.
+// Touch marks layers and a snapshot used: garbage collection keeps what
+// was used within its grace period.
+func (s *Store) Touch(layers []string, snapshot string) { s.touch(layers, snapshot) }
+
 func (s *Store) touch(layers []string, snapshot string) {
 	now := time.Now()
 	for _, l := range layers {

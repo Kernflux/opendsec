@@ -325,6 +325,16 @@ class DSecStub(object):
                 request_serializer=opendsec_dot_v1_dot_opendsec__pb2.PackDiffRequest.SerializeToString,
                 response_deserializer=opendsec_dot_v1_dot_opendsec__pb2.ImageInfo.FromString,
                 _registered_method=True)
+        self.ListCatalog = channel.unary_unary(
+                '/opendsec.v1.DSec/ListCatalog',
+                request_serializer=opendsec_dot_v1_dot_types__pb2.Empty.SerializeToString,
+                response_deserializer=opendsec_dot_v1_dot_opendsec__pb2.Catalog.FromString,
+                _registered_method=True)
+        self.ForgetSnapshots = channel.unary_unary(
+                '/opendsec.v1.DSec/ForgetSnapshots',
+                request_serializer=opendsec_dot_v1_dot_opendsec__pb2.ForgetSnapshotsRequest.SerializeToString,
+                response_deserializer=opendsec_dot_v1_dot_types__pb2.Empty.FromString,
+                _registered_method=True)
         self.ForkSandbox = channel.unary_stream(
                 '/opendsec.v1.DSec/ForkSandbox',
                 request_serializer=opendsec_dot_v1_dot_opendsec__pb2.ForkSandboxRequest.SerializeToString,
@@ -713,6 +723,20 @@ class DSecServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def ListCatalog(self, request, context):
+        """The whole image catalog, and dropping snapshot records: for the image
+        store's garbage collection (opendsecctl image gc). Cluster admins only.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def ForgetSnapshots(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
     def ForkSandbox(self, request, context):
         """Snapshots and fork (spec §19). ForkSandbox copies a running sandbox into
         count running sandboxes; the source pauses briefly and keeps its id and
@@ -1025,6 +1049,16 @@ def add_DSecServicer_to_server(servicer, server):
                     servicer.PackDiff,
                     request_deserializer=opendsec_dot_v1_dot_opendsec__pb2.PackDiffRequest.FromString,
                     response_serializer=opendsec_dot_v1_dot_opendsec__pb2.ImageInfo.SerializeToString,
+            ),
+            'ListCatalog': grpc.unary_unary_rpc_method_handler(
+                    servicer.ListCatalog,
+                    request_deserializer=opendsec_dot_v1_dot_types__pb2.Empty.FromString,
+                    response_serializer=opendsec_dot_v1_dot_opendsec__pb2.Catalog.SerializeToString,
+            ),
+            'ForgetSnapshots': grpc.unary_unary_rpc_method_handler(
+                    servicer.ForgetSnapshots,
+                    request_deserializer=opendsec_dot_v1_dot_opendsec__pb2.ForgetSnapshotsRequest.FromString,
+                    response_serializer=opendsec_dot_v1_dot_types__pb2.Empty.SerializeToString,
             ),
             'ForkSandbox': grpc.unary_stream_rpc_method_handler(
                     servicer.ForkSandbox,
@@ -2583,6 +2617,60 @@ class DSec(object):
             '/opendsec.v1.DSec/PackDiff',
             opendsec_dot_v1_dot_opendsec__pb2.PackDiffRequest.SerializeToString,
             opendsec_dot_v1_dot_opendsec__pb2.ImageInfo.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ListCatalog(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/opendsec.v1.DSec/ListCatalog',
+            opendsec_dot_v1_dot_types__pb2.Empty.SerializeToString,
+            opendsec_dot_v1_dot_opendsec__pb2.Catalog.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ForgetSnapshots(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/opendsec.v1.DSec/ForgetSnapshots',
+            opendsec_dot_v1_dot_opendsec__pb2.ForgetSnapshotsRequest.SerializeToString,
+            opendsec_dot_v1_dot_types__pb2.Empty.FromString,
             options,
             channel_credentials,
             insecure,

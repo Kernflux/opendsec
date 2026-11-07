@@ -7,6 +7,7 @@ package apiserver
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"math"
@@ -61,8 +62,13 @@ type Server struct {
 
 	// Audit, if set, records every public call (spec §14.4).
 	Audit *Auditor
-	// Images is the shared image store (nil: store images unavailable).
-	Images *images.Store
+	// imagesOn: the cluster has a shared image store (EnableImages). cat
+	// is the image catalog (catalog.go); filesStore, if set, the store as
+	// this apiserver mounts it, which it then also keeps manifest files in.
+	imagesOn   bool
+	filesStore *images.Store
+	cat        *catalog
+	catOnce    sync.Once
 
 	// Admission policy (SetAdmission; spec §18).
 	adm           config.Admission
@@ -108,6 +114,9 @@ func New(cfg config.APIServer, pcfg config.Placement, iamc pb.IAMClient, w pb.Wa
 // until ctx is cancelled.
 func (s *Server) Run(ctx context.Context) {
 	go s.watchEpoch(ctx)
+	if c := s.catalog(); c != nil {
+		go c.run(ctx)
+	}
 	t := time.NewTicker(config.Seconds(s.cfg.SnapshotRefresh))
 	defer t.Stop()
 	for {
@@ -570,8 +579,10 @@ func (s *Server) place(ctx context.Context, token, project string, spec *pb.Sand
 		ec, err := s.edgeClient(d.Edge.Id)
 		if err == nil {
 			var sb *pb.Sandbox
+			manifest, record := s.creationSource(ctx, spec)
 			sb, err = ec.CreateSandbox(ctx, &pb.EdgeCreateRequest{
-				Id: ids.Sandbox(d.Edge.Id, lease), Project: project, Principal: adm.Principal, Spec: spec, SnapshotPeer: peer})
+				Id: ids.Sandbox(d.Edge.Id, lease), Project: project, Principal: adm.Principal, Spec: spec, SnapshotPeer: peer,
+				Manifest: manifest, SnapshotRecord: record})
 			if err == nil && sb.Project != project {
 				// The edge returned a sandbox it held under this ID: another
 				// project's, whose lease was released (it stopped).
@@ -1085,13 +1096,38 @@ func (s *Server) GetUsage(ctx context.Context, r *pb.UsageRequest) (*pb.UsageRep
 // startSnapshot is the snapshot a sandbox of spec starts from: a fork
 // copy's, or its snapshot image's.
 func (s *Server) startSnapshot(spec *pb.SandboxSpec) string {
-	if spec.Snapshot != "" || s.Images == nil || !images.IsStoreName(spec.Image) {
+	if spec.Snapshot != "" || !s.imagesOn || !images.IsStoreName(spec.Image) {
 		return spec.Snapshot
 	}
-	if m, err := s.Images.GetManifest(spec.Image); err == nil {
+	if m, err := s.catalog().Get(context.Background(), spec.Image); err == nil {
 		return m.Snapshot
 	}
 	return ""
+}
+
+// creationSource is what an edge gets with a creation of spec (spec §42):
+// the image's manifest and the starting snapshot's record, as JSON. What
+// the catalog cannot give is left out: the edge then reads the store.
+func (s *Server) creationSource(ctx context.Context, spec *pb.SandboxSpec) (manifest, record []byte) {
+	c := s.catalog()
+	if c == nil || !images.IsStoreName(spec.Image) && spec.Snapshot == "" {
+		return nil, nil
+	}
+	snapID := spec.Snapshot
+	if snapID == "" {
+		m, err := c.Get(ctx, spec.Image)
+		if err != nil {
+			return nil, nil
+		}
+		manifest, _ = json.Marshal(m)
+		snapID = m.Snapshot
+	}
+	if snapID != "" {
+		if snap, err := c.GetSnapshot(ctx, snapID); err == nil {
+			record, _ = json.Marshal(snap)
+		}
+	}
+	return manifest, record
 }
 
 // snapshotShape gives a sandbox started from a memory snapshot image the
@@ -1106,7 +1142,7 @@ func (s *Server) snapshotShape(spec *pb.SandboxSpec) {
 	if id == "" {
 		return
 	}
-	snap, err := s.Images.GetSnapshot(id)
+	snap, err := s.catalog().GetSnapshot(context.Background(), id)
 	if err != nil || !snap.Memory || snap.VM == nil {
 		return
 	}
@@ -1124,10 +1160,10 @@ func (s *Server) snapshotShape(spec *pb.SandboxSpec) {
 // snapshotRuntime returns the runtime versions a memory snapshot needs
 // (spec §28.12); nil for none, or when the store does not know.
 func (s *Server) snapshotRuntime(id string) map[string]string {
-	if id == "" || s.Images == nil {
+	if id == "" || !s.imagesOn {
 		return nil
 	}
-	snap, err := s.Images.GetSnapshot(id)
+	snap, err := s.catalog().GetSnapshot(context.Background(), id)
 	if err != nil || !snap.Memory {
 		return nil
 	}

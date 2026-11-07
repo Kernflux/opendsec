@@ -34,7 +34,7 @@ func TestFnCall(t *testing.T) {
 	state, _ := os.MkdirTemp("", "opendsec")
 	t.Cleanup(func() { os.RemoveAll(state) })
 	cfg := cluster.SimConfig(1, 1, 8, 16*1024, 64)
-	cfg.ImageStore.Root = storeRoot
+	useStore(cfg, storeRoot)
 	for i := range cfg.Edges {
 		e := &cfg.Edges[i]
 		e.StateDir, e.AgentDir = state, agentDir

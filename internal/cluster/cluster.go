@@ -321,9 +321,13 @@ func StartAPIServer(cfg *config.Cluster, i int, log *slog.Logger) (*Component, *
 	ext.SetClusterCPUs(a.HostCPUs)
 	a.SetAdmission(cfg.Admission)
 	if cfg.ImageStore.Root != "" {
-		if a.Images, err = images.NewStore(cfg.ImageStore.Root); err != nil {
-			return nil, nil, fmt.Errorf("image store: %w", err)
+		var files *images.Store
+		if cfg.ImageStore.WritesManifestFiles() {
+			// Not created here: the apiserver does not need the store to
+			// start, and a mount point with nothing mounted must stay empty.
+			files = images.OpenStore(cfg.ImageStore.Root)
 		}
+		a.EnableImages(files)
 	}
 	var extra []grpc.ServerOption
 	if ac.AuditDir != "" {
@@ -440,6 +444,11 @@ func StartEdge(cfg *config.Cluster, id string, register bool, log *slog.Logger) 
 		ec.Capacity.GPUs = int32(len(ec.GPU.Devices))
 	}
 	e := edge.New(*ec, backends)
+	if cfg.ImageStore.Root != "" {
+		if e.Images, err = images.NewStore(cfg.ImageStore.Root); err != nil {
+			return nil, nil, fmt.Errorf("image store: %w", err)
+		}
+	}
 	if reserve := ec.MemReserveMB; reserve >= 0 && hasLinux {
 		if reserve == 0 {
 			reserve = host.DefaultReserveMB()

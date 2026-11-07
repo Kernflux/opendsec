@@ -90,6 +90,28 @@ service Edge {
   // that and calls EndMove, after which it is gone from here.
   rpc BeginMove(BeginMoveRequest) returns (EdgeSnapshotResponse);
   rpc EndMove(EndMoveRequest) returns (Empty);
+
+  // The image store's data, for the apiservers, which do not access the
+  // store (spec §42): which of some layers are missing, and removing a
+  // snapshot's files (and this edge's copy).
+  rpc CheckLayers(CheckLayersRequest) returns (CheckLayersResponse);
+  rpc DeleteSnapshot(DeleteSnapshotRequest) returns (Empty);
+}
+
+message CheckLayersRequest {
+  repeated string layer_ids = 1;
+  // Also mark this snapshot used. Layers and snapshots found are marked
+  // used (their time reset), so a concurrent garbage collection, which
+  // read the references before, keeps them.
+  string snapshot_id = 2;
+}
+
+message CheckLayersResponse {
+  repeated string missing = 1;
+}
+
+message DeleteSnapshotRequest {
+  string snapshot_id = 1;
 }
 
 message FetchSnapshotRequest {
@@ -137,6 +159,9 @@ message EdgeSnapshotResponse {
   bool memory = 2;
   int64 size_bytes = 3;
   bool held = 4;                       // ephemeral: the files are on this edge only
+  // The snapshot's record (images.Snapshot as JSON), which the apiserver
+  // keeps in its catalog (spec §42).
+  bytes record = 5;
 }
 
 message EdgePackDiffRequest {
@@ -171,6 +196,12 @@ message EdgeCreateRequest {
   // edge, and the sandbox keeps its creation time.
   bool move = 6;
   double created_at = 7;
+  // The manifest of spec.image (images.Manifest as JSON), resolved by the
+  // apiserver from its catalog (spec §42); empty for edge-local images.
+  bytes manifest = 8;
+  // The record of the snapshot the sandbox starts from (spec.snapshot, or
+  // the image's), as JSON; empty if none.
+  bytes snapshot_record = 9;
 }
 
 message EdgeTaskActionRequest {

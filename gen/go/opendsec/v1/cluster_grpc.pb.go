@@ -203,6 +203,8 @@ const (
 	Edge_FetchSnapshot_FullMethodName     = "/opendsec.v1.Edge/FetchSnapshot"
 	Edge_BeginMove_FullMethodName         = "/opendsec.v1.Edge/BeginMove"
 	Edge_EndMove_FullMethodName           = "/opendsec.v1.Edge/EndMove"
+	Edge_CheckLayers_FullMethodName       = "/opendsec.v1.Edge/CheckLayers"
+	Edge_DeleteSnapshot_FullMethodName    = "/opendsec.v1.Edge/DeleteSnapshot"
 )
 
 // EdgeClient is the client API for Edge service.
@@ -267,6 +269,11 @@ type EdgeClient interface {
 	// that and calls EndMove, after which it is gone from here.
 	BeginMove(ctx context.Context, in *BeginMoveRequest, opts ...grpc.CallOption) (*EdgeSnapshotResponse, error)
 	EndMove(ctx context.Context, in *EndMoveRequest, opts ...grpc.CallOption) (*Empty, error)
+	// The image store's data, for the apiservers, which do not access the
+	// store (spec §42): which of some layers are missing, and removing a
+	// snapshot's files (and this edge's copy).
+	CheckLayers(ctx context.Context, in *CheckLayersRequest, opts ...grpc.CallOption) (*CheckLayersResponse, error)
+	DeleteSnapshot(ctx context.Context, in *DeleteSnapshotRequest, opts ...grpc.CallOption) (*Empty, error)
 }
 
 type edgeClient struct {
@@ -696,6 +703,26 @@ func (c *edgeClient) EndMove(ctx context.Context, in *EndMoveRequest, opts ...gr
 	return out, nil
 }
 
+func (c *edgeClient) CheckLayers(ctx context.Context, in *CheckLayersRequest, opts ...grpc.CallOption) (*CheckLayersResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CheckLayersResponse)
+	err := c.cc.Invoke(ctx, Edge_CheckLayers_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *edgeClient) DeleteSnapshot(ctx context.Context, in *DeleteSnapshotRequest, opts ...grpc.CallOption) (*Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Empty)
+	err := c.cc.Invoke(ctx, Edge_DeleteSnapshot_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // EdgeServer is the server API for Edge service.
 // All implementations must embed UnimplementedEdgeServer
 // for forward compatibility.
@@ -758,6 +785,11 @@ type EdgeServer interface {
 	// that and calls EndMove, after which it is gone from here.
 	BeginMove(context.Context, *BeginMoveRequest) (*EdgeSnapshotResponse, error)
 	EndMove(context.Context, *EndMoveRequest) (*Empty, error)
+	// The image store's data, for the apiservers, which do not access the
+	// store (spec §42): which of some layers are missing, and removing a
+	// snapshot's files (and this edge's copy).
+	CheckLayers(context.Context, *CheckLayersRequest) (*CheckLayersResponse, error)
+	DeleteSnapshot(context.Context, *DeleteSnapshotRequest) (*Empty, error)
 	mustEmbedUnimplementedEdgeServer()
 }
 
@@ -881,6 +913,12 @@ func (UnimplementedEdgeServer) BeginMove(context.Context, *BeginMoveRequest) (*E
 }
 func (UnimplementedEdgeServer) EndMove(context.Context, *EndMoveRequest) (*Empty, error) {
 	return nil, status.Error(codes.Unimplemented, "method EndMove not implemented")
+}
+func (UnimplementedEdgeServer) CheckLayers(context.Context, *CheckLayersRequest) (*CheckLayersResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CheckLayers not implemented")
+}
+func (UnimplementedEdgeServer) DeleteSnapshot(context.Context, *DeleteSnapshotRequest) (*Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeleteSnapshot not implemented")
 }
 func (UnimplementedEdgeServer) mustEmbedUnimplementedEdgeServer() {}
 func (UnimplementedEdgeServer) testEmbeddedByValue()              {}
@@ -1548,6 +1586,42 @@ func _Edge_EndMove_Handler(srv interface{}, ctx context.Context, dec func(interf
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Edge_CheckLayers_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CheckLayersRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EdgeServer).CheckLayers(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Edge_CheckLayers_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EdgeServer).CheckLayers(ctx, req.(*CheckLayersRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Edge_DeleteSnapshot_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteSnapshotRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EdgeServer).DeleteSnapshot(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Edge_DeleteSnapshot_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EdgeServer).DeleteSnapshot(ctx, req.(*DeleteSnapshotRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Edge_ServiceDesc is the grpc.ServiceDesc for Edge service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1686,6 +1760,14 @@ var Edge_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "EndMove",
 			Handler:    _Edge_EndMove_Handler,
+		},
+		{
+			MethodName: "CheckLayers",
+			Handler:    _Edge_CheckLayers_Handler,
+		},
+		{
+			MethodName: "DeleteSnapshot",
+			Handler:    _Edge_DeleteSnapshot_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

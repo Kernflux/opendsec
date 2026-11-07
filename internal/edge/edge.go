@@ -6,6 +6,7 @@ package edge
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"os"
 	"runtime"
@@ -21,6 +22,7 @@ import (
 	"github.com/kernflux/opendsec/internal/edge/host"
 	"github.com/kernflux/opendsec/internal/edge/netpol"
 	"github.com/kernflux/opendsec/internal/ids"
+	"github.com/kernflux/opendsec/internal/images"
 	"github.com/kernflux/opendsec/internal/metrics"
 	"github.com/kernflux/opendsec/internal/rpcutil"
 	"github.com/kernflux/opendsec/internal/sandboxfs"
@@ -52,6 +54,8 @@ type record struct {
 	// quota lease: ending it here must not release the lease.
 	handedOff bool
 	peer      backend.SnapshotPeer // holds Spec.Snapshot's files, while creating
+	manifest  *images.Manifest     // Spec.Image's, as the apiserver resolved it, while creating
+	snapRec   *images.Snapshot     // the starting snapshot's record, likewise
 	unsaved   bool                 // its record on disk is behind (persist failed); guarded by Edge.mu
 }
 
@@ -60,6 +64,9 @@ func (r *record) ended() bool {
 }
 
 type Edge struct {
+	// Images is the shared image store (nil: none). The apiservers do not
+	// access it: they ask edges about its data (spec §42).
+	Images   *images.Store
 	cfg      config.Edge
 	capacity *pb.Capacity
 	backends map[string]backend.Backend
@@ -282,6 +289,20 @@ func (e *Edge) create(ctx context.Context, req *pb.EdgeCreateRequest) (*pb.Sandb
 	if spec == nil {
 		return nil, rpcutil.Err(rpcutil.Invalid, "spec required")
 	}
+	var manifest *images.Manifest
+	var snapRec *images.Snapshot
+	if len(req.Manifest) > 0 {
+		manifest = &images.Manifest{}
+		if err := json.Unmarshal(req.Manifest, manifest); err != nil {
+			return nil, rpcutil.Err(rpcutil.Invalid, "manifest: %v", err)
+		}
+	}
+	if len(req.SnapshotRecord) > 0 {
+		snapRec = &images.Snapshot{}
+		if err := json.Unmarshal(req.SnapshotRecord, snapRec); err != nil {
+			return nil, rpcutil.Err(rpcutil.Invalid, "snapshot record: %v", err)
+		}
+	}
 	be := e.backends[spec.Backend]
 	if be == nil {
 		return nil, rpcutil.Err(rpcutil.Invalid, "edge %s has no backend %q", e.cfg.ID, spec.Backend)
@@ -363,7 +384,7 @@ func (e *Edge) create(ctx context.Context, req *pb.EdgeCreateRequest) (*pb.Sandb
 			Spec: spec, State: pb.SandboxState_CREATING, CreatedAt: unix(created),
 		},
 		lease: lease, createdAt: created, lastActive: now,
-		op: make(chan struct{}, 1), peer: peer,
+		op: make(chan struct{}, 1), peer: peer, manifest: manifest, snapRec: snapRec,
 		balloonUnknown: spec.Snapshot != "",
 	}
 	r.op <- struct{}{} // held until creation finishes
@@ -427,7 +448,7 @@ func (e *Edge) create(ctx context.Context, req *pb.EdgeCreateRequest) (*pb.Sandb
 		e.Pressure.Invalidate()
 	}
 	e.mu.Lock()
-	r.peer = nil
+	r.peer, r.manifest, r.snapRec = nil, nil, nil
 	if !r.ended() {
 		r.sb.State = pb.SandboxState_RUNNING
 	}
@@ -491,7 +512,7 @@ func (e *Edge) waitCreated(ctx context.Context, r *record) (*pb.Sandbox, error) 
 }
 
 func (e *Edge) bsb(r *record) *backend.Sandbox {
-	sb := &backend.Sandbox{ID: r.sb.Id, Project: r.sb.Project, Spec: r.sb.Spec, Peer: r.peer}
+	sb := &backend.Sandbox{ID: r.sb.Id, Project: r.sb.Project, Spec: r.sb.Spec, Peer: r.peer, Manifest: r.manifest, SnapRecord: r.snapRec}
 	if e.Net != nil {
 		sb.Net = e.Net.Get(r.lease)
 	}

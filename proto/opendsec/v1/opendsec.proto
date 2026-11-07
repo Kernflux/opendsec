@@ -96,6 +96,10 @@ service DSec {
   rpc DeleteImage(ImageRef) returns (Empty);
   // Snapshot a sandbox's writable layer as a new image on top of its own.
   rpc PackDiff(PackDiffRequest) returns (ImageInfo);
+  // The whole image catalog, and dropping snapshot records: for the image
+  // store's garbage collection (opendsecctl image gc). Cluster admins only.
+  rpc ListCatalog(Empty) returns (Catalog);
+  rpc ForgetSnapshots(ForgetSnapshotsRequest) returns (Empty);
 
   // Snapshots and fork (spec §19). ForkSandbox copies a running sandbox into
   // count running sandboxes; the source pauses briefly and keeps its id and
@@ -143,6 +147,23 @@ message ImageInfo {
   string created_by = 9;
   string snapshot = 10;                // set for images made by CreateSnapshot
   bool memory = 11;                    // the snapshot includes memory
+}
+
+message Catalog {
+  repeated ImageInfo images = 1;
+  repeated SnapshotRecord snapshots = 2;
+}
+
+message SnapshotRecord {
+  string id = 1;
+  repeated string layers = 2;          // store layers it stacks on, bottom first
+  double created_at = 3;
+  bool memory = 4;
+  string holder = 5;                   // the edge holding its files, if not in the store
+}
+
+message ForgetSnapshotsRequest {
+  repeated string snapshot_ids = 1;
 }
 
 message ImageRef {

@@ -147,7 +147,16 @@ type Admission struct {
 
 type ImageStore struct {
 	Root string `json:"root"`
+	// ManifestFiles (default true): apiservers also write image manifests
+	// to the store's files and import images and snapshots that only have
+	// files, for edges and apiservers older than the image catalog in IAM
+	// (spec §42). Once every node runs a release with the catalog, set it
+	// false: apiservers then do not access the store at all.
+	ManifestFiles *bool `json:"manifest_files,omitempty"`
 }
+
+// WritesManifestFiles reports whether apiservers keep manifest files.
+func (s ImageStore) WritesManifestFiles() bool { return s.ManifestFiles == nil || *s.ManifestFiles }
 
 type IAMReplica struct {
 	ID       string `json:"id"`

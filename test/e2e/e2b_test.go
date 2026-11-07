@@ -225,7 +225,7 @@ func TestE2BSnapshots(t *testing.T) {
 	state, _ := os.MkdirTemp("", "opendsec")
 	t.Cleanup(func() { os.RemoveAll(state) })
 	cfg := cluster.SimConfig(2, 1, 8, 16*1024, 64)
-	cfg.ImageStore.Root = storeRoot
+	useStore(cfg, storeRoot)
 	for i := range cfg.Edges {
 		cfg.Edges[i].StateDir, cfg.Edges[i].AgentDir = state, agentDir
 		cfg.Edges[i].Capacity.DiskMB, cfg.Edges[i].DiskReserveMB = 64*256, 64

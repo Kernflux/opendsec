@@ -131,6 +131,7 @@ backend 的 `runtime` 设为 `"firecracker"` 后，这个 edge 用 Firecracker m
 - **内存紧张时**：可用内存低于 `mem_reserve_mb` 的 1.5 倍时，edge 给开启了 `free_page_reporting` 的 microVM 充气 balloon，BE 和空闲最久的优先；回到 3 倍以上时放气。
 - **镜像库清理**：定期运行 `opendsecctl image gc -store <镜像库目录> -grace 24h`（先加 `-dry-run` 看一下要删什么）。
   - 删除的是没有被镜像、快照或运行中 sandbox 引用、且超过宽限期的层和快照。
+  - 引用来自 apiserver 的镜像目录（SPEC §42），所以要用集群管理员的 token，并且能连上 apiserver。
   - 节点上的镜像盘缓存由 edge 自己清理：24 小时没用过、也没有 VM 在用的盘会被删除。
 
 ## 容器层的本地副本（SPEC §33.1）

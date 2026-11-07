@@ -10,13 +10,14 @@ import (
 // ---- key-value area (spec §28.3) -----------------------------------------------------
 //
 // Other components keep small durable state here (the fleet service's nodes,
-// releases and rollouts; the apiservers' extensions, under ext/),
+// releases and rollouts; the apiservers' extensions, under ext/, and their
+// image catalog, under img/),
 // replicated and backed up with the rest of IAM.
 // IAM never interprets the values. Every write gets the next revision of a
 // counter that is part of the state, so all replicas agree on revisions.
 
 // KVPrefixes are the key prefixes the area accepts.
-var KVPrefixes = []string{"fleet/", "ext/"}
+var KVPrefixes = []string{"fleet/", "ext/", "img/"}
 
 const (
 	maxKVKey   = 256

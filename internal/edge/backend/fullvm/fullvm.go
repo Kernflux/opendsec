@@ -291,12 +291,13 @@ func (b *Backend) free(s *sandbox) {
 	}
 }
 
-func (b *Backend) lower(spec *pb.SandboxSpec) ([]string, map[string]string, string, string, error) {
+func (b *Backend) lower(sb *backend.Sandbox) ([]string, map[string]string, string, string, error) {
+	spec := sb.Spec
 	if spec.Snapshot != "" {
 		return nil, nil, "", "", rpcutil.Err(rpcutil.Invalid, "fullvm sandboxes have no snapshots (use microvm)")
 	}
 	if b.opt.Store != nil && images.IsStoreName(spec.Image) {
-		m, err := b.opt.Store.GetManifest(spec.Image)
+		m, err := b.opt.Store.ManifestFor(spec.Image, sb.Manifest)
 		if err != nil {
 			return nil, nil, "", "", err
 		}
@@ -326,7 +327,7 @@ func (b *Backend) Create(ctx context.Context, sb *backend.Sandbox) (err error) {
 	if memMB < minMemoryMB {
 		return rpcutil.Err(rpcutil.Invalid, "fullvm sandboxes need resources.memory_mb >= %d", minMemoryMB)
 	}
-	lower, env, workdir, usr, err := b.lower(spec)
+	lower, env, workdir, usr, err := b.lower(sb)
 	if err != nil {
 		return err
 	}

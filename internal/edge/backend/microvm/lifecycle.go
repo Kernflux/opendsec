@@ -33,10 +33,11 @@ type source struct {
 	peer    backend.SnapshotPeer // holds snap's files if not in the store
 }
 
-func (b *Backend) resolve(spec *pb.SandboxSpec) (*source, error) {
+func (b *Backend) resolve(sb *backend.Sandbox) (*source, error) {
+	spec := sb.Spec
 	snapID := spec.Snapshot
 	if snapID == "" && b.opt.Store != nil && images.IsStoreName(spec.Image) {
-		m, err := b.opt.Store.GetManifest(spec.Image)
+		m, err := b.opt.Store.ManifestFor(spec.Image, sb.Manifest)
 		if err != nil {
 			return nil, err
 		}
@@ -53,7 +54,7 @@ func (b *Backend) resolve(spec *pb.SandboxSpec) (*source, error) {
 		if b.opt.Store == nil {
 			return nil, rpcutil.Err(rpcutil.Unavailable, "edge %s has no image store", b.opt.EdgeID)
 		}
-		snap, err := b.opt.Store.GetSnapshot(snapID)
+		snap, err := b.opt.Store.SnapshotFor(snapID, sb.SnapRecord)
 		if err != nil {
 			return nil, err
 		}
@@ -205,7 +206,7 @@ func (b *Backend) Create(ctx context.Context, sb *backend.Sandbox) (err error) {
 	if memMB < minMemoryMB {
 		return rpcutil.Err(rpcutil.Invalid, "microvm sandboxes need resources.memory_mb >= %d", minMemoryMB)
 	}
-	src, err := b.resolve(spec)
+	src, err := b.resolve(sb)
 	if err != nil {
 		return err
 	}

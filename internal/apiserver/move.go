@@ -91,7 +91,7 @@ func (s *Server) sandboxAt(ctx context.Context, id string) (*pb.Sandbox, pb.Edge
 
 // canMove reports whether this apiserver can move sandboxes: held
 // snapshots are recorded in the image store.
-func (s *Server) canMove() bool { return s.Images != nil }
+func (s *Server) canMove() bool { return s.imagesOn }
 
 // cannotResume reports whether err, from resuming a sandbox (or a call that
 // resumes it), means its edge cannot fit it.
@@ -150,10 +150,15 @@ func (s *Server) moveOnce(ctx context.Context, id string) (*pb.Sandbox, error) {
 	addr := (*s.addrs.Load())[from]
 	snapID := images.NewSnapshotID()
 	t0 := time.Now()
-	if _, err := ec.BeginMove(ctx, &pb.BeginMoveRequest{SandboxId: id, SnapshotId: snapID}); err != nil {
+	res, err := ec.BeginMove(ctx, &pb.BeginMoveRequest{SandboxId: id, SnapshotId: snapID})
+	if err != nil {
 		return nil, err
 	}
-	defer s.Images.DeleteSnapshot(snapID) // copies hold their own links
+	defer s.catalog().DeleteSnapshot(context.WithoutCancel(ctx), snapID, from) // copies hold their own links
+	if _, err := s.recordSnapshot(ctx, res); err != nil {
+		ec.EndMove(context.WithoutCancel(ctx), &pb.EndMoveRequest{SandboxId: id})
+		return nil, err
+	}
 	_, lease, _ := ids.Parse(id)
 	spec := proto.Clone(sb.Spec).(*pb.SandboxSpec)
 	spec.Snapshot = snapID

@@ -349,6 +349,16 @@ class EdgeStub(object):
                 request_serializer=opendsec_dot_v1_dot_cluster__pb2.EndMoveRequest.SerializeToString,
                 response_deserializer=opendsec_dot_v1_dot_types__pb2.Empty.FromString,
                 _registered_method=True)
+        self.CheckLayers = channel.unary_unary(
+                '/opendsec.v1.Edge/CheckLayers',
+                request_serializer=opendsec_dot_v1_dot_cluster__pb2.CheckLayersRequest.SerializeToString,
+                response_deserializer=opendsec_dot_v1_dot_cluster__pb2.CheckLayersResponse.FromString,
+                _registered_method=True)
+        self.DeleteSnapshot = channel.unary_unary(
+                '/opendsec.v1.Edge/DeleteSnapshot',
+                request_serializer=opendsec_dot_v1_dot_cluster__pb2.DeleteSnapshotRequest.SerializeToString,
+                response_deserializer=opendsec_dot_v1_dot_types__pb2.Empty.FromString,
+                _registered_method=True)
 
 
 class EdgeServicer(object):
@@ -601,6 +611,21 @@ class EdgeServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def CheckLayers(self, request, context):
+        """The image store's data, for the apiservers, which do not access the
+        store (spec §42): which of some layers are missing, and removing a
+        snapshot's files (and this edge's copy).
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def DeleteSnapshot(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_EdgeServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -792,6 +817,16 @@ def add_EdgeServicer_to_server(servicer, server):
             'EndMove': grpc.unary_unary_rpc_method_handler(
                     servicer.EndMove,
                     request_deserializer=opendsec_dot_v1_dot_cluster__pb2.EndMoveRequest.FromString,
+                    response_serializer=opendsec_dot_v1_dot_types__pb2.Empty.SerializeToString,
+            ),
+            'CheckLayers': grpc.unary_unary_rpc_method_handler(
+                    servicer.CheckLayers,
+                    request_deserializer=opendsec_dot_v1_dot_cluster__pb2.CheckLayersRequest.FromString,
+                    response_serializer=opendsec_dot_v1_dot_cluster__pb2.CheckLayersResponse.SerializeToString,
+            ),
+            'DeleteSnapshot': grpc.unary_unary_rpc_method_handler(
+                    servicer.DeleteSnapshot,
+                    request_deserializer=opendsec_dot_v1_dot_cluster__pb2.DeleteSnapshotRequest.FromString,
                     response_serializer=opendsec_dot_v1_dot_types__pb2.Empty.SerializeToString,
             ),
     }
@@ -1822,6 +1857,60 @@ class Edge(object):
             target,
             '/opendsec.v1.Edge/EndMove',
             opendsec_dot_v1_dot_cluster__pb2.EndMoveRequest.SerializeToString,
+            opendsec_dot_v1_dot_types__pb2.Empty.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def CheckLayers(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/opendsec.v1.Edge/CheckLayers',
+            opendsec_dot_v1_dot_cluster__pb2.CheckLayersRequest.SerializeToString,
+            opendsec_dot_v1_dot_cluster__pb2.CheckLayersResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def DeleteSnapshot(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/opendsec.v1.Edge/DeleteSnapshot',
+            opendsec_dot_v1_dot_cluster__pb2.DeleteSnapshotRequest.SerializeToString,
             opendsec_dot_v1_dot_types__pb2.Empty.FromString,
             options,
             channel_credentials,

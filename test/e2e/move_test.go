@@ -23,7 +23,7 @@ func TestMovePaused(t *testing.T) {
 	cfg := cluster.SimConfig(2, 2, 16, 64*1024, 100)
 	cfg.Watcher.ReconcileMinAge = 0.1
 	cfg.Watcher.LostEdgeGrace = 0.3
-	cfg.ImageStore.Root = t.TempDir() // held snapshots are recorded in the store
+	useStore(cfg, t.TempDir()) // held snapshots are recorded in the store
 	half := 0.5
 	for i := range cfg.Edges {
 		cfg.Edges[i].PausedMemCharge = &half

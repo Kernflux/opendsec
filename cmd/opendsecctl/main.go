@@ -21,6 +21,8 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
@@ -79,7 +81,7 @@ image get       <name>
 image delete    <name>
 image pack      <sandbox-id> <name> [-scrub a,b] [-overwrite]   pack_diff: snapshot a sandbox as an image
 image snapshot  <sandbox-id> <name> [-memory] [-overwrite]      save a sandbox as is (with memory on microvm)
-image gc        -store DIR [-grace 24h] [-dry-run]   remove layers and snapshots nothing uses
+image gc        -store DIR [-grace 24h] [-dry-run]   remove layers and snapshots nothing uses (cluster admin)
 image store-check -store DIR                         check that a filesystem (e.g. a NAS) can hold the image store
 fleet           ...                 cluster management: machines, releases, rollouts (opendsecctl fleet for help)
 grant           <project> <principal> <perm>[,<perm>...]
@@ -630,7 +632,22 @@ func apiCommand(cmd string, args []string) error {
 		if err != nil {
 			return err
 		}
-		res, err := st.GC(*grace, *dryRun)
+		// The references are the image catalog's (spec §42), which an
+		// apiserver gives cluster admins; an older apiserver has none, and
+		// the store's files are the catalog.
+		var res *images.GCResult
+		cat, err := c.ListCatalog(ctx, &pb.Empty{})
+		switch {
+		case status.Code(err) == codes.Unimplemented:
+			res, err = st.GC(*grace, *dryRun)
+		case err != nil:
+			return fmt.Errorf("image gc: reading the image catalog: %w", err)
+		default:
+			res, err = st.GCRefs(catalogRefs(cat), *grace, *dryRun, func(ids []string) error {
+				_, err := c.ForgetSnapshots(ctx, &pb.ForgetSnapshotsRequest{SnapshotIds: ids})
+				return err
+			})
+		}
 		if res != nil {
 			verb := "removed"
 			if *dryRun {
@@ -1036,4 +1053,17 @@ func shellCmd(args []string) string {
 		}
 	}
 	return strings.Join(q, " ")
+}
+
+// catalogRefs is what garbage collection keeps, from the image catalog.
+func catalogRefs(cat *pb.Catalog) *images.Refs {
+	refs := &images.Refs{}
+	for _, m := range cat.Images {
+		refs.Images = append(refs.Images, &images.Manifest{Name: m.Name, Layers: m.Layers, Snapshot: m.Snapshot})
+	}
+	for _, snap := range cat.Snapshots {
+		refs.Snapshots = append(refs.Snapshots, &images.Snapshot{ID: snap.Id, Layers: snap.Layers, CreatedAt: snap.CreatedAt,
+			Memory: snap.Memory, Holder: snap.Holder})
+	}
+	return refs
 }

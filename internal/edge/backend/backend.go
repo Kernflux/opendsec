@@ -29,6 +29,12 @@ type Sandbox struct {
 	// Peer, when set, is the edge holding the files of Spec.Snapshot if they
 	// are not in the image store (spec §26).
 	Peer SnapshotPeer
+	// Manifest is Spec.Image's manifest and SnapRecord the record of the
+	// snapshot the sandbox starts from, as the apiserver resolved them
+	// (spec §42); set while creating. Nil: read them from the store (an
+	// older apiserver).
+	Manifest   *images.Manifest
+	SnapRecord *images.Snapshot
 }
 
 type Backend interface {
