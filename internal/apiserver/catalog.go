@@ -171,10 +171,11 @@ func (c *catalog) importOne(ctx context.Context, key string, v any, gone func() 
 	if err != nil {
 		return err
 	}
-	c.log.Info("image catalog: imported from the store", "key", key)
 	if g, _ := onFiles(ctx, c.st, func() (bool, error) { return gone(), nil }); g {
 		c.iam.KVDelete(kctx, &pb.KVDeleteRequest{Key: e.Key, Check: true, ExpectRev: e.Rev})
+		return nil
 	}
+	c.log.Info("image catalog: imported from the store", "key", key)
 	return nil
 }
 
