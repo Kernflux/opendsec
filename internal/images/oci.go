@@ -20,6 +20,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kernflux/opendsec/internal/rpcutil"
 	"github.com/klauspost/compress/zstd"
 	"golang.org/x/sys/unix"
 )
@@ -86,6 +87,18 @@ type Puller struct {
 	Log       func(format string, args ...any)
 	// Creds log in to the registry pulled from; nil: anonymous.
 	Creds *Credentials
+	// Limits bound one pull, for images from untrusted users (spec §43.3):
+	// the data its new layers unpack to and their number of entries; 0 =
+	// none. Untrusted pulls also drop trusted.* xattrs (overlayfs reads
+	// some), and use a Client that reaches only public addresses
+	// (PublicClient).
+	MaxBytes   int64
+	MaxEntries int
+	Untrusted  bool
+	// Size is what the pull unpacked: the new layers' data (set by Pull).
+	Size int64
+
+	budget *budget
 
 	token string
 	basic bool // the registry wants Basic auth on every request
@@ -150,6 +163,9 @@ func (r registry) blob(ctx context.Context, digest string) (io.ReadCloser, error
 }
 
 func (p *Puller) init() {
+	if p.MaxBytes > 0 || p.MaxEntries > 0 || p.Untrusted {
+		p.budget = &budget{maxBytes: p.MaxBytes, maxEntries: p.MaxEntries, untrusted: p.Untrusted}
+	}
 	if p.Client == nil {
 		p.Client = &http.Client{Timeout: 30 * time.Minute}
 	}
@@ -284,6 +300,11 @@ func (p *Puller) load(ctx context.Context, src source, top []byte, name, sourceN
 			p.Log("layer %d/%d %s: already in store", i+1, len(man.Layers), l.Digest[:19])
 			res.Layers = append(res.Layers, id)
 			continue
+		}
+		if b := p.budget; b != nil && b.maxBytes > 0 && l.Size > b.maxBytes-b.bytes {
+			w.Abort()
+			return nil, rpcutil.Err(rpcutil.Invalid, "image too large: layer %s alone is %d MB, %d MB left of the limit",
+				l.Digest[:19], l.Size>>20, (b.maxBytes-b.bytes)>>20)
 		}
 		p.Log("layer %d/%d %s: unpacking %d bytes", i+1, len(man.Layers), l.Digest[:19], l.Size)
 		opaque, err := p.pullLayer(ctx, src, l, w.Rootfs)
@@ -494,9 +515,16 @@ func (p *Puller) pullLayer(ctx context.Context, src source, l descriptor, dst st
 	default:
 		return nil, fmt.Errorf("unsupported layer media type %q", l.MediaType)
 	}
-	opaque, err := ExtractLayer(r, dst)
+	before := int64(0)
+	if p.budget != nil {
+		before = p.budget.bytes
+	}
+	opaque, err := extractLayer(r, dst, p.budget)
 	if err != nil {
 		return nil, err
+	}
+	if p.budget != nil {
+		p.Size += p.budget.bytes - before
 	}
 	io.Copy(io.Discard, body) // hash the full blob
 	if got := "sha256:" + hex.EncodeToString(h.Sum(nil)); got != l.Digest {
@@ -516,7 +544,34 @@ func (p *Puller) pullLayer(ctx context.Context, src source, l descriptor, dst st
 // It refuses absolute paths and "..", never writes through a symlink (a
 // malicious layer could otherwise plant "etc -> /" and then write
 // "etc/passwd" on the host), and only hard-links to files inside root.
-func ExtractLayer(r io.Reader, root string) ([]string, error) {
+func ExtractLayer(r io.Reader, root string) ([]string, error) { return extractLayer(r, root, nil) }
+
+// budget is what an untrusted pull may still unpack.
+type budget struct {
+	maxBytes   int64
+	maxEntries int
+	untrusted  bool
+	bytes      int64
+	entries    int
+}
+
+func (b *budget) Read(r io.Reader, p []byte) (int, error) {
+	n, err := r.Read(p)
+	b.bytes += int64(n)
+	if b.maxBytes > 0 && b.bytes > b.maxBytes {
+		return n, rpcutil.Err(rpcutil.Invalid, "image too large: it unpacks to more than %d MB", b.maxBytes>>20)
+	}
+	return n, err
+}
+
+type budgetReader struct {
+	r io.Reader
+	b *budget
+}
+
+func (br budgetReader) Read(p []byte) (int, error) { return br.b.Read(br.r, p) }
+
+func extractLayer(r io.Reader, root string, b *budget) ([]string, error) {
 	tr := tar.NewReader(r)
 	var opaque []string
 	for {
@@ -527,7 +582,12 @@ func ExtractLayer(r io.Reader, root string) ([]string, error) {
 		if err != nil {
 			return nil, err
 		}
-		if err := extractEntry(tr, hdr, root, &opaque); err != nil {
+		if b != nil {
+			if b.entries++; b.maxEntries > 0 && b.entries > b.maxEntries {
+				return nil, rpcutil.Err(rpcutil.Invalid, "image too large: more than %d files", b.maxEntries)
+			}
+		}
+		if err := extractEntry(tr, hdr, root, &opaque, b); err != nil {
 			return nil, fmt.Errorf("%s: %w", hdr.Name, err)
 		}
 	}
@@ -571,7 +631,7 @@ func safeJoin(root, name string) (string, error) {
 	return filepath.Join(root, clean), nil
 }
 
-func extractEntry(tr *tar.Reader, hdr *tar.Header, root string, opaque *[]string) error {
+func extractEntry(tr *tar.Reader, hdr *tar.Header, root string, opaque *[]string, b *budget) error {
 	dst, err := safeJoin(root, hdr.Name)
 	if err != nil {
 		return err
@@ -613,7 +673,11 @@ func extractEntry(tr *tar.Reader, hdr *tar.Header, root string, opaque *[]string
 		if err != nil {
 			return err
 		}
-		_, err = io.Copy(f, tr)
+		var src io.Reader = tr
+		if b != nil {
+			src = budgetReader{tr, b} // sparse files count as large as they read
+		}
+		_, err = io.Copy(f, src)
 		if cerr := f.Close(); err == nil {
 			err = cerr
 		}
@@ -667,6 +731,9 @@ func extractEntry(tr *tar.Reader, hdr *tar.Header, root string, opaque *[]string
 	}
 	for k, v := range hdr.PAXRecords {
 		if name, ok := strings.CutPrefix(k, "SCHILY.xattr."); ok {
+			if b != nil && b.untrusted && strings.HasPrefix(name, "trusted.") {
+				continue // overlayfs's own (opaque, redirect, metacopy) among them
+			}
 			unix.Lsetxattr(dst, name, []byte(v), 0)
 		}
 	}

@@ -1157,6 +1157,182 @@ func (x *DrainRequest) GetDraining() bool {
 	return false
 }
 
+type EdgeImportRequest struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Ref             string                 `protobuf:"bytes,1,opt,name=ref,proto3" json:"ref,omitempty"`           // e.g. docker.io/library/python:3.12
+	Username        string                 `protobuf:"bytes,2,opt,name=username,proto3" json:"username,omitempty"` // registry login; empty: anonymous
+	Password        string                 `protobuf:"bytes,3,opt,name=password,proto3" json:"password,omitempty"`
+	MaxBytes        int64                  `protobuf:"varint,4,opt,name=max_bytes,json=maxBytes,proto3" json:"max_bytes,omitempty"` // what its new layers may unpack to
+	MaxEntries      int32                  `protobuf:"varint,5,opt,name=max_entries,json=maxEntries,proto3" json:"max_entries,omitempty"`
+	AllowRegistries []string               `protobuf:"bytes,6,rep,name=allow_registries,json=allowRegistries,proto3" json:"allow_registries,omitempty"` // host:port reachable though not public
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *EdgeImportRequest) Reset() {
+	*x = EdgeImportRequest{}
+	mi := &file_opendsec_v1_cluster_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *EdgeImportRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EdgeImportRequest) ProtoMessage() {}
+
+func (x *EdgeImportRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_opendsec_v1_cluster_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use EdgeImportRequest.ProtoReflect.Descriptor instead.
+func (*EdgeImportRequest) Descriptor() ([]byte, []int) {
+	return file_opendsec_v1_cluster_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *EdgeImportRequest) GetRef() string {
+	if x != nil {
+		return x.Ref
+	}
+	return ""
+}
+
+func (x *EdgeImportRequest) GetUsername() string {
+	if x != nil {
+		return x.Username
+	}
+	return ""
+}
+
+func (x *EdgeImportRequest) GetPassword() string {
+	if x != nil {
+		return x.Password
+	}
+	return ""
+}
+
+func (x *EdgeImportRequest) GetMaxBytes() int64 {
+	if x != nil {
+		return x.MaxBytes
+	}
+	return 0
+}
+
+func (x *EdgeImportRequest) GetMaxEntries() int32 {
+	if x != nil {
+		return x.MaxEntries
+	}
+	return 0
+}
+
+func (x *EdgeImportRequest) GetAllowRegistries() []string {
+	if x != nil {
+		return x.AllowRegistries
+	}
+	return nil
+}
+
+type EdgeImportResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Layers        []string               `protobuf:"bytes,1,rep,name=layers,proto3" json:"layers,omitempty"` // bottom first
+	Env           map[string]string      `protobuf:"bytes,2,rep,name=env,proto3" json:"env,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	Workdir       string                 `protobuf:"bytes,3,opt,name=workdir,proto3" json:"workdir,omitempty"`
+	User          string                 `protobuf:"bytes,4,opt,name=user,proto3" json:"user,omitempty"`
+	Source        string                 `protobuf:"bytes,5,opt,name=source,proto3" json:"source,omitempty"`
+	SizeBytes     int64                  `protobuf:"varint,6,opt,name=size_bytes,json=sizeBytes,proto3" json:"size_bytes,omitempty"` // all its layers' data
+	Pulled        int32                  `protobuf:"varint,7,opt,name=pulled,proto3" json:"pulled,omitempty"`                        // layers downloaded (the others were in the store)
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *EdgeImportResponse) Reset() {
+	*x = EdgeImportResponse{}
+	mi := &file_opendsec_v1_cluster_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *EdgeImportResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EdgeImportResponse) ProtoMessage() {}
+
+func (x *EdgeImportResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_opendsec_v1_cluster_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use EdgeImportResponse.ProtoReflect.Descriptor instead.
+func (*EdgeImportResponse) Descriptor() ([]byte, []int) {
+	return file_opendsec_v1_cluster_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *EdgeImportResponse) GetLayers() []string {
+	if x != nil {
+		return x.Layers
+	}
+	return nil
+}
+
+func (x *EdgeImportResponse) GetEnv() map[string]string {
+	if x != nil {
+		return x.Env
+	}
+	return nil
+}
+
+func (x *EdgeImportResponse) GetWorkdir() string {
+	if x != nil {
+		return x.Workdir
+	}
+	return ""
+}
+
+func (x *EdgeImportResponse) GetUser() string {
+	if x != nil {
+		return x.User
+	}
+	return ""
+}
+
+func (x *EdgeImportResponse) GetSource() string {
+	if x != nil {
+		return x.Source
+	}
+	return ""
+}
+
+func (x *EdgeImportResponse) GetSizeBytes() int64 {
+	if x != nil {
+		return x.SizeBytes
+	}
+	return 0
+}
+
+func (x *EdgeImportResponse) GetPulled() int32 {
+	if x != nil {
+		return x.Pulled
+	}
+	return 0
+}
+
 var File_opendsec_v1_cluster_proto protoreflect.FileDescriptor
 
 const file_opendsec_v1_cluster_proto_rawDesc = "" +
@@ -1248,10 +1424,30 @@ const file_opendsec_v1_cluster_proto_rawDesc = "" +
 	"\atask_id\x18\x02 \x01(\tR\x06taskId\x12/\n" +
 	"\x06action\x18\x03 \x01(\x0e2\x17.opendsec.v1.TaskActionR\x06action\"*\n" +
 	"\fDrainRequest\x12\x1a\n" +
-	"\bdraining\x18\x01 \x01(\bR\bdraining2\x85\x01\n" +
+	"\bdraining\x18\x01 \x01(\bR\bdraining\"\xc6\x01\n" +
+	"\x11EdgeImportRequest\x12\x10\n" +
+	"\x03ref\x18\x01 \x01(\tR\x03ref\x12\x1a\n" +
+	"\busername\x18\x02 \x01(\tR\busername\x12\x1a\n" +
+	"\bpassword\x18\x03 \x01(\tR\bpassword\x12\x1b\n" +
+	"\tmax_bytes\x18\x04 \x01(\x03R\bmaxBytes\x12\x1f\n" +
+	"\vmax_entries\x18\x05 \x01(\x05R\n" +
+	"maxEntries\x12)\n" +
+	"\x10allow_registries\x18\x06 \x03(\tR\x0fallowRegistries\"\x9d\x02\n" +
+	"\x12EdgeImportResponse\x12\x16\n" +
+	"\x06layers\x18\x01 \x03(\tR\x06layers\x12:\n" +
+	"\x03env\x18\x02 \x03(\v2(.opendsec.v1.EdgeImportResponse.EnvEntryR\x03env\x12\x18\n" +
+	"\aworkdir\x18\x03 \x01(\tR\aworkdir\x12\x12\n" +
+	"\x04user\x18\x04 \x01(\tR\x04user\x12\x16\n" +
+	"\x06source\x18\x05 \x01(\tR\x06source\x12\x1d\n" +
+	"\n" +
+	"size_bytes\x18\x06 \x01(\x03R\tsizeBytes\x12\x16\n" +
+	"\x06pulled\x18\a \x01(\x05R\x06pulled\x1a6\n" +
+	"\bEnvEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x012\x85\x01\n" +
 	"\aWatcher\x128\n" +
 	"\vGetSnapshot\x12\x12.opendsec.v1.Empty\x1a\x15.opendsec.v1.Snapshot\x12@\n" +
-	"\bRegister\x12 .opendsec.v1.RegisterEdgeRequest\x1a\x12.opendsec.v1.Empty2\x99\x15\n" +
+	"\bRegister\x12 .opendsec.v1.RegisterEdgeRequest\x1a\x12.opendsec.v1.Empty2\xe9\x15\n" +
 	"\x04Edge\x12I\n" +
 	"\x06Status\x12\x1e.opendsec.v1.EdgeStatusRequest\x1a\x1f.opendsec.v1.EdgeStatusResponse\x12E\n" +
 	"\rCreateSandbox\x12\x1e.opendsec.v1.EdgeCreateRequest\x1a\x14.opendsec.v1.Sandbox\x12;\n" +
@@ -1294,7 +1490,8 @@ const file_opendsec_v1_cluster_proto_rawDesc = "" +
 	"\tBeginMove\x12\x1d.opendsec.v1.BeginMoveRequest\x1a!.opendsec.v1.EdgeSnapshotResponse\x12:\n" +
 	"\aEndMove\x12\x1b.opendsec.v1.EndMoveRequest\x1a\x12.opendsec.v1.Empty\x12P\n" +
 	"\vCheckLayers\x12\x1f.opendsec.v1.CheckLayersRequest\x1a .opendsec.v1.CheckLayersResponse\x12H\n" +
-	"\x0eDeleteSnapshot\x12\".opendsec.v1.DeleteSnapshotRequest\x1a\x12.opendsec.v1.EmptyB<Z:github.com/kernflux/opendsec/gen/go/opendsec/v1;opendsecv1b\x06proto3"
+	"\x0eDeleteSnapshot\x12\".opendsec.v1.DeleteSnapshotRequest\x1a\x12.opendsec.v1.Empty\x12N\n" +
+	"\vImportImage\x12\x1e.opendsec.v1.EdgeImportRequest\x1a\x1f.opendsec.v1.EdgeImportResponseB<Z:github.com/kernflux/opendsec/gen/go/opendsec/v1;opendsecv1b\x06proto3"
 
 var (
 	file_opendsec_v1_cluster_proto_rawDescOnce sync.Once
@@ -1308,7 +1505,7 @@ func file_opendsec_v1_cluster_proto_rawDescGZIP() []byte {
 	return file_opendsec_v1_cluster_proto_rawDescData
 }
 
-var file_opendsec_v1_cluster_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
+var file_opendsec_v1_cluster_proto_msgTypes = make([]protoimpl.MessageInfo, 22)
 var file_opendsec_v1_cluster_proto_goTypes = []any{
 	(*Snapshot)(nil),              // 0: opendsec.v1.Snapshot
 	(*RegisterEdgeRequest)(nil),   // 1: opendsec.v1.RegisterEdgeRequest
@@ -1329,137 +1526,143 @@ var file_opendsec_v1_cluster_proto_goTypes = []any{
 	(*EdgeCreateRequest)(nil),     // 16: opendsec.v1.EdgeCreateRequest
 	(*EdgeTaskActionRequest)(nil), // 17: opendsec.v1.EdgeTaskActionRequest
 	(*DrainRequest)(nil),          // 18: opendsec.v1.DrainRequest
-	(*EdgeState)(nil),             // 19: opendsec.v1.EdgeState
-	(*LeaseInfo)(nil),             // 20: opendsec.v1.LeaseInfo
-	(*SandboxSpec)(nil),           // 21: opendsec.v1.SandboxSpec
-	(TaskAction)(0),               // 22: opendsec.v1.TaskAction
-	(*Empty)(nil),                 // 23: opendsec.v1.Empty
-	(*SandboxRef)(nil),            // 24: opendsec.v1.SandboxRef
-	(*SandboxFilter)(nil),         // 25: opendsec.v1.SandboxFilter
-	(*SetTimeoutRequest)(nil),     // 26: opendsec.v1.SetTimeoutRequest
-	(*ExecRequest)(nil),           // 27: opendsec.v1.ExecRequest
-	(*OutputRequest)(nil),         // 28: opendsec.v1.OutputRequest
-	(*FileRequest)(nil),           // 29: opendsec.v1.FileRequest
-	(*WriteFileRequest)(nil),      // 30: opendsec.v1.WriteFileRequest
-	(*HttpRequest)(nil),           // 31: opendsec.v1.HttpRequest
-	(*SessionRef)(nil),            // 32: opendsec.v1.SessionRef
-	(*MoveRequest)(nil),           // 33: opendsec.v1.MoveRequest
-	(*StartProcessRequest)(nil),   // 34: opendsec.v1.StartProcessRequest
-	(*ProcessRef)(nil),            // 35: opendsec.v1.ProcessRef
-	(*ProcessInput)(nil),          // 36: opendsec.v1.ProcessInput
-	(*ProcessSignal)(nil),         // 37: opendsec.v1.ProcessSignal
-	(*ProcessResize)(nil),         // 38: opendsec.v1.ProcessResize
-	(*PortData)(nil),              // 39: opendsec.v1.PortData
-	(*UpdateNetworkRequest)(nil),  // 40: opendsec.v1.UpdateNetworkRequest
-	(*Sandbox)(nil),               // 41: opendsec.v1.Sandbox
-	(*SandboxList)(nil),           // 42: opendsec.v1.SandboxList
-	(*TaskActionResult)(nil),      // 43: opendsec.v1.TaskActionResult
-	(*ExecResult)(nil),            // 44: opendsec.v1.ExecResult
-	(*ExecEvent)(nil),             // 45: opendsec.v1.ExecEvent
-	(*FileData)(nil),              // 46: opendsec.v1.FileData
-	(*FileInfo)(nil),              // 47: opendsec.v1.FileInfo
-	(*DirListing)(nil),            // 48: opendsec.v1.DirListing
-	(*HttpResponse)(nil),          // 49: opendsec.v1.HttpResponse
-	(*SessionList)(nil),           // 50: opendsec.v1.SessionList
-	(*ProcessEvent)(nil),          // 51: opendsec.v1.ProcessEvent
-	(*ProcessList)(nil),           // 52: opendsec.v1.ProcessList
+	(*EdgeImportRequest)(nil),     // 19: opendsec.v1.EdgeImportRequest
+	(*EdgeImportResponse)(nil),    // 20: opendsec.v1.EdgeImportResponse
+	nil,                           // 21: opendsec.v1.EdgeImportResponse.EnvEntry
+	(*EdgeState)(nil),             // 22: opendsec.v1.EdgeState
+	(*LeaseInfo)(nil),             // 23: opendsec.v1.LeaseInfo
+	(*SandboxSpec)(nil),           // 24: opendsec.v1.SandboxSpec
+	(TaskAction)(0),               // 25: opendsec.v1.TaskAction
+	(*Empty)(nil),                 // 26: opendsec.v1.Empty
+	(*SandboxRef)(nil),            // 27: opendsec.v1.SandboxRef
+	(*SandboxFilter)(nil),         // 28: opendsec.v1.SandboxFilter
+	(*SetTimeoutRequest)(nil),     // 29: opendsec.v1.SetTimeoutRequest
+	(*ExecRequest)(nil),           // 30: opendsec.v1.ExecRequest
+	(*OutputRequest)(nil),         // 31: opendsec.v1.OutputRequest
+	(*FileRequest)(nil),           // 32: opendsec.v1.FileRequest
+	(*WriteFileRequest)(nil),      // 33: opendsec.v1.WriteFileRequest
+	(*HttpRequest)(nil),           // 34: opendsec.v1.HttpRequest
+	(*SessionRef)(nil),            // 35: opendsec.v1.SessionRef
+	(*MoveRequest)(nil),           // 36: opendsec.v1.MoveRequest
+	(*StartProcessRequest)(nil),   // 37: opendsec.v1.StartProcessRequest
+	(*ProcessRef)(nil),            // 38: opendsec.v1.ProcessRef
+	(*ProcessInput)(nil),          // 39: opendsec.v1.ProcessInput
+	(*ProcessSignal)(nil),         // 40: opendsec.v1.ProcessSignal
+	(*ProcessResize)(nil),         // 41: opendsec.v1.ProcessResize
+	(*PortData)(nil),              // 42: opendsec.v1.PortData
+	(*UpdateNetworkRequest)(nil),  // 43: opendsec.v1.UpdateNetworkRequest
+	(*Sandbox)(nil),               // 44: opendsec.v1.Sandbox
+	(*SandboxList)(nil),           // 45: opendsec.v1.SandboxList
+	(*TaskActionResult)(nil),      // 46: opendsec.v1.TaskActionResult
+	(*ExecResult)(nil),            // 47: opendsec.v1.ExecResult
+	(*ExecEvent)(nil),             // 48: opendsec.v1.ExecEvent
+	(*FileData)(nil),              // 49: opendsec.v1.FileData
+	(*FileInfo)(nil),              // 50: opendsec.v1.FileInfo
+	(*DirListing)(nil),            // 51: opendsec.v1.DirListing
+	(*HttpResponse)(nil),          // 52: opendsec.v1.HttpResponse
+	(*SessionList)(nil),           // 53: opendsec.v1.SessionList
+	(*ProcessEvent)(nil),          // 54: opendsec.v1.ProcessEvent
+	(*ProcessList)(nil),           // 55: opendsec.v1.ProcessList
 }
 var file_opendsec_v1_cluster_proto_depIdxs = []int32{
-	19, // 0: opendsec.v1.Snapshot.edges:type_name -> opendsec.v1.EdgeState
-	19, // 1: opendsec.v1.EdgeStatusResponse.state:type_name -> opendsec.v1.EdgeState
-	20, // 2: opendsec.v1.EdgeStatusResponse.leases:type_name -> opendsec.v1.LeaseInfo
-	21, // 3: opendsec.v1.EdgeCreateRequest.spec:type_name -> opendsec.v1.SandboxSpec
+	22, // 0: opendsec.v1.Snapshot.edges:type_name -> opendsec.v1.EdgeState
+	22, // 1: opendsec.v1.EdgeStatusResponse.state:type_name -> opendsec.v1.EdgeState
+	23, // 2: opendsec.v1.EdgeStatusResponse.leases:type_name -> opendsec.v1.LeaseInfo
+	24, // 3: opendsec.v1.EdgeCreateRequest.spec:type_name -> opendsec.v1.SandboxSpec
 	9,  // 4: opendsec.v1.EdgeCreateRequest.snapshot_peer:type_name -> opendsec.v1.EdgePeer
-	22, // 5: opendsec.v1.EdgeTaskActionRequest.action:type_name -> opendsec.v1.TaskAction
-	23, // 6: opendsec.v1.Watcher.GetSnapshot:input_type -> opendsec.v1.Empty
-	1,  // 7: opendsec.v1.Watcher.Register:input_type -> opendsec.v1.RegisterEdgeRequest
-	14, // 8: opendsec.v1.Edge.Status:input_type -> opendsec.v1.EdgeStatusRequest
-	16, // 9: opendsec.v1.Edge.CreateSandbox:input_type -> opendsec.v1.EdgeCreateRequest
-	24, // 10: opendsec.v1.Edge.GetSandbox:input_type -> opendsec.v1.SandboxRef
-	25, // 11: opendsec.v1.Edge.ListSandboxes:input_type -> opendsec.v1.SandboxFilter
-	24, // 12: opendsec.v1.Edge.StopSandbox:input_type -> opendsec.v1.SandboxRef
-	24, // 13: opendsec.v1.Edge.PauseSandbox:input_type -> opendsec.v1.SandboxRef
-	24, // 14: opendsec.v1.Edge.ResumeSandbox:input_type -> opendsec.v1.SandboxRef
-	24, // 15: opendsec.v1.Edge.TouchSandbox:input_type -> opendsec.v1.SandboxRef
-	26, // 16: opendsec.v1.Edge.SetSandboxTimeout:input_type -> opendsec.v1.SetTimeoutRequest
-	17, // 17: opendsec.v1.Edge.ApplyTaskAction:input_type -> opendsec.v1.EdgeTaskActionRequest
-	18, // 18: opendsec.v1.Edge.Drain:input_type -> opendsec.v1.DrainRequest
-	27, // 19: opendsec.v1.Edge.Exec:input_type -> opendsec.v1.ExecRequest
-	27, // 20: opendsec.v1.Edge.ExecStream:input_type -> opendsec.v1.ExecRequest
-	28, // 21: opendsec.v1.Edge.GetOutput:input_type -> opendsec.v1.OutputRequest
-	29, // 22: opendsec.v1.Edge.ReadFile:input_type -> opendsec.v1.FileRequest
-	30, // 23: opendsec.v1.Edge.WriteFile:input_type -> opendsec.v1.WriteFileRequest
-	29, // 24: opendsec.v1.Edge.ListDir:input_type -> opendsec.v1.FileRequest
-	29, // 25: opendsec.v1.Edge.Stat:input_type -> opendsec.v1.FileRequest
-	29, // 26: opendsec.v1.Edge.Remove:input_type -> opendsec.v1.FileRequest
-	31, // 27: opendsec.v1.Edge.Http:input_type -> opendsec.v1.HttpRequest
-	32, // 28: opendsec.v1.Edge.ListSessions:input_type -> opendsec.v1.SessionRef
-	32, // 29: opendsec.v1.Edge.CloseSession:input_type -> opendsec.v1.SessionRef
-	29, // 30: opendsec.v1.Edge.MakeDir:input_type -> opendsec.v1.FileRequest
-	33, // 31: opendsec.v1.Edge.Move:input_type -> opendsec.v1.MoveRequest
-	34, // 32: opendsec.v1.Edge.StartProcess:input_type -> opendsec.v1.StartProcessRequest
-	35, // 33: opendsec.v1.Edge.ConnectProcess:input_type -> opendsec.v1.ProcessRef
-	35, // 34: opendsec.v1.Edge.ListProcesses:input_type -> opendsec.v1.ProcessRef
-	36, // 35: opendsec.v1.Edge.SendProcessInput:input_type -> opendsec.v1.ProcessInput
-	35, // 36: opendsec.v1.Edge.CloseProcessStdin:input_type -> opendsec.v1.ProcessRef
-	37, // 37: opendsec.v1.Edge.SignalProcess:input_type -> opendsec.v1.ProcessSignal
-	38, // 38: opendsec.v1.Edge.ResizeProcess:input_type -> opendsec.v1.ProcessResize
-	39, // 39: opendsec.v1.Edge.ConnectPort:input_type -> opendsec.v1.PortData
-	12, // 40: opendsec.v1.Edge.PackDiff:input_type -> opendsec.v1.EdgePackDiffRequest
-	10, // 41: opendsec.v1.Edge.Snapshot:input_type -> opendsec.v1.EdgeSnapshotRequest
-	40, // 42: opendsec.v1.Edge.UpdateNetwork:input_type -> opendsec.v1.UpdateNetworkRequest
-	5,  // 43: opendsec.v1.Edge.FetchSnapshot:input_type -> opendsec.v1.FetchSnapshotRequest
-	7,  // 44: opendsec.v1.Edge.BeginMove:input_type -> opendsec.v1.BeginMoveRequest
-	8,  // 45: opendsec.v1.Edge.EndMove:input_type -> opendsec.v1.EndMoveRequest
-	2,  // 46: opendsec.v1.Edge.CheckLayers:input_type -> opendsec.v1.CheckLayersRequest
-	4,  // 47: opendsec.v1.Edge.DeleteSnapshot:input_type -> opendsec.v1.DeleteSnapshotRequest
-	0,  // 48: opendsec.v1.Watcher.GetSnapshot:output_type -> opendsec.v1.Snapshot
-	23, // 49: opendsec.v1.Watcher.Register:output_type -> opendsec.v1.Empty
-	15, // 50: opendsec.v1.Edge.Status:output_type -> opendsec.v1.EdgeStatusResponse
-	41, // 51: opendsec.v1.Edge.CreateSandbox:output_type -> opendsec.v1.Sandbox
-	41, // 52: opendsec.v1.Edge.GetSandbox:output_type -> opendsec.v1.Sandbox
-	42, // 53: opendsec.v1.Edge.ListSandboxes:output_type -> opendsec.v1.SandboxList
-	41, // 54: opendsec.v1.Edge.StopSandbox:output_type -> opendsec.v1.Sandbox
-	41, // 55: opendsec.v1.Edge.PauseSandbox:output_type -> opendsec.v1.Sandbox
-	41, // 56: opendsec.v1.Edge.ResumeSandbox:output_type -> opendsec.v1.Sandbox
-	41, // 57: opendsec.v1.Edge.TouchSandbox:output_type -> opendsec.v1.Sandbox
-	41, // 58: opendsec.v1.Edge.SetSandboxTimeout:output_type -> opendsec.v1.Sandbox
-	43, // 59: opendsec.v1.Edge.ApplyTaskAction:output_type -> opendsec.v1.TaskActionResult
-	23, // 60: opendsec.v1.Edge.Drain:output_type -> opendsec.v1.Empty
-	44, // 61: opendsec.v1.Edge.Exec:output_type -> opendsec.v1.ExecResult
-	45, // 62: opendsec.v1.Edge.ExecStream:output_type -> opendsec.v1.ExecEvent
-	44, // 63: opendsec.v1.Edge.GetOutput:output_type -> opendsec.v1.ExecResult
-	46, // 64: opendsec.v1.Edge.ReadFile:output_type -> opendsec.v1.FileData
-	47, // 65: opendsec.v1.Edge.WriteFile:output_type -> opendsec.v1.FileInfo
-	48, // 66: opendsec.v1.Edge.ListDir:output_type -> opendsec.v1.DirListing
-	47, // 67: opendsec.v1.Edge.Stat:output_type -> opendsec.v1.FileInfo
-	23, // 68: opendsec.v1.Edge.Remove:output_type -> opendsec.v1.Empty
-	49, // 69: opendsec.v1.Edge.Http:output_type -> opendsec.v1.HttpResponse
-	50, // 70: opendsec.v1.Edge.ListSessions:output_type -> opendsec.v1.SessionList
-	23, // 71: opendsec.v1.Edge.CloseSession:output_type -> opendsec.v1.Empty
-	47, // 72: opendsec.v1.Edge.MakeDir:output_type -> opendsec.v1.FileInfo
-	47, // 73: opendsec.v1.Edge.Move:output_type -> opendsec.v1.FileInfo
-	51, // 74: opendsec.v1.Edge.StartProcess:output_type -> opendsec.v1.ProcessEvent
-	51, // 75: opendsec.v1.Edge.ConnectProcess:output_type -> opendsec.v1.ProcessEvent
-	52, // 76: opendsec.v1.Edge.ListProcesses:output_type -> opendsec.v1.ProcessList
-	23, // 77: opendsec.v1.Edge.SendProcessInput:output_type -> opendsec.v1.Empty
-	23, // 78: opendsec.v1.Edge.CloseProcessStdin:output_type -> opendsec.v1.Empty
-	23, // 79: opendsec.v1.Edge.SignalProcess:output_type -> opendsec.v1.Empty
-	23, // 80: opendsec.v1.Edge.ResizeProcess:output_type -> opendsec.v1.Empty
-	39, // 81: opendsec.v1.Edge.ConnectPort:output_type -> opendsec.v1.PortData
-	13, // 82: opendsec.v1.Edge.PackDiff:output_type -> opendsec.v1.EdgePackDiffResponse
-	11, // 83: opendsec.v1.Edge.Snapshot:output_type -> opendsec.v1.EdgeSnapshotResponse
-	41, // 84: opendsec.v1.Edge.UpdateNetwork:output_type -> opendsec.v1.Sandbox
-	6,  // 85: opendsec.v1.Edge.FetchSnapshot:output_type -> opendsec.v1.SnapshotChunk
-	11, // 86: opendsec.v1.Edge.BeginMove:output_type -> opendsec.v1.EdgeSnapshotResponse
-	23, // 87: opendsec.v1.Edge.EndMove:output_type -> opendsec.v1.Empty
-	3,  // 88: opendsec.v1.Edge.CheckLayers:output_type -> opendsec.v1.CheckLayersResponse
-	23, // 89: opendsec.v1.Edge.DeleteSnapshot:output_type -> opendsec.v1.Empty
-	48, // [48:90] is the sub-list for method output_type
-	6,  // [6:48] is the sub-list for method input_type
-	6,  // [6:6] is the sub-list for extension type_name
-	6,  // [6:6] is the sub-list for extension extendee
-	0,  // [0:6] is the sub-list for field type_name
+	25, // 5: opendsec.v1.EdgeTaskActionRequest.action:type_name -> opendsec.v1.TaskAction
+	21, // 6: opendsec.v1.EdgeImportResponse.env:type_name -> opendsec.v1.EdgeImportResponse.EnvEntry
+	26, // 7: opendsec.v1.Watcher.GetSnapshot:input_type -> opendsec.v1.Empty
+	1,  // 8: opendsec.v1.Watcher.Register:input_type -> opendsec.v1.RegisterEdgeRequest
+	14, // 9: opendsec.v1.Edge.Status:input_type -> opendsec.v1.EdgeStatusRequest
+	16, // 10: opendsec.v1.Edge.CreateSandbox:input_type -> opendsec.v1.EdgeCreateRequest
+	27, // 11: opendsec.v1.Edge.GetSandbox:input_type -> opendsec.v1.SandboxRef
+	28, // 12: opendsec.v1.Edge.ListSandboxes:input_type -> opendsec.v1.SandboxFilter
+	27, // 13: opendsec.v1.Edge.StopSandbox:input_type -> opendsec.v1.SandboxRef
+	27, // 14: opendsec.v1.Edge.PauseSandbox:input_type -> opendsec.v1.SandboxRef
+	27, // 15: opendsec.v1.Edge.ResumeSandbox:input_type -> opendsec.v1.SandboxRef
+	27, // 16: opendsec.v1.Edge.TouchSandbox:input_type -> opendsec.v1.SandboxRef
+	29, // 17: opendsec.v1.Edge.SetSandboxTimeout:input_type -> opendsec.v1.SetTimeoutRequest
+	17, // 18: opendsec.v1.Edge.ApplyTaskAction:input_type -> opendsec.v1.EdgeTaskActionRequest
+	18, // 19: opendsec.v1.Edge.Drain:input_type -> opendsec.v1.DrainRequest
+	30, // 20: opendsec.v1.Edge.Exec:input_type -> opendsec.v1.ExecRequest
+	30, // 21: opendsec.v1.Edge.ExecStream:input_type -> opendsec.v1.ExecRequest
+	31, // 22: opendsec.v1.Edge.GetOutput:input_type -> opendsec.v1.OutputRequest
+	32, // 23: opendsec.v1.Edge.ReadFile:input_type -> opendsec.v1.FileRequest
+	33, // 24: opendsec.v1.Edge.WriteFile:input_type -> opendsec.v1.WriteFileRequest
+	32, // 25: opendsec.v1.Edge.ListDir:input_type -> opendsec.v1.FileRequest
+	32, // 26: opendsec.v1.Edge.Stat:input_type -> opendsec.v1.FileRequest
+	32, // 27: opendsec.v1.Edge.Remove:input_type -> opendsec.v1.FileRequest
+	34, // 28: opendsec.v1.Edge.Http:input_type -> opendsec.v1.HttpRequest
+	35, // 29: opendsec.v1.Edge.ListSessions:input_type -> opendsec.v1.SessionRef
+	35, // 30: opendsec.v1.Edge.CloseSession:input_type -> opendsec.v1.SessionRef
+	32, // 31: opendsec.v1.Edge.MakeDir:input_type -> opendsec.v1.FileRequest
+	36, // 32: opendsec.v1.Edge.Move:input_type -> opendsec.v1.MoveRequest
+	37, // 33: opendsec.v1.Edge.StartProcess:input_type -> opendsec.v1.StartProcessRequest
+	38, // 34: opendsec.v1.Edge.ConnectProcess:input_type -> opendsec.v1.ProcessRef
+	38, // 35: opendsec.v1.Edge.ListProcesses:input_type -> opendsec.v1.ProcessRef
+	39, // 36: opendsec.v1.Edge.SendProcessInput:input_type -> opendsec.v1.ProcessInput
+	38, // 37: opendsec.v1.Edge.CloseProcessStdin:input_type -> opendsec.v1.ProcessRef
+	40, // 38: opendsec.v1.Edge.SignalProcess:input_type -> opendsec.v1.ProcessSignal
+	41, // 39: opendsec.v1.Edge.ResizeProcess:input_type -> opendsec.v1.ProcessResize
+	42, // 40: opendsec.v1.Edge.ConnectPort:input_type -> opendsec.v1.PortData
+	12, // 41: opendsec.v1.Edge.PackDiff:input_type -> opendsec.v1.EdgePackDiffRequest
+	10, // 42: opendsec.v1.Edge.Snapshot:input_type -> opendsec.v1.EdgeSnapshotRequest
+	43, // 43: opendsec.v1.Edge.UpdateNetwork:input_type -> opendsec.v1.UpdateNetworkRequest
+	5,  // 44: opendsec.v1.Edge.FetchSnapshot:input_type -> opendsec.v1.FetchSnapshotRequest
+	7,  // 45: opendsec.v1.Edge.BeginMove:input_type -> opendsec.v1.BeginMoveRequest
+	8,  // 46: opendsec.v1.Edge.EndMove:input_type -> opendsec.v1.EndMoveRequest
+	2,  // 47: opendsec.v1.Edge.CheckLayers:input_type -> opendsec.v1.CheckLayersRequest
+	4,  // 48: opendsec.v1.Edge.DeleteSnapshot:input_type -> opendsec.v1.DeleteSnapshotRequest
+	19, // 49: opendsec.v1.Edge.ImportImage:input_type -> opendsec.v1.EdgeImportRequest
+	0,  // 50: opendsec.v1.Watcher.GetSnapshot:output_type -> opendsec.v1.Snapshot
+	26, // 51: opendsec.v1.Watcher.Register:output_type -> opendsec.v1.Empty
+	15, // 52: opendsec.v1.Edge.Status:output_type -> opendsec.v1.EdgeStatusResponse
+	44, // 53: opendsec.v1.Edge.CreateSandbox:output_type -> opendsec.v1.Sandbox
+	44, // 54: opendsec.v1.Edge.GetSandbox:output_type -> opendsec.v1.Sandbox
+	45, // 55: opendsec.v1.Edge.ListSandboxes:output_type -> opendsec.v1.SandboxList
+	44, // 56: opendsec.v1.Edge.StopSandbox:output_type -> opendsec.v1.Sandbox
+	44, // 57: opendsec.v1.Edge.PauseSandbox:output_type -> opendsec.v1.Sandbox
+	44, // 58: opendsec.v1.Edge.ResumeSandbox:output_type -> opendsec.v1.Sandbox
+	44, // 59: opendsec.v1.Edge.TouchSandbox:output_type -> opendsec.v1.Sandbox
+	44, // 60: opendsec.v1.Edge.SetSandboxTimeout:output_type -> opendsec.v1.Sandbox
+	46, // 61: opendsec.v1.Edge.ApplyTaskAction:output_type -> opendsec.v1.TaskActionResult
+	26, // 62: opendsec.v1.Edge.Drain:output_type -> opendsec.v1.Empty
+	47, // 63: opendsec.v1.Edge.Exec:output_type -> opendsec.v1.ExecResult
+	48, // 64: opendsec.v1.Edge.ExecStream:output_type -> opendsec.v1.ExecEvent
+	47, // 65: opendsec.v1.Edge.GetOutput:output_type -> opendsec.v1.ExecResult
+	49, // 66: opendsec.v1.Edge.ReadFile:output_type -> opendsec.v1.FileData
+	50, // 67: opendsec.v1.Edge.WriteFile:output_type -> opendsec.v1.FileInfo
+	51, // 68: opendsec.v1.Edge.ListDir:output_type -> opendsec.v1.DirListing
+	50, // 69: opendsec.v1.Edge.Stat:output_type -> opendsec.v1.FileInfo
+	26, // 70: opendsec.v1.Edge.Remove:output_type -> opendsec.v1.Empty
+	52, // 71: opendsec.v1.Edge.Http:output_type -> opendsec.v1.HttpResponse
+	53, // 72: opendsec.v1.Edge.ListSessions:output_type -> opendsec.v1.SessionList
+	26, // 73: opendsec.v1.Edge.CloseSession:output_type -> opendsec.v1.Empty
+	50, // 74: opendsec.v1.Edge.MakeDir:output_type -> opendsec.v1.FileInfo
+	50, // 75: opendsec.v1.Edge.Move:output_type -> opendsec.v1.FileInfo
+	54, // 76: opendsec.v1.Edge.StartProcess:output_type -> opendsec.v1.ProcessEvent
+	54, // 77: opendsec.v1.Edge.ConnectProcess:output_type -> opendsec.v1.ProcessEvent
+	55, // 78: opendsec.v1.Edge.ListProcesses:output_type -> opendsec.v1.ProcessList
+	26, // 79: opendsec.v1.Edge.SendProcessInput:output_type -> opendsec.v1.Empty
+	26, // 80: opendsec.v1.Edge.CloseProcessStdin:output_type -> opendsec.v1.Empty
+	26, // 81: opendsec.v1.Edge.SignalProcess:output_type -> opendsec.v1.Empty
+	26, // 82: opendsec.v1.Edge.ResizeProcess:output_type -> opendsec.v1.Empty
+	42, // 83: opendsec.v1.Edge.ConnectPort:output_type -> opendsec.v1.PortData
+	13, // 84: opendsec.v1.Edge.PackDiff:output_type -> opendsec.v1.EdgePackDiffResponse
+	11, // 85: opendsec.v1.Edge.Snapshot:output_type -> opendsec.v1.EdgeSnapshotResponse
+	44, // 86: opendsec.v1.Edge.UpdateNetwork:output_type -> opendsec.v1.Sandbox
+	6,  // 87: opendsec.v1.Edge.FetchSnapshot:output_type -> opendsec.v1.SnapshotChunk
+	11, // 88: opendsec.v1.Edge.BeginMove:output_type -> opendsec.v1.EdgeSnapshotResponse
+	26, // 89: opendsec.v1.Edge.EndMove:output_type -> opendsec.v1.Empty
+	3,  // 90: opendsec.v1.Edge.CheckLayers:output_type -> opendsec.v1.CheckLayersResponse
+	26, // 91: opendsec.v1.Edge.DeleteSnapshot:output_type -> opendsec.v1.Empty
+	20, // 92: opendsec.v1.Edge.ImportImage:output_type -> opendsec.v1.EdgeImportResponse
+	50, // [50:93] is the sub-list for method output_type
+	7,  // [7:50] is the sub-list for method input_type
+	7,  // [7:7] is the sub-list for extension type_name
+	7,  // [7:7] is the sub-list for extension extendee
+	0,  // [0:7] is the sub-list for field type_name
 }
 
 func init() { file_opendsec_v1_cluster_proto_init() }
@@ -1475,7 +1678,7 @@ func file_opendsec_v1_cluster_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_opendsec_v1_cluster_proto_rawDesc), len(file_opendsec_v1_cluster_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   19,
+			NumMessages:   22,
 			NumExtensions: 0,
 			NumServices:   2,
 		},

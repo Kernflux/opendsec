@@ -46,6 +46,12 @@ type Manifest struct {
 	// when that snapshot includes memory, so sandboxes resume from it.
 	Snapshot string `json:"snapshot,omitempty"`
 	Memory   bool   `json:"memory,omitempty"`
+	// Size is the data the image added to the store: its pack_diff layer,
+	// its snapshot's files, its imported layers (0: none, or not known).
+	// UsedAt is when a sandbox last started from it, kept (at most hourly)
+	// for projects whose images expire (spec §43.2).
+	Size   int64   `json:"size,omitempty"`
+	UsedAt float64 `json:"used_at,omitempty"`
 }
 
 type LayerMeta struct {

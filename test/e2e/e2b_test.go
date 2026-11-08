@@ -264,3 +264,75 @@ func TestE2BSnapshots(t *testing.T) {
 	}
 	t.Log(strings.TrimSpace(string(out)))
 }
+
+// TestE2BTemplateBuild (spec §43.4): E2B's Template SDK through the
+// gateway (OPENDSEC_E2B_PYTHON): a template built from "base" with COPY,
+// ENV, WORKDIR and RUN steps becomes an image in the caller's project,
+// which Sandbox.create starts by name; a failing step fails the build.
+func TestE2BTemplateBuild(t *testing.T) {
+	py := os.Getenv("OPENDSEC_E2B_PYTHON")
+	if py == "" || agentDir == "" {
+		t.Skip("needs OPENDSEC_E2B_PYTHON and the container runtime")
+	}
+	storeRoot := ownFilesystem(t)
+	st, _ := images.NewStore(storeRoot)
+	w, _, err := st.BeginLayer(layerID("e2b-tpl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	miniRootfs(t, w.Rootfs)
+	if _, err := w.Commit(images.LayerMeta{Source: "test"}); err != nil {
+		t.Fatal(err)
+	}
+	state, _ := os.MkdirTemp("", "opendsec")
+	t.Cleanup(func() { os.RemoveAll(state) })
+	cfg := cluster.SimConfig(2, 1, 8, 16*1024, 64)
+	useStore(cfg, storeRoot)
+	for i := range cfg.Edges {
+		cfg.Edges[i].StateDir, cfg.Edges[i].AgentDir = state, agentDir
+		cfg.Edges[i].Capacity.DiskMB, cfg.Edges[i].DiskReserveMB = 64*256, 64
+		cfg.Edges[i].Backends["container"] = config.Backend{Runtime: "linux", MaxSandboxes: 64, DefaultDiskMB: 256}
+	}
+	l, err := cluster.StartLocal(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(l.Stop)
+	api, err := client.Dial(cfg.APIServers[0].Addr, "", "root")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer api.Close()
+	admin, _ := client.Dial(cfg.APIServers[0].Addr, l.AdminToken, "root")
+	defer admin.Close()
+	if _, err := admin.RegisterImage(ctx(t), &pb.RegisterImageRequest{Image: &pb.ImageInfo{Name: "root/env:1",
+		Layers: []string{layerID("e2b-tpl")}}}); err != nil {
+		t.Fatal(err)
+	}
+	ct := config.E2BTemplate{Backend: "container", CPU: 0.5, MemoryMB: 256}
+	base := ct
+	base.Image = "root/env:1"
+	gw := config.E2B{Project: "root", DefaultTemplate: ct, Templates: map[string]config.E2BTemplate{"base": base}}
+	srv := httptest.NewServer(e2b.New(gw, api, slog.New(slog.NewTextHandler(io.Discard, nil))).Handler())
+	defer srv.Close()
+
+	cx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+	cmd := exec.CommandContext(cx, py, "testdata/e2b_template_check.py")
+	cmd.Env = append(os.Environ(), "E2B_API_URL="+srv.URL, "E2B_SANDBOX_URL="+srv.URL, "E2B_API_KEY="+e2b.E2BKey(l.AdminToken))
+	out, err := cmd.CombinedOutput()
+	if err != nil || !strings.Contains(string(out), "OK ") {
+		t.Fatalf("e2b template check: %v\n%s", err, out)
+	}
+	t.Log(strings.TrimSpace(string(out)))
+	if img, err := admin.GetImage(ctx(t), &pb.ImageRef{Name: "root/mytpl:default"}); err != nil || img.Env["MODE"] != "prod" || img.Workdir != "/app" {
+		t.Fatalf("built image: %v %v", img, err)
+	}
+	// No sandbox left running but the staging ones (they expire).
+	sbs, _ := admin.ListSandboxes(ctx(t), &pb.SandboxFilter{Project: "root"})
+	for _, sb := range sbs.Sandboxes {
+		if sb.State == pb.SandboxState_RUNNING && sb.Spec.Labels["e2b.build"] == "" {
+			t.Errorf("left running: %s %v", sb.Id, sb.Spec.Labels)
+		}
+	}
+}

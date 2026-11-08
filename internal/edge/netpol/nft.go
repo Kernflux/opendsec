@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -48,7 +49,7 @@ flush chain inet %[1]s forward
 add rule inet %[1]s forward iifname "%[2]s" meta nfproto ipv6 drop
 add rule inet %[1]s forward oifname "%[2]s" ct state established,related accept
 add rule inet %[1]s forward oifname "%[2]s" drop
-add rule inet %[1]s forward iifname "%[2]s" iifname . ip saddr vmap @sb
+%[6]sadd rule inet %[1]s forward iifname "%[2]s" iifname . ip saddr vmap @sb
 add rule inet %[1]s forward iifname "%[2]s" drop
 add chain inet %[1]s input { type filter hook input priority filter; policy accept; }
 flush chain inet %[1]s input
@@ -65,7 +66,25 @@ add rule inet %[1]s prerouting iifname "%[2]s" ip daddr %[3]s tcp dport 53 redir
 add chain inet %[1]s postrouting { type nat hook postrouting priority srcnat; policy accept; }
 flush chain inet %[1]s postrouting
 add rule inet %[1]s postrouting ip saddr %[3]s oifname != "%[2]s" masquerade
-`, t, p, pool, port, strings.Join(privateNets, ", "))
+`, t, p, pool, port, strings.Join(privateNets, ", "), m.blockRules())
+}
+
+// blockRules drops what sandboxes send to the cluster's blocked ports
+// (config.NetworkPolicy.BlockedPorts), before their own chains.
+func (m *Manager) blockRules() string {
+	var b strings.Builder
+	for _, pb := range m.blocked {
+		ports := strconv.Itoa(pb.Lo)
+		if pb.Hi != pb.Lo {
+			ports += "-" + strconv.Itoa(pb.Hi)
+		}
+		for _, proto := range []string{"tcp", "udp"} {
+			if pb.Proto == "" || pb.Proto == proto {
+				fmt.Fprintf(&b, "add rule inet %s forward iifname \"%s\" %s dport %s drop\n", m.table, m.prefix+"*", proto, ports)
+			}
+		}
+	}
+	return b.String()
 }
 
 // learnIdle: a learned address stays allowed while it is used, until idle

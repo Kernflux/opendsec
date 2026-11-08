@@ -126,7 +126,7 @@ func (g *Gateway) createSnapshot(ctx context.Context, w http.ResponseWriter, r *
 	}
 	// A name that exists gets the new snapshot, as in E2B.
 	img, err := g.api.CreateSnapshot(ctx, &pb.CreateSnapshotRequest{SandboxId: sb.Id,
-		Image: snapshotImage(g.project(r), req.Name), Memory: memory, Overwrite: req.Name != ""})
+		Image: snapshotImage(g.project(ctx, r), req.Name), Memory: memory, Overwrite: req.Name != ""})
 	if err != nil {
 		writeAPIErr(w, err)
 		return
@@ -150,9 +150,9 @@ func (g *Gateway) listSnapshots(ctx context.Context, w http.ResponseWriter, r *h
 	}
 	var names []string
 	if n := q.Get("name"); n != "" {
-		names = []string{n, snapshotImage(g.project(r), n)}
+		names = []string{n, snapshotImage(g.project(ctx, r), n)}
 	}
-	l, err := g.api.ListImages(ctx, &pb.ListImagesRequest{Project: g.project(r)})
+	l, err := g.api.ListImages(ctx, &pb.ListImagesRequest{Project: g.project(ctx, r)})
 	if err != nil {
 		writeAPIErr(w, err)
 		return
@@ -172,6 +172,14 @@ func (g *Gateway) listSnapshots(ctx context.Context, w http.ResponseWriter, r *h
 // snapshots; other images are not deleted through the gateway.
 func (g *Gateway) deleteSnapshot(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("id")
+	if img, built := g.builtTemplate(ctx, r, name); built { // Template.delete of a built template
+		if _, err := g.api.DeleteImage(ctx, &pb.ImageRef{Name: img}); err != nil {
+			writeAPIErr(w, err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
 	img, err := g.api.GetImage(ctx, &pb.ImageRef{Name: name})
 	if err != nil {
 		writeAPIErr(w, err)

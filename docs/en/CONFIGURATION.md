@@ -117,8 +117,22 @@ Creation policy each apiserver enforces. Timeouts: 0 means the built-in default,
 | `create_burst` | 32768 | Burst: a whole batch may start at once |
 | `auth_fail_rate` | 5 | Failed authentications per second per client address; beyond it, new tokens from that address are not checked for a while |
 | `max_inflight_creates` | 2048 | Concurrent creations per apiserver |
+| `trusted_proxies` | none | Addresses (IPs or CIDRs) of proxies in front of the apiservers (a TLS proxy, the E2B gateways). For calls from them, per-address limits use the last address in `X-Forwarded-For` that is not a proxy |
+| `projects` | none | Limits for a project and its subprojects; entries along a path combine, the longer path's fields winning. TTL fields as above (a project's `max_ttl_max_s` only lowers the cluster's), and per project: `max_images`, `max_image_mb` (data its images added), `image_ttl_s` (images unused this long are deleted; their data goes with the next `image gc`). E.g. `{"root/users": {"max_ttl_max_s": 3600, "max_images": 5, "max_image_mb": 5120, "image_ttl_s": 2592000}}` |
 
 A single creation over the rate gets `rate_limited`; batch creations are queued at the rate by the server and never partly fail on it. With the apiservers behind a load balancer, have it keep the client's source address, or every failed authentication counts against the load balancer's address.
+
+## image_import
+
+Users' pulls from registries (`ImportImage`: `opendsecctl image pull`, the SDK's `import_image` and `Template.from_registry`, E2B's `Template.from_image`). An edge pulls, connecting only to public addresses. Admins' `opendsecctl image import` on a store node is not bounded by this.
+
+| Field | Default | Meaning |
+|---|---|---|
+| `disabled` | false | Turn user imports off |
+| `max_mb` | 10240 | What one image's new layers may unpack to (also bounded by the project's `max_image_mb` room) |
+| `max_files` | 500000 | Entries one image may unpack |
+| `timeout_s` | 900 | One import |
+| `allow_registries` | none | Registries on private networks to allow (a mirror): `"host:port"`, or `"http://host:port"` without TLS |
 
 ## image_store
 
@@ -137,6 +151,7 @@ The cluster-wide network policy.
 | `rule_sets` | Rule sets: name → destinations (domains, IPv4 addresses or networks, optionally with `:port[/protocol]`). E.g. `{"pypi": ["pypi.org", "files.pythonhosted.org"], "github": ["github.com", "codeload.github.com", "objects.githubusercontent.com"]}` |
 | `default_rules` | Rules every sandbox has, under its own `network_rules`. `{"*": true}` lets every sandbox reach the internet by default; `{"pypi": true}` only PyPI |
 | `upstream_dns` | Resolvers the edges' DNS proxies use; default: the host's `/etc/resolv.conf` |
+| `blocked_ports` | Destination ports no sandbox reaches, whatever its rules allow: `["25/tcp", "465/tcp", "587/tcp"]` (mail, for clusters open to the public); `"53"` blocks tcp and udp |
 
 Rule syntax and behaviour: [Network policy](NETWORK.md).
 

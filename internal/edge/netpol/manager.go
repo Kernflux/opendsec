@@ -56,6 +56,7 @@ type Manager struct {
 	dnsPort int
 	dir     string // allocation records
 	policy  *config.NetworkPolicy
+	blocked []config.PortBlock
 	dns     *dnsProxy
 	nl      *nl
 	log     *slog.Logger
@@ -132,6 +133,9 @@ func New(edgeID string, ec config.EdgeNetwork, np *config.NetworkPolicy, stateDi
 		nsPre: "opendsec-" + edgeID + "-", pool: pool, slots: 1 << (32 - ones - 2), dnsPort: port,
 		dir: filepath.Join(stateDir, edgeID, "net"), policy: np, log: log,
 		byLease: map[string]*Attachment{}, bySlot: map[int]*Attachment{}, byIP: map[string]*Attachment{}}
+	if m.blocked, err = config.BlockedPorts(np.BlockedPorts); err != nil {
+		return nil, fmt.Errorf("network.blocked_ports: %v", err)
+	}
 	if err := os.MkdirAll(m.dir, 0o700); err != nil {
 		return nil, err
 	}

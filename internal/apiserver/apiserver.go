@@ -11,6 +11,7 @@ import (
 	"errors"
 	"log/slog"
 	"math"
+	"net"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -73,6 +74,8 @@ type Server struct {
 	// Admission policy (SetAdmission; spec §18).
 	adm           config.Admission
 	reqLimit      *limiter
+	proxies       []*net.IPNet // admission.trusted_proxies
+	imp           config.ImageImport
 	createLimit   *limiter
 	authFailLimit *limiter
 	inflight      chan struct{}
@@ -116,6 +119,7 @@ func (s *Server) Run(ctx context.Context) {
 	go s.watchEpoch(ctx)
 	if c := s.catalog(); c != nil {
 		go c.run(ctx)
+		go s.expireImages(ctx)
 	}
 	t := time.NewTicker(config.Seconds(s.cfg.SnapshotRefresh))
 	defer t.Stop()
@@ -441,7 +445,7 @@ func (s *Server) CreateSandbox(ctx context.Context, r *pb.CreateSandboxRequest) 
 	if err := validateSpec(r.Spec); err != nil {
 		return nil, err
 	}
-	if err := s.applyTTLs(r.Spec); err != nil {
+	if err := s.applyTTLs(r.Spec, r.Project); err != nil {
 		return nil, err
 	}
 	if err := s.checkImageUse(ctx, r.Spec.Image); err != nil {
@@ -642,7 +646,7 @@ func (s *Server) CreateSandboxes(r *pb.CreateSandboxesRequest, stream pb.DSec_Cr
 	if r.Count <= 0 || r.Count > MaxBatch {
 		return rpcutil.Err(rpcutil.Invalid, "count must be in [1, %d]", MaxBatch)
 	}
-	if err := s.applyTTLs(r.Spec); err != nil {
+	if err := s.applyTTLs(r.Spec, r.Project); err != nil {
 		return err
 	}
 	if err := s.checkImageUse(stream.Context(), r.Spec.Image); err != nil {
@@ -817,7 +821,15 @@ func (s *Server) SetSandboxTimeout(ctx context.Context, r *pb.SetTimeoutRequest)
 	if r.TimeoutS <= 0 {
 		return nil, rpcutil.Err(rpcutil.Invalid, "timeout_s must be > 0")
 	}
-	r.MaxLifetimeS = int64(s.adm.MaxTTLMax)
+	a := s.adm
+	if len(a.Projects) > 0 { // the cap may be its project's
+		sb, _, err := s.sandboxAt(ctx, r.SandboxId)
+		if err != nil {
+			return nil, err
+		}
+		a = a.For(sb.Project)
+	}
+	r.MaxLifetimeS = int64(a.MaxTTLMax)
 	return forward(s, ctx, r.SandboxId, r, func(c pb.EdgeClient, ctx context.Context, r *pb.SetTimeoutRequest) (*pb.Sandbox, error) {
 		return c.SetSandboxTimeout(ctx, r)
 	})

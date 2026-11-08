@@ -96,6 +96,9 @@ service DSec {
   rpc DeleteImage(ImageRef) returns (Empty);
   // Snapshot a sandbox's writable layer as a new image on top of its own.
   rpc PackDiff(PackDiffRequest) returns (ImageInfo);
+  // Pulls an image from a registry (Docker Hub, ghcr.io, ...) as image
+  // (spec §43.3). Needs layer.publish on its project.
+  rpc ImportImage(ImportImageRequest) returns (ImageInfo);
   // The whole image catalog, and dropping snapshot records: for the image
   // store's garbage collection (opendsecctl image gc). Cluster admins only.
   rpc ListCatalog(Empty) returns (Catalog);
@@ -147,6 +150,8 @@ message ImageInfo {
   string created_by = 9;
   string snapshot = 10;                // set for images made by CreateSnapshot
   bool memory = 11;                    // the snapshot includes memory
+  int64 size_bytes = 12;               // data the image added to the store (0: none or not known)
+  double used_at = 13;                 // last start from it, where images expire (0: not kept)
 }
 
 message Catalog {
@@ -228,4 +233,12 @@ message TaskActionRequest {
   string project = 1;
   string task_id = 2;
   TaskAction action = 3;
+}
+
+message ImportImageRequest {
+  string image = 1;                    // <project>/<repo>:<tag> to create
+  string ref = 2;                      // the registry's image, e.g. python:3.12-slim, ghcr.io/org/img:tag
+  string username = 3;                 // for private registries; empty: anonymous
+  string password = 4;
+  bool overwrite = 5;
 }

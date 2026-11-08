@@ -94,7 +94,7 @@ func (s *Service) Authenticate(ctx context.Context, r *pb.AuthenticateRequest) (
 	if err != nil {
 		return nil, err
 	}
-	return &pb.Principal{Id: p.ID, Kind: p.Kind, TokenExpiresAt: exp}, nil
+	return &pb.Principal{Id: p.ID, Kind: p.Kind, TokenExpiresAt: exp, Project: p.Project}, nil
 }
 
 func (s *Service) Authorize(ctx context.Context, r *pb.AuthorizeRequest) (*pb.Empty, error) {

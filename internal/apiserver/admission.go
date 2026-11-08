@@ -3,10 +3,12 @@ package apiserver
 import (
 	"context"
 	"net"
+	"strings"
 	"sync"
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/peer"
 
 	pb "github.com/kernflux/opendsec/gen/go/opendsec/v1"
@@ -27,12 +29,14 @@ func (s *Server) SetAdmission(a config.Admission) {
 	if a.MaxInflightCreates > 0 {
 		s.inflight = make(chan struct{}, a.MaxInflightCreates)
 	}
+	s.proxies, _ = config.ParseNets(a.TrustedProxies) // checked by Validate
 }
 
 // applyTTLs fills in default TTLs and enforces the lifetime cap, so every
-// sandbox is eventually reclaimed even when its creator forgets it.
-func (s *Server) applyTTLs(sp *pb.SandboxSpec) error {
-	a := s.adm
+// sandbox is eventually reclaimed even when its creator forgets it. The
+// policy is project's (Admission.Projects).
+func (s *Server) applyTTLs(sp *pb.SandboxSpec, project string) error {
+	a := s.adm.For(project)
 	capMax := int64(a.MaxTTLMax)
 	if capMax > 0 && sp.TtlMaxS > capMax {
 		return rpcutil.Err(rpcutil.Invalid, "ttl_max_s %d exceeds the maximum %d", sp.TtlMaxS, capMax)
@@ -109,7 +113,7 @@ func (s *Server) admitCall(ctx context.Context) error {
 	}
 	// Tokens already authenticated are served from the cache and never hit
 	// IAM, so only uncached ones count against the client address.
-	addr := peerHost(ctx)
+	addr := s.clientAddr(ctx)
 	if s.authFailLimit != nil && !s.authCached(tok) && s.authFailLimit.exhausted(addr) {
 		return rpcutil.Err(rpcutil.RateLimited, "too many failed authentications from %s", addr)
 	}
@@ -131,6 +135,44 @@ func (s *Server) authCached(tok string) bool {
 	defer s.cacheMu.Unlock()
 	e, ok := s.authn[tok]
 	return ok && time.Now().Before(e.exp)
+}
+
+// clientAddr is the address a call came from: its peer's, or for calls
+// through trusted proxies, the last address in X-Forwarded-For that is not
+// one of them.
+func (s *Server) clientAddr(ctx context.Context) string {
+	addr := peerHost(ctx)
+	if !s.trusted(addr) {
+		return addr
+	}
+	md, _ := metadata.FromIncomingContext(ctx)
+	xff := md.Get("x-forwarded-for")
+	for i := len(xff) - 1; i >= 0; i-- {
+		hops := strings.Split(xff[i], ",")
+		for j := len(hops) - 1; j >= 0; j-- {
+			h := strings.TrimSpace(hops[j])
+			if h == "" {
+				continue
+			}
+			if !s.trusted(h) {
+				return h
+			}
+		}
+	}
+	return addr
+}
+
+func (s *Server) trusted(addr string) bool {
+	ip := net.ParseIP(addr)
+	if ip == nil {
+		return false
+	}
+	for _, n := range s.proxies {
+		if n.Contains(ip) {
+			return true
+		}
+	}
+	return false
 }
 
 func peerHost(ctx context.Context) string {

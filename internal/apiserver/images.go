@@ -115,14 +115,17 @@ func (s *Server) checkImageUse(ctx context.Context, image string) error {
 	if err != nil {
 		return err
 	}
-	_, err = st.Get(ctx, canon)
+	m, err := st.Get(ctx, canon)
+	if err == nil {
+		s.noteImageUse(m)
+	}
 	return err
 }
 
 func infoPB(m *images.Manifest) *pb.ImageInfo {
 	return &pb.ImageInfo{Name: m.Name, Layers: m.Layers, Env: m.Env, Workdir: m.Workdir, User: m.User,
 		Parent: m.Parent, Source: m.Source, CreatedAt: m.CreatedAt, CreatedBy: m.CreatedBy,
-		Snapshot: m.Snapshot, Memory: m.Memory}
+		Snapshot: m.Snapshot, Memory: m.Memory, SizeBytes: m.Size, UsedAt: m.UsedAt}
 }
 
 func (s *Server) RegisterImage(ctx context.Context, r *pb.RegisterImageRequest) (*pb.ImageInfo, error) {
@@ -137,6 +140,9 @@ func (s *Server) RegisterImage(ctx context.Context, r *pb.RegisterImageRequest) 
 	img := r.GetImage()
 	name, err := s.authorizeImage(ctx, p, img.GetName(), iam.LayerPublish)
 	if err != nil {
+		return nil, err
+	}
+	if err := s.checkImageQuota(ctx, name); err != nil {
 		return nil, err
 	}
 	m := &images.Manifest{Name: name, Layers: img.Layers, Env: img.Env, Workdir: img.Workdir, User: img.User,
@@ -158,6 +164,9 @@ func (s *Server) ComposeImage(ctx context.Context, r *pb.ComposeImageRequest) (*
 	}
 	name, err := s.authorizeImage(ctx, p, r.Name, iam.LayerPublish)
 	if err != nil {
+		return nil, err
+	}
+	if err := s.checkImageQuota(ctx, name); err != nil {
 		return nil, err
 	}
 	if len(r.Parts) == 0 {
@@ -287,6 +296,9 @@ func (s *Server) PackDiff(ctx context.Context, r *pb.PackDiffRequest) (*pb.Image
 	if err != nil {
 		return nil, err
 	}
+	if err := s.checkImageQuota(ctx, name); err != nil {
+		return nil, err
+	}
 	for _, pat := range r.Scrub {
 		if err := images.ValidScrub(pat); err != nil {
 			return nil, err
@@ -307,7 +319,7 @@ func (s *Server) PackDiff(ctx context.Context, r *pb.PackDiffRequest) (*pb.Image
 	}
 	m := &images.Manifest{Name: name, Layers: append(append([]string{}, parent.Layers...), res.LayerId),
 		Env: parent.Env, Workdir: parent.Workdir, User: parent.User, Parent: parent.Name,
-		Source: "pack_diff " + r.SandboxId, CreatedBy: p}
+		Source: "pack_diff " + r.SandboxId, CreatedBy: p, Size: res.SizeBytes}
 	if err := st.Put(ctx, m, r.Overwrite); err != nil {
 		return nil, err
 	}

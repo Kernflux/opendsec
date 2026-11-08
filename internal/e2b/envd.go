@@ -63,7 +63,7 @@ func (g *Gateway) envdHandler() http.Handler {
 			writeErr(w, http.StatusUnauthorized, "missing access token (X-Access-Token): an OpenDsec token")
 			return
 		}
-		ctx := client.WithToken(r.Context(), key)
+		ctx := forwarded(client.WithToken(r.Context(), key), r)
 		if u := cmpOr(basicUser(r.Header.Get("Authorization")), r.URL.Query().Get("username")); u != "" {
 			ctx = context.WithValue(ctx, userKey{}, u)
 		}

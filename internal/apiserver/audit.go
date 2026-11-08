@@ -236,6 +236,8 @@ func describe(r *AuditRecord, req any) {
 		r.SandboxID, r.Target = q.SandboxId, q.Image
 	case *pb.PackDiffRequest:
 		r.SandboxID, r.Target = q.SandboxId, q.Image
+	case *pb.ImportImageRequest: // never its password
+		r.Target = q.Image + " <- " + q.Ref
 	case *pb.SandboxRef:
 		r.SandboxID = q.Id
 	case *pb.SetTimeoutRequest:

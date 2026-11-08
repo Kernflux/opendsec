@@ -3198,6 +3198,48 @@ E2B 的 `sandbox.fork()`、`create_snapshot()`、`Sandbox.create(snapshot_id)` �
   - 单元：`TestCatalogImportsAndMirrors`、`TestCatalogFindsFileOnlyImages`、`TestCatalogWithOlderIAM`、`TestCatalogTakesBackUnwrittenEntry`、`TestCatalogWithoutFiles`、`TestCatalogStoreNotMounted`、`TestCatalogWithOlderEdges`、`TestGCWithCatalogRefs`、`TestWithTimeoutGivesUp`。
   - e2e：`TestInternalMTLS` 检查 apiserver 能用 `img/`、不能用 `fleet/`；`TestStoreImagesAndPackDiff` 检查清单文件只在 `manifest_files` 开着时写，`ListCatalog` 只给管理员，GC 不会删镜像引用的层。整套 e2e 再用 `OPENDSEC_TEST_MANIFEST_FILES=0` 跑一遍，覆盖 apiserver 不访问共享存储的情况（镜像、pack_diff、fork、快照镜像、跨节点、迁移、E2B）。
 
+## 43. 面向不受信任用户的集群（2026-11-08）
+
+- **目标**：集群可以开放给互不信任的用户（比如公开试用，每人一个项目），限制都由集群执行，不依赖前面的入口服务。
+- **每人一个项目**：用户的 principal 建在自己的项目里（如 `root/users/<id>`），只在自己的项目上有权限，共享镜像放在一个不是他们祖先的项目里（如 `root/images`），只给 `layer.use`。配额：每个项目自己的配额，加上所有用户共同的父项目的配额。
+- **寿命**：新增 `admission.projects`，按项目（含子项目）设置 `default_ttl_running_stop_s`、`default_ttl_max_s`、`max_ttl_max_s`；项目的上限只能比集群的更低。创建、批量创建、fork、`SetSandboxTimeout` 都按 sandbox 所在项目执行。
+- **出网**：私网、链路本地和元数据地址一直被拒绝（§20）。新增 `network.blocked_ports`：集群所有 sandbox 都到不了的目的端口（如邮件端口 25、465、587），nftables 规则放在每个 sandbox 自己的链之前，sandbox 的规则放行也没用。
+- **代理后面的限流**：apiserver 按客户端地址限制认证失败次数。经过 TLS 代理或 E2B 网关后，所有请求的地址都是代理的，一个人猜 key 就会让所有新 key 认证失败。新增 `admission.trusted_proxies`：来自这些地址的请求，取 `X-Forwarded-For` 里从右往左第一个不是代理的地址；E2B 网关把调用方地址追加进 `X-Forwarded-For` 再转给 apiserver。客户端自己伪造的头在最左边，取不到。
+- **E2B**：网关新增 `e2b.home_projects`。调用方的 principal 所在项目（`WhoAmI` 新增 `project` 字段）在这些项目之下时，创建和列出 sandbox 都用它自己的项目，不用 `e2b.project`；结果按 key 的哈希缓存 1 分钟。
+- **公网 TLS**：SDK 新增 `OPENDSEC_TLS=1`（Python `tls=True`，Go `client.WithSystemRoots()`，opendsecctl 读同一个变量），用系统信任的 CA 连接，apiserver 放在有公共证书的代理后面时用户不需要集群的 CA。
+- **测试**：`TestProjectTTLs`、`TestClientAddr`、`TestBlockedPorts`、`TestBlockRules`；需要 root 和 `OPENDSEC_NET_TESTS=1` 的 `TestBlockedPortsLive`（sandbox 规则放行了被封端口也连不上）；e2e `TestProjectLimits`（`WhoAmI` 的项目、寿命上限、不能用别的项目、配额、只能发布到自己的项目、镜像数量上限、E2B 网关把 sandbox 建在用户自己的项目里）；SDK `test_system_roots`。
+
+### 43.2 镜像配额和过期（2026-11-08）
+
+- 业界做法（E2B、Daytona）：用户不直接上传文件系统，平台按套餐限制模板数量和大小，不用的模板由平台回收。这里按项目限制。
+- `admission.projects` 的每一项新增 `max_images`、`max_image_mb`、`image_ttl_s`，对匹配的每个项目分别计算（只算项目自己的镜像，不含子项目）。祖先和子项目的设置从短到长逐项合并，后者覆盖前者；寿命上限仍只能更低。
+- 清单新增 `size`（镜像新增的数据：pack_diff 的层、快照的文件、导入的全部层）和 `used_at`（最近一次从它创建 sandbox）。`ImageInfo` 新增 `size_bytes`、`used_at`。
+- 发布前检查（RegisterImage、ComposeImage、PackDiff、CreateSnapshot、ImportImage）：数量到上限或数据到上限就返回 `quota_exceeded`。覆盖同名镜像时不算被替换的那个。新增数据写完才知道大小，所以最后一个镜像可以超出它自身的大小。
+- `used_at`：从镜像创建 sandbox 时，若所在项目设置了 `image_ttl_s` 且记录已超过 1 小时，后台用 CAS 更新一次（不是每次创建都写）。
+- 过期：每个 apiserver 每 9–11 分钟扫一遍设置了 `image_ttl_s` 的项目，删除 `max(used_at, created_at)` 超过期限的镜像。删除用 CAS：列出后被使用或覆盖过的不删。数据由 `image gc` 回收；新增 `deploy/systemd/opendsec-image-gc.{service,timer}`，在一台挂了共享存储的节点上每天跑一次。
+
+### 43.3 从镜像仓库导入（2026-11-08）
+
+- 新增公开 RPC `ImportImage(image, ref, username, password, overwrite)`，需要目标项目的 `layer.publish`。apiserver 检查配额后，挑一个健康的 edge 调用新的 edge RPC `ImportImage`，由 edge 拉取到共享存储，再把清单写入目录。CLI：`opendsecctl image pull <ref> -as <name>`；SDK：`client.import_image(name, ref)`。管理员在存储节点上的 `opendsecctl image import` 不受这些限制。
+- 防护（`image_import` 配置：`max_mb` 默认 10240、`max_files` 默认 500000、`timeout_s` 默认 900、`allow_registries`、`disabled`）：
+  - 只连公网地址：拉取用的 HTTP 客户端在建立连接时检查目的地址（DNS 解析之后，重定向同样检查），拒绝私网、回环、链路本地、元数据、CGNAT、组播和文档地址；不走代理。内网的镜像源写进 `allow_registries`（`host:port`，或 `http://host:port` 表示不用 TLS）。
+  - 大小：新层解压后的总字节数（稀疏文件按读出的大小算）和条目数有上限，上限取 `max_mb` 和项目剩余镜像配额中较小的；层声明的大小超过剩余额度时下载前就拒绝。被拒的层不留在存储里。
+  - 去掉镜像层里 `trusted.*` 扩展属性（overlayfs 会读其中一些）。
+  - 每个 edge 同时最多 2 个导入，忙时换下一个 edge。
+  - 凭据只用于这次拉取，审计日志只记目标镜像和来源。
+- 镜像大小按它的全部层计（共享的层也算），即它在存储中占住的数据。
+
+### 43.4 声明式构建（2026-11-08）
+
+- SDK `Template`：`from_registry` / `from_image`，`run`、`pip_install`、`apt_install`、`npm_install`、`copy`、`env`、`workdir`、`start_cmd(ready_cmd)`，`build(client, name)`。在 container 上从基础镜像启动 sandbox，依次执行步骤，用 pack_diff 保存，再用 compose 写入 env 和 workdir；有 `start_cmd` 时在 microVM 上启动它，等 `ready_cmd` 成功后连内存做快照。步骤失败抛 `TemplateBuildError`，不留下镜像（`from_registry` 导入的基础镜像除外）。
+- E2B 的 Template SDK（`Template.build`、`Sandbox.create(name)`）通过网关：
+  - 接口：`POST /v3/templates`、`GET /templates/{id}/files/{hash}`、`PUT` 上传、`POST /v2/templates/{id}/builds/{build}`、`GET .../status`；`DELETE /templates/{name}` 删除构建的模板。
+  - 网关不存状态：请求构建时在调用方项目里建一个小的暂存 sandbox（container，0.25 核 128 MB，标签 `e2b.build=<名字>`），保存上传的文件、构建状态和日志，任何网关都能读。上传地址带着调用方自己的 key（2.5 之前的 SDK 上传时不带返回的请求头）。
+  - 收到开始构建请求的网关在后台执行：`fromImage` 用 ImportImage 拉取，`fromTemplate` 用已有模板；在构建 sandbox 里依次执行 RUN（可指定用户）、COPY（Docker 语义：目录拷内容，目标以 `/` 结尾时放进目录，支持通配符、属主和权限）、ENV、WORKDIR、USER。没有 start 命令时 container + pack_diff，有 start 命令或基础镜像是内存快照时 microVM + 内存快照。结果是调用方项目里的 `<project>/<名字>:default`，计入镜像配额。
+  - 构建中每 10 秒写一次心跳；网关中途退出、心跳超过 1 分钟时，状态显示为失败，提示重新构建。
+  - 不支持的：AWS、GCP 仓库凭据，模板的 CPU 和内存只用于构建（启动时用网关的默认值，内存快照按快照本身的大小）。
+- 测试：`TestImageQuota`、`TestImageExpiry`、`TestProjectTTLs`（合并）、`TestExtractLimits`、`TestPublicClient`、`TestIsPublicIP`、`TestUntrustedPull`；e2e `TestImportImage`（导入、权限、私网仓库被拒、超出项目配额在解压时停止且不留镜像）、`TestE2BTemplateBuild`（E2B SDK 2.46：COPY 目录和文件、ENV、WORKDIR、RUN、按名字创建、重建、失败步骤、不存在的模板）；SDK `test_template.py`（容器上用 busybox 基础镜像构建）。
+
 ## 12. 已确认决定
 1. 语言：Go（服务端 + sandbox agent），Python（SDK）；协议 gRPC。
 2. placement 内嵌在 apiserver，代码上独立成包 `internal/placement`。

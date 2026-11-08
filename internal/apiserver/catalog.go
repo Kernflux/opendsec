@@ -366,6 +366,68 @@ func (c *catalog) Delete(ctx context.Context, name string) error {
 	return err
 }
 
+// Touch records that a sandbox started from image name at (UsedAt), unless
+// the entry changed meanwhile: only for the catalog in IAM, and not in the
+// image's file (only expiry reads it).
+func (c *catalog) Touch(ctx context.Context, name string, at float64) error {
+	if !c.kv.Load() {
+		return nil
+	}
+	key := catalogPrefix + name
+	var m images.Manifest
+	found, rev, err := c.kvGet(ctx, key, &m)
+	if err != nil || !found || m.UsedAt >= at {
+		return err
+	}
+	m.UsedAt = at
+	b, err := json.Marshal(&m)
+	if err != nil {
+		return err
+	}
+	kctx, cancel := context.WithTimeout(ctx, kvTimeout)
+	defer cancel()
+	_, err = c.iam.KVPut(kctx, &pb.KVPutRequest{Key: key, Value: b, Check: true, ExpectRev: rev})
+	if rpcutil.ReasonOf(err) == rpcutil.Conflict {
+		return nil // overwritten or touched meanwhile: that write is as fresh
+	}
+	c.forget(key)
+	return err
+}
+
+// Expire deletes image m, as listed, if its entry is still what was
+// listed: an image touched or overwritten since stays. It reports whether
+// the image went.
+func (c *catalog) Expire(ctx context.Context, m *images.Manifest) (bool, error) {
+	if !c.kv.Load() {
+		return false, nil
+	}
+	key := catalogPrefix + m.Name
+	var cur images.Manifest
+	found, rev, err := c.kvGet(ctx, key, &cur)
+	if err != nil || !found {
+		return false, err
+	}
+	if cur.UsedAt != m.UsedAt || cur.CreatedAt != m.CreatedAt {
+		return false, nil
+	}
+	kctx, cancel := context.WithTimeout(ctx, kvTimeout)
+	defer cancel()
+	if _, err := c.iam.KVDelete(kctx, &pb.KVDeleteRequest{Key: key, Check: true, ExpectRev: rev}); err != nil {
+		if rpcutil.ReasonOf(err) == rpcutil.Conflict {
+			return false, nil
+		}
+		return false, err
+	}
+	c.forget(key)
+	if c.st != nil {
+		onFiles(ctx, c.st, func() (struct{}, error) { // best effort: a stale file is imported back only while missing from the catalog
+			err := c.st.DeleteManifest(m.Name)
+			return struct{}{}, err
+		})
+	}
+	return true, nil
+}
+
 // List returns the images of project and its subprojects, by name.
 func (c *catalog) List(ctx context.Context, project string) ([]*images.Manifest, error) {
 	if !c.kv.Load() {

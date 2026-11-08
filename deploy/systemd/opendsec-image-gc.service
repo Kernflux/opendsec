@@ -1,0 +1,16 @@
+# Image store garbage collection (spec §24), run daily by
+# opendsec-image-gc.timer on ONE node with the shared store mounted. It
+# removes layers and snapshots no image uses any more, e.g. after images
+# expired (admission.projects image_ttl_s, spec §43.2). Needs the cluster
+# admin token; OPENDSEC_ADDR from /etc/opendsec/ops.env (iam-backup's).
+[Unit]
+Description=OpenDsec image store GC
+After=network-online.target remote-fs.target
+RequiresMountsFor=/mnt/opendsec-images
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/opendsec/ops.env
+ExecStart=/bin/sh -c 'OPENDSEC_TOKEN=$(cat /etc/opendsec/admin.token) exec /usr/local/bin/opendsecctl image gc -store /mnt/opendsec-images -grace 24h -ca /etc/opendsec/pki/ca.crt'
+Nice=10
+IOSchedulingClass=idle

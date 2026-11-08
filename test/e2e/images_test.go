@@ -26,7 +26,7 @@ import (
 // host into dir: a small, hermetic base layer (no registry access needed).
 func miniRootfs(t *testing.T, dir string) {
 	t.Helper()
-	tools := []string{"bash", "sh", "cat", "ls", "rm", "mkdir", "touch", "test", "env"}
+	tools := []string{"bash", "sh", "cat", "ls", "rm", "mkdir", "touch", "test", "env", "tar", "cp", "chown", "chmod", "dirname", "basename", "pwd", "gzip"}
 	libs := map[string]bool{}
 	os.MkdirAll(filepath.Join(dir, "usr/bin"), 0o755)
 	for _, tool := range tools {

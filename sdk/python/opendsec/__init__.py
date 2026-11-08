@@ -5,9 +5,11 @@ from .client import (
     UNAUTHENTICATED, UNAVAILABLE, DSecClient, DSecContainerRunArgs, DSecError, DSecRunArgs,
     HttpResult, Sandbox, ShellResult,
 )
+from .template import Template, TemplateBuildError
 
 __all__ = [
     "DSecClient", "DSecContainerRunArgs", "DSecRunArgs", "DSecError", "Sandbox", "ShellResult", "HttpResult",
+    "Template", "TemplateBuildError",
     "UNAUTHENTICATED", "FORBIDDEN", "NOT_FOUND", "QUOTA_EXCEEDED", "RATE_LIMITED", "NO_CAPACITY",
     "INVALID", "UNAVAILABLE", "TIMEOUT", "INTERNAL",
 ]

@@ -74,6 +74,7 @@ usage           [<project>] [-from YYYY-MM-DD] [-to YYYY-MM-DD] [-daily] [-csv] 
 image import    <ref> -as <project>/<repo>:<tag> -store DIR [-plain-http]   pull an OCI image into the shared store
                 [-username U -password-stdin | -registry-auth FILE]   private registries (default: docker login's credentials)
                 <ref> may be an image archive: an OCI layout (directory or tar), a docker save tar; PATH#NAME picks one of several
+image pull      <ref> -as <project>/<repo>:<tag> [-overwrite] [-username U -password-stdin]   have the cluster pull a registry's image (layer.publish)
 image save      <ref> -out FILE [-plain-http] [-username U -password-stdin]   write a registry's image as an OCI tar (for offline machines)
 image compose   <name> <part>... [-overwrite]       stack images (base, workspace, toolkits) into one
 image list      [-project P]
@@ -331,6 +332,8 @@ func apiCommand(cmd string, args []string) error {
 	var dopts []client.Option
 	if cn.ca != "" {
 		dopts = append(dopts, client.WithCAFile(cn.ca))
+	} else if t := strings.ToLower(os.Getenv("OPENDSEC_TLS")); t == "1" || t == "true" || t == "yes" {
+		dopts = append(dopts, client.WithSystemRoots()) // apiservers behind a public certificate
 	}
 	c, err := client.Dial(cn.addr, cn.token, cn.project, dopts...)
 	if err != nil {
@@ -338,7 +341,7 @@ func apiCommand(cmd string, args []string) error {
 	}
 	defer c.Close()
 	ctx, cancel := context.WithCancel(context.Background())
-	if d := *deadline; d > 0 || cmd != "image import" {
+	if d := *deadline; d > 0 || (cmd != "image import" && cmd != "image pull") {
 		if d == 0 {
 			d = 5 * time.Minute
 		}
@@ -657,6 +660,22 @@ func apiCommand(cmd string, args []string) error {
 				len(res.Snapshots), len(res.VMDisks), len(res.Partial), res.Bytes>>20)
 		}
 		return err
+	case "image pull":
+		if err := need(1); err != nil {
+			return err
+		}
+		if *as == "" {
+			return fmt.Errorf("image pull needs -as <project>/<repo>:<tag>")
+		}
+		req := &pb.ImportImageRequest{Image: *as, Ref: pos[0], Overwrite: *overwrite}
+		if *regUser != "" || *regPassStdin { // only what is given: never docker login's own credentials
+			creds, err := registryCreds(pos[0], *regUser, *regPassStdin, "")
+			if err != nil {
+				return err
+			}
+			req.Username, req.Password = creds.Username, creds.Password
+		}
+		out, err = c.ImportImage(ctx, req)
 	case "image compose":
 		if err := need(2); err != nil {
 			return err

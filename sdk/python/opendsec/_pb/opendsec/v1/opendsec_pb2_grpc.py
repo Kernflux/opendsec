@@ -325,6 +325,11 @@ class DSecStub(object):
                 request_serializer=opendsec_dot_v1_dot_opendsec__pb2.PackDiffRequest.SerializeToString,
                 response_deserializer=opendsec_dot_v1_dot_opendsec__pb2.ImageInfo.FromString,
                 _registered_method=True)
+        self.ImportImage = channel.unary_unary(
+                '/opendsec.v1.DSec/ImportImage',
+                request_serializer=opendsec_dot_v1_dot_opendsec__pb2.ImportImageRequest.SerializeToString,
+                response_deserializer=opendsec_dot_v1_dot_opendsec__pb2.ImageInfo.FromString,
+                _registered_method=True)
         self.ListCatalog = channel.unary_unary(
                 '/opendsec.v1.DSec/ListCatalog',
                 request_serializer=opendsec_dot_v1_dot_types__pb2.Empty.SerializeToString,
@@ -723,6 +728,14 @@ class DSecServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def ImportImage(self, request, context):
+        """Pulls an image from a registry (Docker Hub, ghcr.io, ...) as image
+        (spec §43.3). Needs layer.publish on its project.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
     def ListCatalog(self, request, context):
         """The whole image catalog, and dropping snapshot records: for the image
         store's garbage collection (opendsecctl image gc). Cluster admins only.
@@ -1048,6 +1061,11 @@ def add_DSecServicer_to_server(servicer, server):
             'PackDiff': grpc.unary_unary_rpc_method_handler(
                     servicer.PackDiff,
                     request_deserializer=opendsec_dot_v1_dot_opendsec__pb2.PackDiffRequest.FromString,
+                    response_serializer=opendsec_dot_v1_dot_opendsec__pb2.ImageInfo.SerializeToString,
+            ),
+            'ImportImage': grpc.unary_unary_rpc_method_handler(
+                    servicer.ImportImage,
+                    request_deserializer=opendsec_dot_v1_dot_opendsec__pb2.ImportImageRequest.FromString,
                     response_serializer=opendsec_dot_v1_dot_opendsec__pb2.ImageInfo.SerializeToString,
             ),
             'ListCatalog': grpc.unary_unary_rpc_method_handler(
@@ -2616,6 +2634,33 @@ class DSec(object):
             target,
             '/opendsec.v1.DSec/PackDiff',
             opendsec_dot_v1_dot_opendsec__pb2.PackDiffRequest.SerializeToString,
+            opendsec_dot_v1_dot_opendsec__pb2.ImageInfo.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ImportImage(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/opendsec.v1.DSec/ImportImage',
+            opendsec_dot_v1_dot_opendsec__pb2.ImportImageRequest.SerializeToString,
             opendsec_dot_v1_dot_opendsec__pb2.ImageInfo.FromString,
             options,
             channel_credentials,

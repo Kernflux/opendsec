@@ -17,6 +17,7 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+	"time"
 
 	"github.com/klauspost/compress/zstd"
 	"golang.org/x/sys/unix"
@@ -485,12 +486,51 @@ func TestPullZstdLayers(t *testing.T) {
 func TestExtractDirModes(t *testing.T) {
 	root := t.TempDir()
 	for name, mode := range map[string]int64{"tmp": 0o1777, "shared": 0o2775} {
-		if err := extractEntry(nil, &tar.Header{Name: name + "/", Typeflag: tar.TypeDir, Mode: mode}, root, nil); err != nil {
+		if err := extractEntry(nil, &tar.Header{Name: name + "/", Typeflag: tar.TypeDir, Mode: mode}, root, nil, nil); err != nil {
 			t.Fatal(err)
 		}
 		var st syscall.Stat_t
 		if err := syscall.Stat(filepath.Join(root, name), &st); err != nil || int64(st.Mode&0o7777) != mode {
 			t.Errorf("%s: mode %o, want %o (%v)", name, st.Mode&0o7777, mode, err)
 		}
+	}
+}
+
+// TestUntrustedPull (spec §43.3): a pull for a user reaches only public
+// registries (or allowed ones), stops at its size limit, and keeps no
+// trusted.* xattrs.
+func TestUntrustedPull(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("whiteout devices need root")
+	}
+	big := strings.Repeat("x", 2<<20)
+	layer := mkLayer(t, []tarEntry{{name: "data/big", body: big}, {name: "data/small", body: "s"}})
+	srv, _ := fakeRegistry(t, [][]byte{layer}, map[string]any{"config": map[string]any{}})
+	host := strings.TrimPrefix(srv.URL, "http://")
+	ref := host + "/test/app:v1"
+	ctx := context.Background()
+	s, _ := NewStore(t.TempDir())
+
+	p := &Puller{Store: s, PlainHTTP: true, Platform: "linux/amd64", Untrusted: true, Client: PublicClient(time.Minute, nil)}
+	if _, err := p.Pull(ctx, ref); err == nil || !strings.Contains(err.Error(), "not a public address") {
+		t.Fatalf("pulled from a loopback registry: %v", err)
+	}
+	p = &Puller{Store: s, PlainHTTP: true, Platform: "linux/amd64", Untrusted: true, MaxBytes: 1 << 20,
+		Client: PublicClient(time.Minute, []string{host})}
+	if _, err := p.Pull(ctx, ref); err == nil || !strings.Contains(err.Error(), "too large") {
+		t.Fatalf("past the size limit: %v", err)
+	}
+	if ents, _ := os.ReadDir(filepath.Join(s.Root, "layers")); len(ents) != 0 {
+		names := []string{}
+		for _, e := range ents {
+			names = append(names, e.Name())
+		}
+		t.Fatalf("a refused pull left layers: %v", names)
+	}
+	p = &Puller{Store: s, PlainHTTP: true, Platform: "linux/amd64", Untrusted: true, MaxBytes: 4 << 20,
+		Client: PublicClient(time.Minute, []string{host})}
+	res, err := p.Pull(ctx, ref)
+	if err != nil || len(res.Layers) != 1 || p.Size < 2<<20 {
+		t.Fatalf("within the limits: %+v %v size %d", res, err, p.Size)
 	}
 }

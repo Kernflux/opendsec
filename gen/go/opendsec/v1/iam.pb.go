@@ -556,6 +556,7 @@ type Principal struct {
 	Id             string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	Kind           string                 `protobuf:"bytes,2,opt,name=kind,proto3" json:"kind,omitempty"`                                               // user | service | agent
 	TokenExpiresAt float64                `protobuf:"fixed64,3,opt,name=token_expires_at,json=tokenExpiresAt,proto3" json:"token_expires_at,omitempty"` // of the token used to authenticate; 0 = never
+	Project        string                 `protobuf:"bytes,4,opt,name=project,proto3" json:"project,omitempty"`                                         // the project it was created in (its home)
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -609,6 +610,13 @@ func (x *Principal) GetTokenExpiresAt() float64 {
 		return x.TokenExpiresAt
 	}
 	return 0
+}
+
+func (x *Principal) GetProject() string {
+	if x != nil {
+		return x.Project
+	}
+	return ""
 }
 
 type AdmitRequest struct {
@@ -2725,11 +2733,12 @@ const file_opendsec_v1_iam_proto_rawDesc = "" +
 	"\x06holder\x18\x02 \x01(\tR\x06holder\x12\x1d\n" +
 	"\n" +
 	"expires_at\x18\x03 \x01(\x01R\texpiresAt\x12\x1a\n" +
-	"\bacquired\x18\x04 \x01(\bR\bacquired\"Y\n" +
+	"\bacquired\x18\x04 \x01(\bR\bacquired\"s\n" +
 	"\tPrincipal\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04kind\x18\x02 \x01(\tR\x04kind\x12(\n" +
-	"\x10token_expires_at\x18\x03 \x01(\x01R\x0etokenExpiresAt\"\xe8\x01\n" +
+	"\x10token_expires_at\x18\x03 \x01(\x01R\x0etokenExpiresAt\x12\x18\n" +
+	"\aproject\x18\x04 \x01(\tR\aproject\"\xe8\x01\n" +
 	"\fAdmitRequest\x12\x14\n" +
 	"\x05token\x18\x01 \x01(\tR\x05token\x12\x18\n" +
 	"\aproject\x18\x02 \x01(\tR\aproject\x12\x14\n" +

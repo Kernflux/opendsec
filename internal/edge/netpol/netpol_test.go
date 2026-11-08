@@ -526,3 +526,34 @@ func TestRulesRefused(t *testing.T) {
 		t.Fatalf("learned %d addresses, want the 1 kept", n)
 	}
 }
+
+// TestBlockedPortsLive: a blocked port stays closed under "*" (the sandbox
+// allowing everything), other ports open.
+func TestBlockedPortsLive(t *testing.T) {
+	if os.Getenv("OPENDSEC_NET_TESTS") == "" || os.Geteuid() != 0 {
+		t.Skip("set OPENDSEC_NET_TESTS=1 (as root)")
+	}
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	ec := config.EdgeNetwork{Enabled: true, Subnet: "10.85.0.0/24", DNSPort: 15397}
+	pol := &config.NetworkPolicy{DefaultRules: map[string]bool{AllowAll: true}, BlockedPorts: []string{"80/tcp"}}
+	m, err := New("t-blk", ec, pol, t.TempDir(), log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { m.Cleanup(); m.Close() })
+	a, err := m.Allocate("bbbbbbbbbbbbbbbbbbbbbbbbbb", map[string]bool{"1.0.0.1:80/tcp": true}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := a.Setup(0, 0); err != nil {
+		t.Fatal(err)
+	}
+	inNS(t, a.NetnsPath(), func() {
+		if err := dial("1.0.0.1:443"); err != nil {
+			t.Errorf("open port: %v", err)
+		}
+		if err := dial("1.0.0.1:80"); err == nil {
+			t.Error("reached a blocked port, though the sandbox's rules allow it")
+		}
+	})
+}

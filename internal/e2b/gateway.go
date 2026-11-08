@@ -15,11 +15,13 @@ package e2b
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -27,6 +29,7 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
 	pb "github.com/kernflux/opendsec/gen/go/opendsec/v1"
@@ -82,6 +85,9 @@ type Gateway struct {
 
 	envMu sync.Mutex
 	envs  map[string]envEntry // sandbox id -> its envVars, briefly cached
+
+	homeMu sync.Mutex
+	homes  map[string]homeEntry // key hash -> the caller's home project
 }
 
 type envEntry struct {
@@ -90,7 +96,7 @@ type envEntry struct {
 }
 
 func New(cfg config.E2B, api *client.Client, log *slog.Logger) *Gateway {
-	return &Gateway{cfg: cfg, api: api, log: log, envs: map[string]envEntry{}}
+	return &Gateway{cfg: cfg, api: api, log: log, envs: map[string]envEntry{}, homes: map[string]homeEntry{}}
 }
 
 // ---- ids --------------------------------------------------------------------------
@@ -281,6 +287,22 @@ func (g *Gateway) sandboxTarget(r *http.Request) (id string, port int, ok bool) 
 	return id, port, true
 }
 
+// forwarded passes the caller's address on to the apiservers
+// (X-Forwarded-For, with the address the request came from appended), so
+// that they limit failed authentications per caller rather than per
+// gateway (admission.trusted_proxies).
+func forwarded(ctx context.Context, r *http.Request) context.Context {
+	from, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		from = r.RemoteAddr
+	}
+	xff := from
+	if prev := r.Header.Get("X-Forwarded-For"); prev != "" {
+		xff = prev + ", " + from
+	}
+	return metadata.AppendToOutgoingContext(ctx, "x-forwarded-for", xff)
+}
+
 // apiKey is the caller's token: X-API-KEY (the control API), X-Access-Token
 // or E2B-Traffic-Access-Token (envd and other ports: the envdAccessToken and
 // trafficAccessToken the control API returned, which are the same token), or
@@ -318,6 +340,61 @@ func fromE2BKey(k string) string {
 	return string(b)
 }
 
-func (g *Gateway) project(r *http.Request) string {
-	return cmpOr(r.Header.Get("X-OpenDsec-Project"), g.cfg.Project)
+// project is the project a request's sandboxes are created in and listed
+// from: X-OpenDsec-Project, else the caller's home project when it lies
+// under one of HomeProjects (as public trial users, each in a project of
+// their own), else the configured one.
+func (g *Gateway) project(ctx context.Context, r *http.Request) string {
+	if p := r.Header.Get("X-OpenDsec-Project"); p != "" {
+		return p
+	}
+	if len(g.cfg.HomeProjects) > 0 {
+		if p := g.home(ctx, apiKey(r)); p != "" {
+			return p
+		}
+	}
+	return g.cfg.Project
+}
+
+// homeTTL: how long the gateway keeps a caller's home project.
+const homeTTL = time.Minute
+
+type homeEntry struct {
+	project string
+	at      time.Time
+}
+
+// home returns the home project of the principal key authenticates, when
+// it lies under one of HomeProjects; "" otherwise. Answers are cached by a
+// hash of the key.
+func (g *Gateway) home(ctx context.Context, key string) string {
+	if key == "" {
+		return ""
+	}
+	h := sha256.Sum256([]byte(key))
+	k := string(h[:])
+	g.homeMu.Lock()
+	e, ok := g.homes[k]
+	g.homeMu.Unlock()
+	if ok && time.Since(e.at) < homeTTL {
+		return e.project
+	}
+	p, err := g.api.WhoAmI(ctx, &pb.Empty{})
+	if err != nil {
+		return ""
+	}
+	project := ""
+	for _, pre := range g.cfg.HomeProjects {
+		if hp := p.GetProject(); hp == pre || strings.HasPrefix(hp, pre+"/") {
+			project = hp
+			break
+		}
+	}
+	g.homeMu.Lock()
+	if len(g.homes) >= 10000 {
+		clear(g.homes)
+	}
+	g.homes[k] = homeEntry{project, time.Now()}
+	g.homeMu.Unlock()
+	return project
 }

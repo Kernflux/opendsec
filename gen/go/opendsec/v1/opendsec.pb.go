@@ -203,8 +203,10 @@ type ImageInfo struct {
 	Source        string                 `protobuf:"bytes,7,opt,name=source,proto3" json:"source,omitempty"`
 	CreatedAt     float64                `protobuf:"fixed64,8,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	CreatedBy     string                 `protobuf:"bytes,9,opt,name=created_by,json=createdBy,proto3" json:"created_by,omitempty"`
-	Snapshot      string                 `protobuf:"bytes,10,opt,name=snapshot,proto3" json:"snapshot,omitempty"` // set for images made by CreateSnapshot
-	Memory        bool                   `protobuf:"varint,11,opt,name=memory,proto3" json:"memory,omitempty"`    // the snapshot includes memory
+	Snapshot      string                 `protobuf:"bytes,10,opt,name=snapshot,proto3" json:"snapshot,omitempty"`                     // set for images made by CreateSnapshot
+	Memory        bool                   `protobuf:"varint,11,opt,name=memory,proto3" json:"memory,omitempty"`                        // the snapshot includes memory
+	SizeBytes     int64                  `protobuf:"varint,12,opt,name=size_bytes,json=sizeBytes,proto3" json:"size_bytes,omitempty"` // data the image added to the store (0: none or not known)
+	UsedAt        float64                `protobuf:"fixed64,13,opt,name=used_at,json=usedAt,proto3" json:"used_at,omitempty"`         // last start from it, where images expire (0: not kept)
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -314,6 +316,20 @@ func (x *ImageInfo) GetMemory() bool {
 		return x.Memory
 	}
 	return false
+}
+
+func (x *ImageInfo) GetSizeBytes() int64 {
+	if x != nil {
+		return x.SizeBytes
+	}
+	return 0
+}
+
+func (x *ImageInfo) GetUsedAt() float64 {
+	if x != nil {
+		return x.UsedAt
+	}
+	return 0
 }
 
 type Catalog struct {
@@ -1099,6 +1115,82 @@ func (x *TaskActionRequest) GetAction() TaskAction {
 	return TaskAction_TASK_ACTION_UNSPECIFIED
 }
 
+type ImportImageRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Image         string                 `protobuf:"bytes,1,opt,name=image,proto3" json:"image,omitempty"`       // <project>/<repo>:<tag> to create
+	Ref           string                 `protobuf:"bytes,2,opt,name=ref,proto3" json:"ref,omitempty"`           // the registry's image, e.g. python:3.12-slim, ghcr.io/org/img:tag
+	Username      string                 `protobuf:"bytes,3,opt,name=username,proto3" json:"username,omitempty"` // for private registries; empty: anonymous
+	Password      string                 `protobuf:"bytes,4,opt,name=password,proto3" json:"password,omitempty"`
+	Overwrite     bool                   `protobuf:"varint,5,opt,name=overwrite,proto3" json:"overwrite,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ImportImageRequest) Reset() {
+	*x = ImportImageRequest{}
+	mi := &file_opendsec_v1_opendsec_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ImportImageRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ImportImageRequest) ProtoMessage() {}
+
+func (x *ImportImageRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_opendsec_v1_opendsec_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ImportImageRequest.ProtoReflect.Descriptor instead.
+func (*ImportImageRequest) Descriptor() ([]byte, []int) {
+	return file_opendsec_v1_opendsec_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *ImportImageRequest) GetImage() string {
+	if x != nil {
+		return x.Image
+	}
+	return ""
+}
+
+func (x *ImportImageRequest) GetRef() string {
+	if x != nil {
+		return x.Ref
+	}
+	return ""
+}
+
+func (x *ImportImageRequest) GetUsername() string {
+	if x != nil {
+		return x.Username
+	}
+	return ""
+}
+
+func (x *ImportImageRequest) GetPassword() string {
+	if x != nil {
+		return x.Password
+	}
+	return ""
+}
+
+func (x *ImportImageRequest) GetOverwrite() bool {
+	if x != nil {
+		return x.Overwrite
+	}
+	return false
+}
+
 var File_opendsec_v1_opendsec_proto protoreflect.FileDescriptor
 
 const file_opendsec_v1_opendsec_proto_rawDesc = "" +
@@ -1123,7 +1215,7 @@ const file_opendsec_v1_opendsec_proto_rawDesc = "" +
 	"sandbox_id\x18\x01 \x01(\tR\tsandboxId\x12\x14\n" +
 	"\x05image\x18\x02 \x01(\tR\x05image\x12\x16\n" +
 	"\x06memory\x18\x03 \x01(\bR\x06memory\x12\x1c\n" +
-	"\toverwrite\x18\x04 \x01(\bR\toverwrite\"\xf2\x02\n" +
+	"\toverwrite\x18\x04 \x01(\bR\toverwrite\"\xaa\x03\n" +
 	"\tImageInfo\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x16\n" +
 	"\x06layers\x18\x02 \x03(\tR\x06layers\x121\n" +
@@ -1138,7 +1230,10 @@ const file_opendsec_v1_opendsec_proto_rawDesc = "" +
 	"created_by\x18\t \x01(\tR\tcreatedBy\x12\x1a\n" +
 	"\bsnapshot\x18\n" +
 	" \x01(\tR\bsnapshot\x12\x16\n" +
-	"\x06memory\x18\v \x01(\bR\x06memory\x1a6\n" +
+	"\x06memory\x18\v \x01(\bR\x06memory\x12\x1d\n" +
+	"\n" +
+	"size_bytes\x18\f \x01(\x03R\tsizeBytes\x12\x17\n" +
+	"\aused_at\x18\r \x01(\x01R\x06usedAt\x1a6\n" +
 	"\bEnvEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"t\n" +
@@ -1199,7 +1294,13 @@ const file_opendsec_v1_opendsec_proto_rawDesc = "" +
 	"\x11TaskActionRequest\x12\x18\n" +
 	"\aproject\x18\x01 \x01(\tR\aproject\x12\x17\n" +
 	"\atask_id\x18\x02 \x01(\tR\x06taskId\x12/\n" +
-	"\x06action\x18\x03 \x01(\x0e2\x17.opendsec.v1.TaskActionR\x06action2\x81!\n" +
+	"\x06action\x18\x03 \x01(\x0e2\x17.opendsec.v1.TaskActionR\x06action\"\x92\x01\n" +
+	"\x12ImportImageRequest\x12\x14\n" +
+	"\x05image\x18\x01 \x01(\tR\x05image\x12\x10\n" +
+	"\x03ref\x18\x02 \x01(\tR\x03ref\x12\x1a\n" +
+	"\busername\x18\x03 \x01(\tR\busername\x12\x1a\n" +
+	"\bpassword\x18\x04 \x01(\tR\bpassword\x12\x1c\n" +
+	"\toverwrite\x18\x05 \x01(\bR\toverwrite2\xc9!\n" +
 	"\x04DSec\x12H\n" +
 	"\rCreateSandbox\x12!.opendsec.v1.CreateSandboxRequest\x1a\x14.opendsec.v1.Sandbox\x12Z\n" +
 	"\x0fCreateSandboxes\x12#.opendsec.v1.CreateSandboxesRequest\x1a .opendsec.v1.CreateSandboxResult0\x01\x12;\n" +
@@ -1264,7 +1365,8 @@ const file_opendsec_v1_opendsec_proto_rawDesc = "" +
 	"\n" +
 	"ListImages\x12\x1e.opendsec.v1.ListImagesRequest\x1a\x1a.opendsec.v1.ImageInfoList\x128\n" +
 	"\vDeleteImage\x12\x15.opendsec.v1.ImageRef\x1a\x12.opendsec.v1.Empty\x12@\n" +
-	"\bPackDiff\x12\x1c.opendsec.v1.PackDiffRequest\x1a\x16.opendsec.v1.ImageInfo\x127\n" +
+	"\bPackDiff\x12\x1c.opendsec.v1.PackDiffRequest\x1a\x16.opendsec.v1.ImageInfo\x12F\n" +
+	"\vImportImage\x12\x1f.opendsec.v1.ImportImageRequest\x1a\x16.opendsec.v1.ImageInfo\x127\n" +
 	"\vListCatalog\x12\x12.opendsec.v1.Empty\x1a\x14.opendsec.v1.Catalog\x12J\n" +
 	"\x0fForgetSnapshots\x12#.opendsec.v1.ForgetSnapshotsRequest\x1a\x12.opendsec.v1.Empty\x12R\n" +
 	"\vForkSandbox\x12\x1f.opendsec.v1.ForkSandboxRequest\x1a .opendsec.v1.CreateSandboxResult0\x01\x12L\n" +
@@ -1283,7 +1385,7 @@ func file_opendsec_v1_opendsec_proto_rawDescGZIP() []byte {
 	return file_opendsec_v1_opendsec_proto_rawDescData
 }
 
-var file_opendsec_v1_opendsec_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
+var file_opendsec_v1_opendsec_proto_msgTypes = make([]protoimpl.MessageInfo, 20)
 var file_opendsec_v1_opendsec_proto_goTypes = []any{
 	(*ForkSandboxRequest)(nil),      // 0: opendsec.v1.ForkSandboxRequest
 	(*CreateSnapshotRequest)(nil),   // 1: opendsec.v1.CreateSnapshotRequest
@@ -1301,204 +1403,207 @@ var file_opendsec_v1_opendsec_proto_goTypes = []any{
 	(*CreateSandboxesRequest)(nil),  // 13: opendsec.v1.CreateSandboxesRequest
 	(*CreateSandboxResult)(nil),     // 14: opendsec.v1.CreateSandboxResult
 	(*TaskActionRequest)(nil),       // 15: opendsec.v1.TaskActionRequest
-	nil,                             // 16: opendsec.v1.ForkSandboxRequest.LabelsEntry
-	nil,                             // 17: opendsec.v1.ImageInfo.EnvEntry
-	nil,                             // 18: opendsec.v1.ComposeImageRequest.EnvEntry
-	(*SandboxSpec)(nil),             // 19: opendsec.v1.SandboxSpec
-	(*Sandbox)(nil),                 // 20: opendsec.v1.Sandbox
-	(TaskAction)(0),                 // 21: opendsec.v1.TaskAction
-	(*SandboxRef)(nil),              // 22: opendsec.v1.SandboxRef
-	(*SandboxFilter)(nil),           // 23: opendsec.v1.SandboxFilter
-	(*SetTimeoutRequest)(nil),       // 24: opendsec.v1.SetTimeoutRequest
-	(*Empty)(nil),                   // 25: opendsec.v1.Empty
-	(*DrainEdgeRequest)(nil),        // 26: opendsec.v1.DrainEdgeRequest
-	(*IAMBackupRequest)(nil),        // 27: opendsec.v1.IAMBackupRequest
-	(*BackupChunk)(nil),             // 28: opendsec.v1.BackupChunk
-	(*IAMMemberRequest)(nil),        // 29: opendsec.v1.IAMMemberRequest
-	(*ExecRequest)(nil),             // 30: opendsec.v1.ExecRequest
-	(*OutputRequest)(nil),           // 31: opendsec.v1.OutputRequest
-	(*FileRequest)(nil),             // 32: opendsec.v1.FileRequest
-	(*WriteFileRequest)(nil),        // 33: opendsec.v1.WriteFileRequest
-	(*HttpRequest)(nil),             // 34: opendsec.v1.HttpRequest
-	(*SessionRef)(nil),              // 35: opendsec.v1.SessionRef
-	(*MoveRequest)(nil),             // 36: opendsec.v1.MoveRequest
-	(*StartProcessRequest)(nil),     // 37: opendsec.v1.StartProcessRequest
-	(*ProcessRef)(nil),              // 38: opendsec.v1.ProcessRef
-	(*ProcessInput)(nil),            // 39: opendsec.v1.ProcessInput
-	(*ProcessSignal)(nil),           // 40: opendsec.v1.ProcessSignal
-	(*ProcessResize)(nil),           // 41: opendsec.v1.ProcessResize
-	(*PortData)(nil),                // 42: opendsec.v1.PortData
-	(*CreateProjectRequest)(nil),    // 43: opendsec.v1.CreateProjectRequest
-	(*CreatePrincipalRequest)(nil),  // 44: opendsec.v1.CreatePrincipalRequest
-	(*GrantRequest)(nil),            // 45: opendsec.v1.GrantRequest
-	(*RevokeRequest)(nil),           // 46: opendsec.v1.RevokeRequest
-	(*SetQuotaRequest)(nil),         // 47: opendsec.v1.SetQuotaRequest
-	(*GetProjectRequest)(nil),       // 48: opendsec.v1.GetProjectRequest
-	(*UsageRequest)(nil),            // 49: opendsec.v1.UsageRequest
-	(*CreateTokenRequest)(nil),      // 50: opendsec.v1.CreateTokenRequest
-	(*ListTokensRequest)(nil),       // 51: opendsec.v1.ListTokensRequest
-	(*RevokeTokenRequest)(nil),      // 52: opendsec.v1.RevokeTokenRequest
-	(*DeletePrincipalRequest)(nil),  // 53: opendsec.v1.DeletePrincipalRequest
-	(*DeleteProjectRequest)(nil),    // 54: opendsec.v1.DeleteProjectRequest
-	(*UpdateNetworkRequest)(nil),    // 55: opendsec.v1.UpdateNetworkRequest
-	(*SandboxList)(nil),             // 56: opendsec.v1.SandboxList
-	(*TaskActionResult)(nil),        // 57: opendsec.v1.TaskActionResult
-	(*Snapshot)(nil),                // 58: opendsec.v1.Snapshot
-	(*IAMMemberList)(nil),           // 59: opendsec.v1.IAMMemberList
-	(*ExecResult)(nil),              // 60: opendsec.v1.ExecResult
-	(*ExecEvent)(nil),               // 61: opendsec.v1.ExecEvent
-	(*FileData)(nil),                // 62: opendsec.v1.FileData
-	(*FileInfo)(nil),                // 63: opendsec.v1.FileInfo
-	(*DirListing)(nil),              // 64: opendsec.v1.DirListing
-	(*HttpResponse)(nil),            // 65: opendsec.v1.HttpResponse
-	(*SessionList)(nil),             // 66: opendsec.v1.SessionList
-	(*ProcessEvent)(nil),            // 67: opendsec.v1.ProcessEvent
-	(*ProcessList)(nil),             // 68: opendsec.v1.ProcessList
-	(*Principal)(nil),               // 69: opendsec.v1.Principal
-	(*Project)(nil),                 // 70: opendsec.v1.Project
-	(*CreatePrincipalResponse)(nil), // 71: opendsec.v1.CreatePrincipalResponse
-	(*UsageReport)(nil),             // 72: opendsec.v1.UsageReport
-	(*CreateTokenResponse)(nil),     // 73: opendsec.v1.CreateTokenResponse
-	(*TokenList)(nil),               // 74: opendsec.v1.TokenList
+	(*ImportImageRequest)(nil),      // 16: opendsec.v1.ImportImageRequest
+	nil,                             // 17: opendsec.v1.ForkSandboxRequest.LabelsEntry
+	nil,                             // 18: opendsec.v1.ImageInfo.EnvEntry
+	nil,                             // 19: opendsec.v1.ComposeImageRequest.EnvEntry
+	(*SandboxSpec)(nil),             // 20: opendsec.v1.SandboxSpec
+	(*Sandbox)(nil),                 // 21: opendsec.v1.Sandbox
+	(TaskAction)(0),                 // 22: opendsec.v1.TaskAction
+	(*SandboxRef)(nil),              // 23: opendsec.v1.SandboxRef
+	(*SandboxFilter)(nil),           // 24: opendsec.v1.SandboxFilter
+	(*SetTimeoutRequest)(nil),       // 25: opendsec.v1.SetTimeoutRequest
+	(*Empty)(nil),                   // 26: opendsec.v1.Empty
+	(*DrainEdgeRequest)(nil),        // 27: opendsec.v1.DrainEdgeRequest
+	(*IAMBackupRequest)(nil),        // 28: opendsec.v1.IAMBackupRequest
+	(*BackupChunk)(nil),             // 29: opendsec.v1.BackupChunk
+	(*IAMMemberRequest)(nil),        // 30: opendsec.v1.IAMMemberRequest
+	(*ExecRequest)(nil),             // 31: opendsec.v1.ExecRequest
+	(*OutputRequest)(nil),           // 32: opendsec.v1.OutputRequest
+	(*FileRequest)(nil),             // 33: opendsec.v1.FileRequest
+	(*WriteFileRequest)(nil),        // 34: opendsec.v1.WriteFileRequest
+	(*HttpRequest)(nil),             // 35: opendsec.v1.HttpRequest
+	(*SessionRef)(nil),              // 36: opendsec.v1.SessionRef
+	(*MoveRequest)(nil),             // 37: opendsec.v1.MoveRequest
+	(*StartProcessRequest)(nil),     // 38: opendsec.v1.StartProcessRequest
+	(*ProcessRef)(nil),              // 39: opendsec.v1.ProcessRef
+	(*ProcessInput)(nil),            // 40: opendsec.v1.ProcessInput
+	(*ProcessSignal)(nil),           // 41: opendsec.v1.ProcessSignal
+	(*ProcessResize)(nil),           // 42: opendsec.v1.ProcessResize
+	(*PortData)(nil),                // 43: opendsec.v1.PortData
+	(*CreateProjectRequest)(nil),    // 44: opendsec.v1.CreateProjectRequest
+	(*CreatePrincipalRequest)(nil),  // 45: opendsec.v1.CreatePrincipalRequest
+	(*GrantRequest)(nil),            // 46: opendsec.v1.GrantRequest
+	(*RevokeRequest)(nil),           // 47: opendsec.v1.RevokeRequest
+	(*SetQuotaRequest)(nil),         // 48: opendsec.v1.SetQuotaRequest
+	(*GetProjectRequest)(nil),       // 49: opendsec.v1.GetProjectRequest
+	(*UsageRequest)(nil),            // 50: opendsec.v1.UsageRequest
+	(*CreateTokenRequest)(nil),      // 51: opendsec.v1.CreateTokenRequest
+	(*ListTokensRequest)(nil),       // 52: opendsec.v1.ListTokensRequest
+	(*RevokeTokenRequest)(nil),      // 53: opendsec.v1.RevokeTokenRequest
+	(*DeletePrincipalRequest)(nil),  // 54: opendsec.v1.DeletePrincipalRequest
+	(*DeleteProjectRequest)(nil),    // 55: opendsec.v1.DeleteProjectRequest
+	(*UpdateNetworkRequest)(nil),    // 56: opendsec.v1.UpdateNetworkRequest
+	(*SandboxList)(nil),             // 57: opendsec.v1.SandboxList
+	(*TaskActionResult)(nil),        // 58: opendsec.v1.TaskActionResult
+	(*Snapshot)(nil),                // 59: opendsec.v1.Snapshot
+	(*IAMMemberList)(nil),           // 60: opendsec.v1.IAMMemberList
+	(*ExecResult)(nil),              // 61: opendsec.v1.ExecResult
+	(*ExecEvent)(nil),               // 62: opendsec.v1.ExecEvent
+	(*FileData)(nil),                // 63: opendsec.v1.FileData
+	(*FileInfo)(nil),                // 64: opendsec.v1.FileInfo
+	(*DirListing)(nil),              // 65: opendsec.v1.DirListing
+	(*HttpResponse)(nil),            // 66: opendsec.v1.HttpResponse
+	(*SessionList)(nil),             // 67: opendsec.v1.SessionList
+	(*ProcessEvent)(nil),            // 68: opendsec.v1.ProcessEvent
+	(*ProcessList)(nil),             // 69: opendsec.v1.ProcessList
+	(*Principal)(nil),               // 70: opendsec.v1.Principal
+	(*Project)(nil),                 // 71: opendsec.v1.Project
+	(*CreatePrincipalResponse)(nil), // 72: opendsec.v1.CreatePrincipalResponse
+	(*UsageReport)(nil),             // 73: opendsec.v1.UsageReport
+	(*CreateTokenResponse)(nil),     // 74: opendsec.v1.CreateTokenResponse
+	(*TokenList)(nil),               // 75: opendsec.v1.TokenList
 }
 var file_opendsec_v1_opendsec_proto_depIdxs = []int32{
-	16, // 0: opendsec.v1.ForkSandboxRequest.labels:type_name -> opendsec.v1.ForkSandboxRequest.LabelsEntry
-	17, // 1: opendsec.v1.ImageInfo.env:type_name -> opendsec.v1.ImageInfo.EnvEntry
+	17, // 0: opendsec.v1.ForkSandboxRequest.labels:type_name -> opendsec.v1.ForkSandboxRequest.LabelsEntry
+	18, // 1: opendsec.v1.ImageInfo.env:type_name -> opendsec.v1.ImageInfo.EnvEntry
 	2,  // 2: opendsec.v1.Catalog.images:type_name -> opendsec.v1.ImageInfo
 	4,  // 3: opendsec.v1.Catalog.snapshots:type_name -> opendsec.v1.SnapshotRecord
 	2,  // 4: opendsec.v1.ImageInfoList.images:type_name -> opendsec.v1.ImageInfo
 	2,  // 5: opendsec.v1.RegisterImageRequest.image:type_name -> opendsec.v1.ImageInfo
-	18, // 6: opendsec.v1.ComposeImageRequest.env:type_name -> opendsec.v1.ComposeImageRequest.EnvEntry
-	19, // 7: opendsec.v1.CreateSandboxRequest.spec:type_name -> opendsec.v1.SandboxSpec
-	19, // 8: opendsec.v1.CreateSandboxesRequest.spec:type_name -> opendsec.v1.SandboxSpec
-	20, // 9: opendsec.v1.CreateSandboxResult.sandbox:type_name -> opendsec.v1.Sandbox
-	21, // 10: opendsec.v1.TaskActionRequest.action:type_name -> opendsec.v1.TaskAction
+	19, // 6: opendsec.v1.ComposeImageRequest.env:type_name -> opendsec.v1.ComposeImageRequest.EnvEntry
+	20, // 7: opendsec.v1.CreateSandboxRequest.spec:type_name -> opendsec.v1.SandboxSpec
+	20, // 8: opendsec.v1.CreateSandboxesRequest.spec:type_name -> opendsec.v1.SandboxSpec
+	21, // 9: opendsec.v1.CreateSandboxResult.sandbox:type_name -> opendsec.v1.Sandbox
+	22, // 10: opendsec.v1.TaskActionRequest.action:type_name -> opendsec.v1.TaskAction
 	12, // 11: opendsec.v1.DSec.CreateSandbox:input_type -> opendsec.v1.CreateSandboxRequest
 	13, // 12: opendsec.v1.DSec.CreateSandboxes:input_type -> opendsec.v1.CreateSandboxesRequest
-	22, // 13: opendsec.v1.DSec.GetSandbox:input_type -> opendsec.v1.SandboxRef
-	23, // 14: opendsec.v1.DSec.ListSandboxes:input_type -> opendsec.v1.SandboxFilter
-	22, // 15: opendsec.v1.DSec.StopSandbox:input_type -> opendsec.v1.SandboxRef
-	22, // 16: opendsec.v1.DSec.PauseSandbox:input_type -> opendsec.v1.SandboxRef
-	22, // 17: opendsec.v1.DSec.ResumeSandbox:input_type -> opendsec.v1.SandboxRef
-	22, // 18: opendsec.v1.DSec.TouchSandbox:input_type -> opendsec.v1.SandboxRef
-	24, // 19: opendsec.v1.DSec.SetSandboxTimeout:input_type -> opendsec.v1.SetTimeoutRequest
+	23, // 13: opendsec.v1.DSec.GetSandbox:input_type -> opendsec.v1.SandboxRef
+	24, // 14: opendsec.v1.DSec.ListSandboxes:input_type -> opendsec.v1.SandboxFilter
+	23, // 15: opendsec.v1.DSec.StopSandbox:input_type -> opendsec.v1.SandboxRef
+	23, // 16: opendsec.v1.DSec.PauseSandbox:input_type -> opendsec.v1.SandboxRef
+	23, // 17: opendsec.v1.DSec.ResumeSandbox:input_type -> opendsec.v1.SandboxRef
+	23, // 18: opendsec.v1.DSec.TouchSandbox:input_type -> opendsec.v1.SandboxRef
+	25, // 19: opendsec.v1.DSec.SetSandboxTimeout:input_type -> opendsec.v1.SetTimeoutRequest
 	15, // 20: opendsec.v1.DSec.ApplyTaskAction:input_type -> opendsec.v1.TaskActionRequest
-	25, // 21: opendsec.v1.DSec.ClusterStatus:input_type -> opendsec.v1.Empty
-	26, // 22: opendsec.v1.DSec.DrainEdge:input_type -> opendsec.v1.DrainEdgeRequest
-	27, // 23: opendsec.v1.DSec.BackupIAM:input_type -> opendsec.v1.IAMBackupRequest
-	28, // 24: opendsec.v1.DSec.RestoreIAM:input_type -> opendsec.v1.BackupChunk
-	29, // 25: opendsec.v1.DSec.IAMMembers:input_type -> opendsec.v1.IAMMemberRequest
-	29, // 26: opendsec.v1.DSec.AddIAMMember:input_type -> opendsec.v1.IAMMemberRequest
-	29, // 27: opendsec.v1.DSec.RemoveIAMMember:input_type -> opendsec.v1.IAMMemberRequest
-	30, // 28: opendsec.v1.DSec.Exec:input_type -> opendsec.v1.ExecRequest
-	30, // 29: opendsec.v1.DSec.ExecStream:input_type -> opendsec.v1.ExecRequest
-	31, // 30: opendsec.v1.DSec.GetOutput:input_type -> opendsec.v1.OutputRequest
-	32, // 31: opendsec.v1.DSec.ReadFile:input_type -> opendsec.v1.FileRequest
-	33, // 32: opendsec.v1.DSec.WriteFile:input_type -> opendsec.v1.WriteFileRequest
-	32, // 33: opendsec.v1.DSec.ListDir:input_type -> opendsec.v1.FileRequest
-	32, // 34: opendsec.v1.DSec.Stat:input_type -> opendsec.v1.FileRequest
-	32, // 35: opendsec.v1.DSec.Remove:input_type -> opendsec.v1.FileRequest
-	34, // 36: opendsec.v1.DSec.Http:input_type -> opendsec.v1.HttpRequest
-	35, // 37: opendsec.v1.DSec.ListSessions:input_type -> opendsec.v1.SessionRef
-	35, // 38: opendsec.v1.DSec.CloseSession:input_type -> opendsec.v1.SessionRef
-	32, // 39: opendsec.v1.DSec.MakeDir:input_type -> opendsec.v1.FileRequest
-	36, // 40: opendsec.v1.DSec.Move:input_type -> opendsec.v1.MoveRequest
-	37, // 41: opendsec.v1.DSec.StartProcess:input_type -> opendsec.v1.StartProcessRequest
-	38, // 42: opendsec.v1.DSec.ConnectProcess:input_type -> opendsec.v1.ProcessRef
-	38, // 43: opendsec.v1.DSec.ListProcesses:input_type -> opendsec.v1.ProcessRef
-	39, // 44: opendsec.v1.DSec.SendProcessInput:input_type -> opendsec.v1.ProcessInput
-	38, // 45: opendsec.v1.DSec.CloseProcessStdin:input_type -> opendsec.v1.ProcessRef
-	40, // 46: opendsec.v1.DSec.SignalProcess:input_type -> opendsec.v1.ProcessSignal
-	41, // 47: opendsec.v1.DSec.ResizeProcess:input_type -> opendsec.v1.ProcessResize
-	42, // 48: opendsec.v1.DSec.ConnectPort:input_type -> opendsec.v1.PortData
-	25, // 49: opendsec.v1.DSec.WhoAmI:input_type -> opendsec.v1.Empty
-	43, // 50: opendsec.v1.DSec.CreateProject:input_type -> opendsec.v1.CreateProjectRequest
-	44, // 51: opendsec.v1.DSec.CreatePrincipal:input_type -> opendsec.v1.CreatePrincipalRequest
-	45, // 52: opendsec.v1.DSec.Grant:input_type -> opendsec.v1.GrantRequest
-	46, // 53: opendsec.v1.DSec.Revoke:input_type -> opendsec.v1.RevokeRequest
-	47, // 54: opendsec.v1.DSec.SetQuota:input_type -> opendsec.v1.SetQuotaRequest
-	48, // 55: opendsec.v1.DSec.GetProject:input_type -> opendsec.v1.GetProjectRequest
-	49, // 56: opendsec.v1.DSec.GetUsage:input_type -> opendsec.v1.UsageRequest
-	50, // 57: opendsec.v1.DSec.CreateToken:input_type -> opendsec.v1.CreateTokenRequest
-	51, // 58: opendsec.v1.DSec.ListTokens:input_type -> opendsec.v1.ListTokensRequest
-	52, // 59: opendsec.v1.DSec.RevokeToken:input_type -> opendsec.v1.RevokeTokenRequest
-	53, // 60: opendsec.v1.DSec.DeletePrincipal:input_type -> opendsec.v1.DeletePrincipalRequest
-	54, // 61: opendsec.v1.DSec.DeleteProject:input_type -> opendsec.v1.DeleteProjectRequest
+	26, // 21: opendsec.v1.DSec.ClusterStatus:input_type -> opendsec.v1.Empty
+	27, // 22: opendsec.v1.DSec.DrainEdge:input_type -> opendsec.v1.DrainEdgeRequest
+	28, // 23: opendsec.v1.DSec.BackupIAM:input_type -> opendsec.v1.IAMBackupRequest
+	29, // 24: opendsec.v1.DSec.RestoreIAM:input_type -> opendsec.v1.BackupChunk
+	30, // 25: opendsec.v1.DSec.IAMMembers:input_type -> opendsec.v1.IAMMemberRequest
+	30, // 26: opendsec.v1.DSec.AddIAMMember:input_type -> opendsec.v1.IAMMemberRequest
+	30, // 27: opendsec.v1.DSec.RemoveIAMMember:input_type -> opendsec.v1.IAMMemberRequest
+	31, // 28: opendsec.v1.DSec.Exec:input_type -> opendsec.v1.ExecRequest
+	31, // 29: opendsec.v1.DSec.ExecStream:input_type -> opendsec.v1.ExecRequest
+	32, // 30: opendsec.v1.DSec.GetOutput:input_type -> opendsec.v1.OutputRequest
+	33, // 31: opendsec.v1.DSec.ReadFile:input_type -> opendsec.v1.FileRequest
+	34, // 32: opendsec.v1.DSec.WriteFile:input_type -> opendsec.v1.WriteFileRequest
+	33, // 33: opendsec.v1.DSec.ListDir:input_type -> opendsec.v1.FileRequest
+	33, // 34: opendsec.v1.DSec.Stat:input_type -> opendsec.v1.FileRequest
+	33, // 35: opendsec.v1.DSec.Remove:input_type -> opendsec.v1.FileRequest
+	35, // 36: opendsec.v1.DSec.Http:input_type -> opendsec.v1.HttpRequest
+	36, // 37: opendsec.v1.DSec.ListSessions:input_type -> opendsec.v1.SessionRef
+	36, // 38: opendsec.v1.DSec.CloseSession:input_type -> opendsec.v1.SessionRef
+	33, // 39: opendsec.v1.DSec.MakeDir:input_type -> opendsec.v1.FileRequest
+	37, // 40: opendsec.v1.DSec.Move:input_type -> opendsec.v1.MoveRequest
+	38, // 41: opendsec.v1.DSec.StartProcess:input_type -> opendsec.v1.StartProcessRequest
+	39, // 42: opendsec.v1.DSec.ConnectProcess:input_type -> opendsec.v1.ProcessRef
+	39, // 43: opendsec.v1.DSec.ListProcesses:input_type -> opendsec.v1.ProcessRef
+	40, // 44: opendsec.v1.DSec.SendProcessInput:input_type -> opendsec.v1.ProcessInput
+	39, // 45: opendsec.v1.DSec.CloseProcessStdin:input_type -> opendsec.v1.ProcessRef
+	41, // 46: opendsec.v1.DSec.SignalProcess:input_type -> opendsec.v1.ProcessSignal
+	42, // 47: opendsec.v1.DSec.ResizeProcess:input_type -> opendsec.v1.ProcessResize
+	43, // 48: opendsec.v1.DSec.ConnectPort:input_type -> opendsec.v1.PortData
+	26, // 49: opendsec.v1.DSec.WhoAmI:input_type -> opendsec.v1.Empty
+	44, // 50: opendsec.v1.DSec.CreateProject:input_type -> opendsec.v1.CreateProjectRequest
+	45, // 51: opendsec.v1.DSec.CreatePrincipal:input_type -> opendsec.v1.CreatePrincipalRequest
+	46, // 52: opendsec.v1.DSec.Grant:input_type -> opendsec.v1.GrantRequest
+	47, // 53: opendsec.v1.DSec.Revoke:input_type -> opendsec.v1.RevokeRequest
+	48, // 54: opendsec.v1.DSec.SetQuota:input_type -> opendsec.v1.SetQuotaRequest
+	49, // 55: opendsec.v1.DSec.GetProject:input_type -> opendsec.v1.GetProjectRequest
+	50, // 56: opendsec.v1.DSec.GetUsage:input_type -> opendsec.v1.UsageRequest
+	51, // 57: opendsec.v1.DSec.CreateToken:input_type -> opendsec.v1.CreateTokenRequest
+	52, // 58: opendsec.v1.DSec.ListTokens:input_type -> opendsec.v1.ListTokensRequest
+	53, // 59: opendsec.v1.DSec.RevokeToken:input_type -> opendsec.v1.RevokeTokenRequest
+	54, // 60: opendsec.v1.DSec.DeletePrincipal:input_type -> opendsec.v1.DeletePrincipalRequest
+	55, // 61: opendsec.v1.DSec.DeleteProject:input_type -> opendsec.v1.DeleteProjectRequest
 	9,  // 62: opendsec.v1.DSec.RegisterImage:input_type -> opendsec.v1.RegisterImageRequest
 	10, // 63: opendsec.v1.DSec.ComposeImage:input_type -> opendsec.v1.ComposeImageRequest
 	6,  // 64: opendsec.v1.DSec.GetImage:input_type -> opendsec.v1.ImageRef
 	7,  // 65: opendsec.v1.DSec.ListImages:input_type -> opendsec.v1.ListImagesRequest
 	6,  // 66: opendsec.v1.DSec.DeleteImage:input_type -> opendsec.v1.ImageRef
 	11, // 67: opendsec.v1.DSec.PackDiff:input_type -> opendsec.v1.PackDiffRequest
-	25, // 68: opendsec.v1.DSec.ListCatalog:input_type -> opendsec.v1.Empty
-	5,  // 69: opendsec.v1.DSec.ForgetSnapshots:input_type -> opendsec.v1.ForgetSnapshotsRequest
-	0,  // 70: opendsec.v1.DSec.ForkSandbox:input_type -> opendsec.v1.ForkSandboxRequest
-	1,  // 71: opendsec.v1.DSec.CreateSnapshot:input_type -> opendsec.v1.CreateSnapshotRequest
-	55, // 72: opendsec.v1.DSec.UpdateNetwork:input_type -> opendsec.v1.UpdateNetworkRequest
-	20, // 73: opendsec.v1.DSec.CreateSandbox:output_type -> opendsec.v1.Sandbox
-	14, // 74: opendsec.v1.DSec.CreateSandboxes:output_type -> opendsec.v1.CreateSandboxResult
-	20, // 75: opendsec.v1.DSec.GetSandbox:output_type -> opendsec.v1.Sandbox
-	56, // 76: opendsec.v1.DSec.ListSandboxes:output_type -> opendsec.v1.SandboxList
-	20, // 77: opendsec.v1.DSec.StopSandbox:output_type -> opendsec.v1.Sandbox
-	20, // 78: opendsec.v1.DSec.PauseSandbox:output_type -> opendsec.v1.Sandbox
-	20, // 79: opendsec.v1.DSec.ResumeSandbox:output_type -> opendsec.v1.Sandbox
-	20, // 80: opendsec.v1.DSec.TouchSandbox:output_type -> opendsec.v1.Sandbox
-	20, // 81: opendsec.v1.DSec.SetSandboxTimeout:output_type -> opendsec.v1.Sandbox
-	57, // 82: opendsec.v1.DSec.ApplyTaskAction:output_type -> opendsec.v1.TaskActionResult
-	58, // 83: opendsec.v1.DSec.ClusterStatus:output_type -> opendsec.v1.Snapshot
-	25, // 84: opendsec.v1.DSec.DrainEdge:output_type -> opendsec.v1.Empty
-	28, // 85: opendsec.v1.DSec.BackupIAM:output_type -> opendsec.v1.BackupChunk
-	25, // 86: opendsec.v1.DSec.RestoreIAM:output_type -> opendsec.v1.Empty
-	59, // 87: opendsec.v1.DSec.IAMMembers:output_type -> opendsec.v1.IAMMemberList
-	59, // 88: opendsec.v1.DSec.AddIAMMember:output_type -> opendsec.v1.IAMMemberList
-	59, // 89: opendsec.v1.DSec.RemoveIAMMember:output_type -> opendsec.v1.IAMMemberList
-	60, // 90: opendsec.v1.DSec.Exec:output_type -> opendsec.v1.ExecResult
-	61, // 91: opendsec.v1.DSec.ExecStream:output_type -> opendsec.v1.ExecEvent
-	60, // 92: opendsec.v1.DSec.GetOutput:output_type -> opendsec.v1.ExecResult
-	62, // 93: opendsec.v1.DSec.ReadFile:output_type -> opendsec.v1.FileData
-	63, // 94: opendsec.v1.DSec.WriteFile:output_type -> opendsec.v1.FileInfo
-	64, // 95: opendsec.v1.DSec.ListDir:output_type -> opendsec.v1.DirListing
-	63, // 96: opendsec.v1.DSec.Stat:output_type -> opendsec.v1.FileInfo
-	25, // 97: opendsec.v1.DSec.Remove:output_type -> opendsec.v1.Empty
-	65, // 98: opendsec.v1.DSec.Http:output_type -> opendsec.v1.HttpResponse
-	66, // 99: opendsec.v1.DSec.ListSessions:output_type -> opendsec.v1.SessionList
-	25, // 100: opendsec.v1.DSec.CloseSession:output_type -> opendsec.v1.Empty
-	63, // 101: opendsec.v1.DSec.MakeDir:output_type -> opendsec.v1.FileInfo
-	63, // 102: opendsec.v1.DSec.Move:output_type -> opendsec.v1.FileInfo
-	67, // 103: opendsec.v1.DSec.StartProcess:output_type -> opendsec.v1.ProcessEvent
-	67, // 104: opendsec.v1.DSec.ConnectProcess:output_type -> opendsec.v1.ProcessEvent
-	68, // 105: opendsec.v1.DSec.ListProcesses:output_type -> opendsec.v1.ProcessList
-	25, // 106: opendsec.v1.DSec.SendProcessInput:output_type -> opendsec.v1.Empty
-	25, // 107: opendsec.v1.DSec.CloseProcessStdin:output_type -> opendsec.v1.Empty
-	25, // 108: opendsec.v1.DSec.SignalProcess:output_type -> opendsec.v1.Empty
-	25, // 109: opendsec.v1.DSec.ResizeProcess:output_type -> opendsec.v1.Empty
-	42, // 110: opendsec.v1.DSec.ConnectPort:output_type -> opendsec.v1.PortData
-	69, // 111: opendsec.v1.DSec.WhoAmI:output_type -> opendsec.v1.Principal
-	70, // 112: opendsec.v1.DSec.CreateProject:output_type -> opendsec.v1.Project
-	71, // 113: opendsec.v1.DSec.CreatePrincipal:output_type -> opendsec.v1.CreatePrincipalResponse
-	70, // 114: opendsec.v1.DSec.Grant:output_type -> opendsec.v1.Project
-	70, // 115: opendsec.v1.DSec.Revoke:output_type -> opendsec.v1.Project
-	70, // 116: opendsec.v1.DSec.SetQuota:output_type -> opendsec.v1.Project
-	70, // 117: opendsec.v1.DSec.GetProject:output_type -> opendsec.v1.Project
-	72, // 118: opendsec.v1.DSec.GetUsage:output_type -> opendsec.v1.UsageReport
-	73, // 119: opendsec.v1.DSec.CreateToken:output_type -> opendsec.v1.CreateTokenResponse
-	74, // 120: opendsec.v1.DSec.ListTokens:output_type -> opendsec.v1.TokenList
-	25, // 121: opendsec.v1.DSec.RevokeToken:output_type -> opendsec.v1.Empty
-	25, // 122: opendsec.v1.DSec.DeletePrincipal:output_type -> opendsec.v1.Empty
-	25, // 123: opendsec.v1.DSec.DeleteProject:output_type -> opendsec.v1.Empty
-	2,  // 124: opendsec.v1.DSec.RegisterImage:output_type -> opendsec.v1.ImageInfo
-	2,  // 125: opendsec.v1.DSec.ComposeImage:output_type -> opendsec.v1.ImageInfo
-	2,  // 126: opendsec.v1.DSec.GetImage:output_type -> opendsec.v1.ImageInfo
-	8,  // 127: opendsec.v1.DSec.ListImages:output_type -> opendsec.v1.ImageInfoList
-	25, // 128: opendsec.v1.DSec.DeleteImage:output_type -> opendsec.v1.Empty
-	2,  // 129: opendsec.v1.DSec.PackDiff:output_type -> opendsec.v1.ImageInfo
-	3,  // 130: opendsec.v1.DSec.ListCatalog:output_type -> opendsec.v1.Catalog
-	25, // 131: opendsec.v1.DSec.ForgetSnapshots:output_type -> opendsec.v1.Empty
-	14, // 132: opendsec.v1.DSec.ForkSandbox:output_type -> opendsec.v1.CreateSandboxResult
-	2,  // 133: opendsec.v1.DSec.CreateSnapshot:output_type -> opendsec.v1.ImageInfo
-	20, // 134: opendsec.v1.DSec.UpdateNetwork:output_type -> opendsec.v1.Sandbox
-	73, // [73:135] is the sub-list for method output_type
-	11, // [11:73] is the sub-list for method input_type
+	16, // 68: opendsec.v1.DSec.ImportImage:input_type -> opendsec.v1.ImportImageRequest
+	26, // 69: opendsec.v1.DSec.ListCatalog:input_type -> opendsec.v1.Empty
+	5,  // 70: opendsec.v1.DSec.ForgetSnapshots:input_type -> opendsec.v1.ForgetSnapshotsRequest
+	0,  // 71: opendsec.v1.DSec.ForkSandbox:input_type -> opendsec.v1.ForkSandboxRequest
+	1,  // 72: opendsec.v1.DSec.CreateSnapshot:input_type -> opendsec.v1.CreateSnapshotRequest
+	56, // 73: opendsec.v1.DSec.UpdateNetwork:input_type -> opendsec.v1.UpdateNetworkRequest
+	21, // 74: opendsec.v1.DSec.CreateSandbox:output_type -> opendsec.v1.Sandbox
+	14, // 75: opendsec.v1.DSec.CreateSandboxes:output_type -> opendsec.v1.CreateSandboxResult
+	21, // 76: opendsec.v1.DSec.GetSandbox:output_type -> opendsec.v1.Sandbox
+	57, // 77: opendsec.v1.DSec.ListSandboxes:output_type -> opendsec.v1.SandboxList
+	21, // 78: opendsec.v1.DSec.StopSandbox:output_type -> opendsec.v1.Sandbox
+	21, // 79: opendsec.v1.DSec.PauseSandbox:output_type -> opendsec.v1.Sandbox
+	21, // 80: opendsec.v1.DSec.ResumeSandbox:output_type -> opendsec.v1.Sandbox
+	21, // 81: opendsec.v1.DSec.TouchSandbox:output_type -> opendsec.v1.Sandbox
+	21, // 82: opendsec.v1.DSec.SetSandboxTimeout:output_type -> opendsec.v1.Sandbox
+	58, // 83: opendsec.v1.DSec.ApplyTaskAction:output_type -> opendsec.v1.TaskActionResult
+	59, // 84: opendsec.v1.DSec.ClusterStatus:output_type -> opendsec.v1.Snapshot
+	26, // 85: opendsec.v1.DSec.DrainEdge:output_type -> opendsec.v1.Empty
+	29, // 86: opendsec.v1.DSec.BackupIAM:output_type -> opendsec.v1.BackupChunk
+	26, // 87: opendsec.v1.DSec.RestoreIAM:output_type -> opendsec.v1.Empty
+	60, // 88: opendsec.v1.DSec.IAMMembers:output_type -> opendsec.v1.IAMMemberList
+	60, // 89: opendsec.v1.DSec.AddIAMMember:output_type -> opendsec.v1.IAMMemberList
+	60, // 90: opendsec.v1.DSec.RemoveIAMMember:output_type -> opendsec.v1.IAMMemberList
+	61, // 91: opendsec.v1.DSec.Exec:output_type -> opendsec.v1.ExecResult
+	62, // 92: opendsec.v1.DSec.ExecStream:output_type -> opendsec.v1.ExecEvent
+	61, // 93: opendsec.v1.DSec.GetOutput:output_type -> opendsec.v1.ExecResult
+	63, // 94: opendsec.v1.DSec.ReadFile:output_type -> opendsec.v1.FileData
+	64, // 95: opendsec.v1.DSec.WriteFile:output_type -> opendsec.v1.FileInfo
+	65, // 96: opendsec.v1.DSec.ListDir:output_type -> opendsec.v1.DirListing
+	64, // 97: opendsec.v1.DSec.Stat:output_type -> opendsec.v1.FileInfo
+	26, // 98: opendsec.v1.DSec.Remove:output_type -> opendsec.v1.Empty
+	66, // 99: opendsec.v1.DSec.Http:output_type -> opendsec.v1.HttpResponse
+	67, // 100: opendsec.v1.DSec.ListSessions:output_type -> opendsec.v1.SessionList
+	26, // 101: opendsec.v1.DSec.CloseSession:output_type -> opendsec.v1.Empty
+	64, // 102: opendsec.v1.DSec.MakeDir:output_type -> opendsec.v1.FileInfo
+	64, // 103: opendsec.v1.DSec.Move:output_type -> opendsec.v1.FileInfo
+	68, // 104: opendsec.v1.DSec.StartProcess:output_type -> opendsec.v1.ProcessEvent
+	68, // 105: opendsec.v1.DSec.ConnectProcess:output_type -> opendsec.v1.ProcessEvent
+	69, // 106: opendsec.v1.DSec.ListProcesses:output_type -> opendsec.v1.ProcessList
+	26, // 107: opendsec.v1.DSec.SendProcessInput:output_type -> opendsec.v1.Empty
+	26, // 108: opendsec.v1.DSec.CloseProcessStdin:output_type -> opendsec.v1.Empty
+	26, // 109: opendsec.v1.DSec.SignalProcess:output_type -> opendsec.v1.Empty
+	26, // 110: opendsec.v1.DSec.ResizeProcess:output_type -> opendsec.v1.Empty
+	43, // 111: opendsec.v1.DSec.ConnectPort:output_type -> opendsec.v1.PortData
+	70, // 112: opendsec.v1.DSec.WhoAmI:output_type -> opendsec.v1.Principal
+	71, // 113: opendsec.v1.DSec.CreateProject:output_type -> opendsec.v1.Project
+	72, // 114: opendsec.v1.DSec.CreatePrincipal:output_type -> opendsec.v1.CreatePrincipalResponse
+	71, // 115: opendsec.v1.DSec.Grant:output_type -> opendsec.v1.Project
+	71, // 116: opendsec.v1.DSec.Revoke:output_type -> opendsec.v1.Project
+	71, // 117: opendsec.v1.DSec.SetQuota:output_type -> opendsec.v1.Project
+	71, // 118: opendsec.v1.DSec.GetProject:output_type -> opendsec.v1.Project
+	73, // 119: opendsec.v1.DSec.GetUsage:output_type -> opendsec.v1.UsageReport
+	74, // 120: opendsec.v1.DSec.CreateToken:output_type -> opendsec.v1.CreateTokenResponse
+	75, // 121: opendsec.v1.DSec.ListTokens:output_type -> opendsec.v1.TokenList
+	26, // 122: opendsec.v1.DSec.RevokeToken:output_type -> opendsec.v1.Empty
+	26, // 123: opendsec.v1.DSec.DeletePrincipal:output_type -> opendsec.v1.Empty
+	26, // 124: opendsec.v1.DSec.DeleteProject:output_type -> opendsec.v1.Empty
+	2,  // 125: opendsec.v1.DSec.RegisterImage:output_type -> opendsec.v1.ImageInfo
+	2,  // 126: opendsec.v1.DSec.ComposeImage:output_type -> opendsec.v1.ImageInfo
+	2,  // 127: opendsec.v1.DSec.GetImage:output_type -> opendsec.v1.ImageInfo
+	8,  // 128: opendsec.v1.DSec.ListImages:output_type -> opendsec.v1.ImageInfoList
+	26, // 129: opendsec.v1.DSec.DeleteImage:output_type -> opendsec.v1.Empty
+	2,  // 130: opendsec.v1.DSec.PackDiff:output_type -> opendsec.v1.ImageInfo
+	2,  // 131: opendsec.v1.DSec.ImportImage:output_type -> opendsec.v1.ImageInfo
+	3,  // 132: opendsec.v1.DSec.ListCatalog:output_type -> opendsec.v1.Catalog
+	26, // 133: opendsec.v1.DSec.ForgetSnapshots:output_type -> opendsec.v1.Empty
+	14, // 134: opendsec.v1.DSec.ForkSandbox:output_type -> opendsec.v1.CreateSandboxResult
+	2,  // 135: opendsec.v1.DSec.CreateSnapshot:output_type -> opendsec.v1.ImageInfo
+	21, // 136: opendsec.v1.DSec.UpdateNetwork:output_type -> opendsec.v1.Sandbox
+	74, // [74:137] is the sub-list for method output_type
+	11, // [11:74] is the sub-list for method input_type
 	11, // [11:11] is the sub-list for extension type_name
 	11, // [11:11] is the sub-list for extension extendee
 	0,  // [0:11] is the sub-list for field type_name
@@ -1519,7 +1624,7 @@ func file_opendsec_v1_opendsec_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_opendsec_v1_opendsec_proto_rawDesc), len(file_opendsec_v1_opendsec_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   19,
+			NumMessages:   20,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

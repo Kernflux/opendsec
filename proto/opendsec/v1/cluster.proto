@@ -96,6 +96,9 @@ service Edge {
   // snapshot's files (and this edge's copy).
   rpc CheckLayers(CheckLayersRequest) returns (CheckLayersResponse);
   rpc DeleteSnapshot(DeleteSnapshotRequest) returns (Empty);
+  // Pulls an image from a registry into the store for a user (spec §43.3),
+  // within the limits given, reaching only public addresses.
+  rpc ImportImage(EdgeImportRequest) returns (EdgeImportResponse);
 }
 
 message CheckLayersRequest {
@@ -212,4 +215,22 @@ message EdgeTaskActionRequest {
 
 message DrainRequest {
   bool draining = 1;
+}
+
+message EdgeImportRequest {
+  string ref = 1;                      // e.g. docker.io/library/python:3.12
+  string username = 2;                 // registry login; empty: anonymous
+  string password = 3;
+  int64 max_bytes = 4;                 // what its new layers may unpack to
+  int32 max_entries = 5;
+  repeated string allow_registries = 6; // host:port reachable though not public
+}
+message EdgeImportResponse {
+  repeated string layers = 1;          // bottom first
+  map<string, string> env = 2;
+  string workdir = 3;
+  string user = 4;
+  string source = 5;
+  int64 size_bytes = 6;                // all its layers' data
+  int32 pulled = 7;                    // layers downloaded (the others were in the store)
 }

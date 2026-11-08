@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily OpenDsec image store GC
+
+[Timer]
+OnCalendar=*-*-* 04:00:00
+RandomizedDelaySec=30min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

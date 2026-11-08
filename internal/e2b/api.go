@@ -30,7 +30,7 @@ func (g *Gateway) apiHandler() http.Handler {
 				writeErr(w, http.StatusUnauthorized, "missing API key (X-API-KEY): an OpenDsec token")
 				return
 			}
-			h(client.WithToken(r.Context(), key), w, r)
+			h(forwarded(client.WithToken(r.Context(), key), r), w, r)
 		}
 	}
 	mux.HandleFunc("POST /sandboxes", auth(g.create))
@@ -50,6 +50,22 @@ func (g *Gateway) apiHandler() http.Handler {
 	mux.HandleFunc("POST /sandboxes/{id}/snapshots", auth(g.createSnapshot))
 	mux.HandleFunc("GET /snapshots", auth(g.listSnapshots))
 	mux.HandleFunc("DELETE /templates/{id...}", auth(g.deleteSnapshot))
+	// Template builds (templates.go).
+	mux.HandleFunc("POST /v3/templates", auth(g.requestBuild))
+	mux.HandleFunc("GET /templates/{tid}/files/{hash}", auth(g.fileLink))
+	mux.HandleFunc("PUT /templates/{tid}/builds/{bid}/files/{hash}", func(w http.ResponseWriter, r *http.Request) {
+		key := apiKey(r)
+		if key == "" { // the link's own (fileLink)
+			key = fromE2BKey(r.URL.Query().Get("key"))
+		}
+		if key == "" {
+			writeErr(w, http.StatusUnauthorized, "missing API key")
+			return
+		}
+		g.uploadFiles(forwarded(client.WithToken(r.Context(), key), r), w, r)
+	})
+	mux.HandleFunc("POST /v2/templates/{tid}/builds/{bid}", auth(g.startBuild))
+	mux.HandleFunc("GET /templates/{tid}/builds/{bid}/status", auth(g.buildStatus))
 	mux.HandleFunc("GET /sandboxes/{id}/metrics", auth(func(_ context.Context, w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, []any{})
 	}))
@@ -211,13 +227,17 @@ func (g *Gateway) create(ctx context.Context, w http.ResponseWriter, r *http.Req
 	}
 	t, ok := g.template(req.TemplateID)
 	if !ok {
-		writeErr(w, http.StatusNotFound, "template '"+req.TemplateID+"' not found")
-		return
+		img, built := g.builtTemplate(ctx, r, req.TemplateID) // Template.build's
+		if !built {
+			writeErr(w, http.StatusNotFound, "template '"+req.TemplateID+"' not found")
+			return
+		}
+		t = withDefaults(config.E2BTemplate{Image: img}, g.cfg.DefaultTemplate)
 	}
 	if _, configured := g.cfg.Templates[req.TemplateID]; !configured {
 		// Sandbox.create(snapshot_id): a memory snapshot restores into a VM
 		// of its own shape, which the apiserver fills in when left unset.
-		if img, err := g.api.GetImage(ctx, &pb.ImageRef{Name: req.TemplateID}); err == nil && img.Memory {
+		if img, err := g.api.GetImage(ctx, &pb.ImageRef{Name: t.Image}); err == nil && img.Memory {
 			t.Backend, t.CPU, t.MemoryMB, t.DiskMB = "microvm", 0, 0, 0
 		}
 	}
@@ -257,7 +277,7 @@ func (g *Gateway) create(ctx context.Context, w http.ResponseWriter, r *http.Req
 	if req.AutoPause {
 		spec.TtlPausedS = pausedTimeout
 	}
-	sb, err := g.api.CreateSandbox(ctx, &pb.CreateSandboxRequest{Project: g.project(r), Spec: spec})
+	sb, err := g.api.CreateSandbox(ctx, &pb.CreateSandboxRequest{Project: g.project(ctx, r), Spec: spec})
 	if err != nil {
 		writeAPIErr(w, err)
 		return
@@ -355,7 +375,7 @@ func (g *Gateway) list(ctx context.Context, w http.ResponseWriter, r *http.Reque
 	if l, err := strconv.Atoi(q.Get("limit")); err == nil && l > 0 {
 		limit = l
 	}
-	l, err := g.api.ListSandboxes(ctx, &pb.SandboxFilter{Project: g.project(r)})
+	l, err := g.api.ListSandboxes(ctx, &pb.SandboxFilter{Project: g.project(ctx, r)})
 	if err != nil {
 		writeAPIErr(w, err)
 		return

@@ -76,6 +76,7 @@ const (
 	DSec_ListImages_FullMethodName        = "/opendsec.v1.DSec/ListImages"
 	DSec_DeleteImage_FullMethodName       = "/opendsec.v1.DSec/DeleteImage"
 	DSec_PackDiff_FullMethodName          = "/opendsec.v1.DSec/PackDiff"
+	DSec_ImportImage_FullMethodName       = "/opendsec.v1.DSec/ImportImage"
 	DSec_ListCatalog_FullMethodName       = "/opendsec.v1.DSec/ListCatalog"
 	DSec_ForgetSnapshots_FullMethodName   = "/opendsec.v1.DSec/ForgetSnapshots"
 	DSec_ForkSandbox_FullMethodName       = "/opendsec.v1.DSec/ForkSandbox"
@@ -171,6 +172,9 @@ type DSecClient interface {
 	DeleteImage(ctx context.Context, in *ImageRef, opts ...grpc.CallOption) (*Empty, error)
 	// Snapshot a sandbox's writable layer as a new image on top of its own.
 	PackDiff(ctx context.Context, in *PackDiffRequest, opts ...grpc.CallOption) (*ImageInfo, error)
+	// Pulls an image from a registry (Docker Hub, ghcr.io, ...) as image
+	// (spec §43.3). Needs layer.publish on its project.
+	ImportImage(ctx context.Context, in *ImportImageRequest, opts ...grpc.CallOption) (*ImageInfo, error)
 	// The whole image catalog, and dropping snapshot records: for the image
 	// store's garbage collection (opendsecctl image gc). Cluster admins only.
 	ListCatalog(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*Catalog, error)
@@ -816,6 +820,16 @@ func (c *dSecClient) PackDiff(ctx context.Context, in *PackDiffRequest, opts ...
 	return out, nil
 }
 
+func (c *dSecClient) ImportImage(ctx context.Context, in *ImportImageRequest, opts ...grpc.CallOption) (*ImageInfo, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ImageInfo)
+	err := c.cc.Invoke(ctx, DSec_ImportImage_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *dSecClient) ListCatalog(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*Catalog, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(Catalog)
@@ -963,6 +977,9 @@ type DSecServer interface {
 	DeleteImage(context.Context, *ImageRef) (*Empty, error)
 	// Snapshot a sandbox's writable layer as a new image on top of its own.
 	PackDiff(context.Context, *PackDiffRequest) (*ImageInfo, error)
+	// Pulls an image from a registry (Docker Hub, ghcr.io, ...) as image
+	// (spec §43.3). Needs layer.publish on its project.
+	ImportImage(context.Context, *ImportImageRequest) (*ImageInfo, error)
 	// The whole image catalog, and dropping snapshot records: for the image
 	// store's garbage collection (opendsecctl image gc). Cluster admins only.
 	ListCatalog(context.Context, *Empty) (*Catalog, error)
@@ -1157,6 +1174,9 @@ func (UnimplementedDSecServer) DeleteImage(context.Context, *ImageRef) (*Empty, 
 }
 func (UnimplementedDSecServer) PackDiff(context.Context, *PackDiffRequest) (*ImageInfo, error) {
 	return nil, status.Error(codes.Unimplemented, "method PackDiff not implemented")
+}
+func (UnimplementedDSecServer) ImportImage(context.Context, *ImportImageRequest) (*ImageInfo, error) {
+	return nil, status.Error(codes.Unimplemented, "method ImportImage not implemented")
 }
 func (UnimplementedDSecServer) ListCatalog(context.Context, *Empty) (*Catalog, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListCatalog not implemented")
@@ -2163,6 +2183,24 @@ func _DSec_PackDiff_Handler(srv interface{}, ctx context.Context, dec func(inter
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DSec_ImportImage_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ImportImageRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DSecServer).ImportImage(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DSec_ImportImage_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DSecServer).ImportImage(ctx, req.(*ImportImageRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _DSec_ListCatalog_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(Empty)
 	if err := dec(in); err != nil {
@@ -2452,6 +2490,10 @@ var DSec_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "PackDiff",
 			Handler:    _DSec_PackDiff_Handler,
+		},
+		{
+			MethodName: "ImportImage",
+			Handler:    _DSec_ImportImage_Handler,
 		},
 		{
 			MethodName: "ListCatalog",

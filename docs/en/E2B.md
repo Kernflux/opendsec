@@ -102,6 +102,7 @@ Measured through the gateway on microVMs (Firecracker), on the project's bare-me
      "max_timeout_s": 86400
    }
    ```
+   With `"home_projects": ["root/users"]`, callers whose principal was created in a project under one of these use that project instead of `project` (users with a project each, such as a public trial's).
 2. Give nodes the fleet role `e2b=<index>`, one at a time (`opendsecctl fleet node set` then `fleet node sync`).
 3. Put a load balancer in front: TCP 7400, health check HTTP 9467 `/readyz`, idle timeout at least 60 s. Terminate TLS there, or have the gateways serve it:
    - The gateway's unit runs as a dynamic user that cannot read `/etc/opendsec`, so the certificate and key come in as systemd credentials. On each gateway machine, add a drop-in `/etc/systemd/system/opendsec-e2b@.service.d/tls.conf`:
@@ -115,3 +116,22 @@ Measured through the gateway on microVMs (Firecracker), on the project's bare-me
 4. Give callers tokens with `sandbox.create` and `sandbox.operate` on the project and `layer.use` on the images' projects. Snapshots also need `layer.publish` on the project, since a snapshot is an image there.
 5. The code interpreter needs its template: `deploy/e2b/build-code-interpreter.py` builds `root/code-interpreter:v1`, a memory snapshot of a microVM running E2B's code-interpreter server, and the template entry maps a name to it.
 6. As on E2B, sandboxes made through the gateway can reach the internet unless the caller turns it off (`allow_internet_access=False`, or `deny_out` of all traffic), whatever the cluster's `network.default_rules`.
+
+## Template builds
+
+E2B's Template SDK works through the gateway:
+
+```python
+from e2b import Template, Sandbox
+
+t = (Template()
+     .from_image("python:3.12-slim")          # or .from_template("base")
+     .pip_install(["pandas"])
+     .copy("app", "/app/")
+     .set_envs({"MODE": "prod"})
+     .set_workdir("/app"))
+Template.build(t, "myenv")
+sb = Sandbox.create("myenv")
+```
+
+The template becomes the image `<your project>/myenv:default` and counts against the project's image quota. `from_image` pulls through the cluster (`image_import` limits; registries on private networks only when allowed). With `set_start_cmd`, the build runs on a microVM and saves its memory, as E2B does. Not supported: AWS and GCP registry credentials. A template's CPU and memory apply to the build only.

@@ -126,6 +126,7 @@ message Principal {
   string id = 1;
   string kind = 2;                     // user | service | agent
   double token_expires_at = 3;         // of the token used to authenticate; 0 = never
+  string project = 4;                  // the project it was created in (its home)
 }
 
 message AdmitRequest {

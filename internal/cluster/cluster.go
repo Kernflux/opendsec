@@ -320,6 +320,7 @@ func StartAPIServer(cfg *config.Cluster, i int, log *slog.Logger) (*Component, *
 	ext.SetDirectory(a.Directory())
 	ext.SetClusterCPUs(a.HostCPUs)
 	a.SetAdmission(cfg.Admission)
+	a.SetImageImport(cfg.ImageImport)
 	if cfg.ImageStore.Root != "" {
 		var files *images.Store
 		if cfg.ImageStore.WritesManifestFiles() {

@@ -41,7 +41,7 @@ func (s *Server) ForkSandbox(r *pb.ForkSandboxRequest, stream pb.DSec_ForkSandbo
 	}
 	spec := proto.Clone(src.Spec).(*pb.SandboxSpec)
 	spec.TtlRunningStopS, spec.TtlMaxS = r.TtlRunningStopS, r.TtlMaxS
-	if err := s.applyTTLs(spec); err != nil {
+	if err := s.applyTTLs(spec, src.Project); err != nil {
 		return err
 	}
 	if len(r.Labels) > 0 {
@@ -127,6 +127,9 @@ func (s *Server) CreateSnapshot(ctx context.Context, r *pb.CreateSnapshotRequest
 	if err != nil {
 		return nil, err
 	}
+	if err := s.checkImageQuota(ctx, name); err != nil {
+		return nil, err
+	}
 	if sb.Spec.GetSnapshot() == "" && !images.IsStoreName(sb.Spec.GetImage()) {
 		return nil, rpcutil.Err(rpcutil.Invalid, "snapshot images need a sandbox started from a store image, not %q", sb.Spec.GetImage())
 	}
@@ -153,7 +156,7 @@ func (s *Server) CreateSnapshot(ctx context.Context, r *pb.CreateSnapshotRequest
 		return nil, rpcutil.Err(rpcutil.Invalid, "sandbox %s runs on the edge-local image %q, which the store cannot hold", sb.Id, snap.Base)
 	}
 	m := &images.Manifest{Name: name, Layers: snap.Layers, Env: snap.Env, Workdir: snap.Workdir, User: snap.User,
-		Parent: sb.Spec.GetImage(), Source: "snapshot " + sb.Id, CreatedBy: p, Snapshot: snap.ID, Memory: snap.Memory}
+		Parent: sb.Spec.GetImage(), Source: "snapshot " + sb.Id, CreatedBy: p, Snapshot: snap.ID, Memory: snap.Memory, Size: res.SizeBytes}
 	if err := st.Put(ctx, m, r.Overwrite); err != nil {
 		return nil, err
 	}

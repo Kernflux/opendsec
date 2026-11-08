@@ -4,6 +4,7 @@ import asyncio
 import os
 import re
 import subprocess
+import sys
 
 import pytest
 
@@ -64,3 +65,17 @@ async def test_plaintext_rejected(cluster):
     async with DSecClient(cluster["addr"], cluster["token"], "root") as plain:
         with pytest.raises(DSecError):
             await asyncio.wait_for(plain.whoami(), 5)
+
+
+async def test_system_roots(cluster):
+    """tls=True (OPENDSEC_TLS=1) uses the default trust roots: the cluster's
+    private CA is not among them, unless gRPC is pointed at it."""
+    async with DSecClient(cluster["addr"], cluster["token"], "root", tls=True, retry_timeout=0) as c:
+        with pytest.raises(Exception):
+            await asyncio.wait_for(c.whoami(), 10)
+    env = dict(os.environ, GRPC_DEFAULT_SSL_ROOTS_FILE_PATH=cluster["ca"], OPENDSEC_TLS="1",
+               OPENDSEC_ADDR=cluster["addr"], OPENDSEC_TOKEN=cluster["token"])
+    code = "import asyncio\nfrom opendsec import DSecClient\n" \
+           "async def m():\n    async with DSecClient() as c: print(await c.whoami())\nasyncio.run(m())"
+    out = subprocess.run([sys.executable, "-c", code], env=env, capture_output=True, text=True, timeout=60)
+    assert out.stdout.strip() == "admin", out.stderr

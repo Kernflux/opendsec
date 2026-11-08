@@ -3,6 +3,9 @@ package edge
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
+	"strings"
+	"time"
 
 	pb "github.com/kernflux/opendsec/gen/go/opendsec/v1"
 	"github.com/kernflux/opendsec/internal/edge/backend"
@@ -190,6 +193,67 @@ func (s *Service) CheckLayers(ctx context.Context, r *pb.CheckLayersRequest) (*p
 		}
 	}
 	st.Touch(found, r.SnapshotId)
+	return out, nil
+}
+
+// importSlots bounds the pulls one edge runs at once for users: each holds
+// a download and an unpack.
+var importSlots = make(chan struct{}, 2)
+
+// ImportImage pulls an image from a registry into the store for a user
+// (spec §43.3): only public addresses (and the registries allowed), within
+// the limits the apiserver sends. Layers already in the store are reused
+// (content-addressed, digests verified).
+func (s *Service) ImportImage(ctx context.Context, r *pb.EdgeImportRequest) (*pb.EdgeImportResponse, error) {
+	st := s.Edge.Images
+	if st == nil {
+		return nil, rpcutil.Err(rpcutil.Unavailable, "edge %s has no image store", s.Edge.cfg.ID)
+	}
+	select {
+	case importSlots <- struct{}{}:
+		defer func() { <-importSlots }()
+	default:
+		return nil, rpcutil.Err(rpcutil.Unavailable, "edge %s is busy pulling images; try again later", s.Edge.cfg.ID)
+	}
+	timeout := 15 * time.Minute
+	if d, ok := ctx.Deadline(); ok {
+		timeout = time.Until(d)
+	}
+	ref, err := images.ParseReference(r.Ref)
+	if err != nil {
+		return nil, rpcutil.Err(rpcutil.Invalid, "image reference %q: %v", r.Ref, err)
+	}
+	// Allowed registries: "host:port", or "http://host:port" for one
+	// without TLS (a mirror inside the network).
+	var allowed []string
+	plain := false
+	for _, a := range r.AllowRegistries {
+		host, isHTTP := strings.CutPrefix(a, "http://")
+		allowed = append(allowed, host)
+		if isHTTP && host == ref.Registry {
+			plain = true
+		}
+	}
+	p := &images.Puller{Store: st, Client: images.PublicClient(timeout, allowed), PlainHTTP: plain,
+		MaxBytes: r.MaxBytes, MaxEntries: int(r.MaxEntries), Untrusted: true}
+	if r.Username != "" {
+		p.Creds = &images.Credentials{Username: r.Username, Password: r.Password}
+	}
+	res, err := p.Pull(ctx, r.Ref)
+	if err != nil {
+		if rpcutil.Reason(err) == rpcutil.Internal { // registry, network or format trouble: the user's to fix
+			return nil, rpcutil.Err(rpcutil.Invalid, "pulling %s: %v", r.Ref, err)
+		}
+		return nil, err
+	}
+	out := &pb.EdgeImportResponse{Layers: res.Layers, Env: res.Env, Workdir: res.Workdir, User: res.User,
+		Source: res.Source, Pulled: int32(res.Pulled)}
+	for _, l := range res.Layers {
+		if m, err := st.LayerMeta(l); err == nil {
+			out.SizeBytes += m.Size
+		}
+	}
+	slog.Info("image pulled for a user", "edge", s.Edge.cfg.ID, "ref", r.Ref, "layers", len(res.Layers), "pulled", res.Pulled, "mb", out.SizeBytes>>20)
 	return out, nil
 }
 

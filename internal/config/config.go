@@ -4,7 +4,10 @@ package config
 import (
 	"encoding/json"
 	"fmt"
+	"net"
 	"os"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -24,7 +27,8 @@ type Cluster struct {
 	EdgeTemplate *Edge `json:"edge_template"`
 	// ImageStore is the shared image store every edge and apiserver mounts
 	// (spec §17.2); without it only edge-local static images exist.
-	ImageStore ImageStore `json:"image_store"`
+	ImageStore  ImageStore  `json:"image_store"`
+	ImageImport ImageImport `json:"image_import"`
 	// Admission applies cluster-wide creation policy at the apiservers
 	// (spec §18.1).
 	Admission Admission `json:"admission"`
@@ -47,6 +51,10 @@ type E2B struct {
 	// Project sandboxes are created in and listed from, unless a request
 	// names another (X-OpenDsec-Project).
 	Project string `json:"project"`
+	// HomeProjects: callers whose home project (the one their principal was
+	// created in) lies under one of these use it instead of Project, e.g.
+	// users with a project each under root/users.
+	HomeProjects []string `json:"home_projects,omitempty"`
 	// Domain is returned as the sandboxes' domain, for SDKs that build
 	// sandbox hosts "<port>-<id>.<domain>" (wildcard DNS and certificate
 	// to the gateways). Empty: clients set E2B_SANDBOX_URL.
@@ -143,6 +151,96 @@ type Admission struct {
 	CreateBurst        float64 `json:"create_burst"`         // default 32768: one full batch at once
 	AuthFailRate       float64 `json:"auth_fail_rate"`       // failed authentications/s per client address; default 5
 	MaxInflightCreates int     `json:"max_inflight_creates"` // concurrent creations per apiserver; default 2048
+
+	// Image holds the image limits For found for a project (not configured
+	// here: see Projects).
+	Image ProjectAdmission `json:"-"`
+
+	// TrustedProxies are the addresses (IPs or CIDRs) of proxies in front of
+	// the apiservers (a TLS proxy, the E2B gateways): for calls from them,
+	// limits per client address use X-Forwarded-For's last address that is
+	// not one of them.
+	TrustedProxies []string `json:"trusted_proxies,omitempty"`
+
+	// Projects sets other limits for a project and its subprojects: TTLs
+	// of their sandboxes, and how many images each may keep. Entries for a
+	// project and for its ancestors combine, the longer path's fields
+	// winning; a lifetime cap only lowers the cluster's.
+	Projects map[string]ProjectAdmission `json:"projects,omitempty"`
+}
+
+// ProjectAdmission overrides Admission's TTLs for a project (seconds; 0 =
+// the cluster's), and limits its images.
+type ProjectAdmission struct {
+	DefaultTTLRunningStop float64 `json:"default_ttl_running_stop_s,omitempty"`
+	DefaultTTLMax         float64 `json:"default_ttl_max_s,omitempty"`
+	MaxTTLMax             float64 `json:"max_ttl_max_s,omitempty"`
+
+	// Images, per project (each matching project counted on its own):
+	// at most MaxImages images and MaxImageMB of data they added (pack_diff
+	// layers, snapshots, imports), checked before each publish; images
+	// unused for ImageTTL seconds are deleted (their data goes with the
+	// next image gc). 0 = no limit.
+	MaxImages  int     `json:"max_images,omitempty"`
+	MaxImageMB int64   `json:"max_image_mb,omitempty"`
+	ImageTTL   float64 `json:"image_ttl_s,omitempty"`
+}
+
+// For returns the admission policy for project: a's, with the Projects
+// entries matching it (it or an ancestor) applied, shortest path first.
+// The image limits are in Image.
+func (a Admission) For(project string) Admission {
+	var match []string
+	for p := range a.Projects {
+		if project == p || strings.HasPrefix(project, p+"/") {
+			match = append(match, p)
+		}
+	}
+	if len(match) == 0 {
+		return a
+	}
+	sort.Slice(match, func(i, j int) bool { return len(match[i]) < len(match[j]) })
+	cap := a.MaxTTLMax
+	var img ProjectAdmission
+	for _, p := range match {
+		o := a.Projects[p]
+		if o.DefaultTTLRunningStop > 0 {
+			a.DefaultTTLRunningStop = o.DefaultTTLRunningStop
+		}
+		if o.DefaultTTLMax > 0 {
+			a.DefaultTTLMax = o.DefaultTTLMax
+		}
+		if o.MaxTTLMax > 0 && (cap <= 0 || o.MaxTTLMax < cap) {
+			cap = o.MaxTTLMax
+		}
+		if o.MaxImages > 0 {
+			img.MaxImages = o.MaxImages
+		}
+		if o.MaxImageMB > 0 {
+			img.MaxImageMB = o.MaxImageMB
+		}
+		if o.ImageTTL > 0 {
+			img.ImageTTL = o.ImageTTL
+		}
+	}
+	a.MaxTTLMax = cap
+	if a.MaxTTLMax > 0 && a.DefaultTTLMax > a.MaxTTLMax {
+		a.DefaultTTLMax = a.MaxTTLMax
+	}
+	a.Image = img
+	return a
+}
+
+// ImageImport bounds users' pulls from registries (ImportImage, spec
+// §43.3); opendsecctl image import (admins, on a store node) is not
+// bounded. An edge pulls, reaching only public addresses besides
+// AllowRegistries.
+type ImageImport struct {
+	Disabled        bool     `json:"disabled,omitempty"`
+	MaxMB           int64    `json:"max_mb,omitempty"`           // what one image may unpack to; default 10240
+	MaxFiles        int      `json:"max_files,omitempty"`        // default 500000
+	Timeout         float64  `json:"timeout_s,omitempty"`        // default 900
+	AllowRegistries []string `json:"allow_registries,omitempty"` // on private networks, e.g. a mirror: "host:port", or "http://host:port" without TLS
 }
 
 type ImageStore struct {
@@ -348,6 +446,10 @@ type NetworkPolicy struct {
 	RuleSets map[string][]string `json:"rule_sets"`
 	// DefaultRules apply under every sandbox's own network_rules.
 	DefaultRules map[string]bool `json:"default_rules"`
+	// BlockedPorts are destination ports no sandbox reaches, whatever its
+	// rules allow: "25/tcp", "6660-6669/tcp", or "53" (tcp and udp). For
+	// clusters open to untrusted users, e.g. mail submission ports.
+	BlockedPorts []string `json:"blocked_ports,omitempty"`
 	// UpstreamDNS: resolvers the edges' DNS proxies query; default: the
 	// host's /etc/resolv.conf.
 	UpstreamDNS []string `json:"upstream_dns"`
@@ -501,6 +603,14 @@ func (c *Cluster) Defaults() {
 	def(&p.UsageFloor, 0.2)
 	def(&p.OverlayGrace, 2)
 	def(&p.BurstThreshold, 0.8)
+	ii := &c.ImageImport
+	if ii.MaxMB == 0 {
+		ii.MaxMB = 10240
+	}
+	if ii.MaxFiles == 0 {
+		ii.MaxFiles = 500000
+	}
+	def(&ii.Timeout, 900)
 	a := &c.Admission
 	def(&a.DefaultTTLRunningStop, 3600)
 	def(&a.DefaultTTLMax, 86400)
@@ -568,6 +678,17 @@ func (e *Edge) Defaults() {
 func (c *Cluster) Validate() error {
 	if c.ServiceToken == "" && c.TLS.Dir == "" {
 		return fmt.Errorf("either tls.dir (production) or service_token (dev) is required")
+	}
+	if _, err := BlockedPorts(c.Network.BlockedPorts); err != nil {
+		return fmt.Errorf("network.blocked_ports: %v", err)
+	}
+	if _, err := ParseNets(c.Admission.TrustedProxies); err != nil {
+		return fmt.Errorf("admission.trusted_proxies: %v", err)
+	}
+	for p, o := range c.Admission.Projects {
+		if p == "" || o.DefaultTTLRunningStop < 0 || o.DefaultTTLMax < 0 || o.MaxTTLMax < 0 || o.MaxImages < 0 || o.MaxImageMB < 0 || o.ImageTTL < 0 {
+			return fmt.Errorf("admission.projects: %q: a project path and values >= 0 required", p)
+		}
 	}
 	if e := c.E2B; e != nil {
 		if len(e.Gateways) > 0 && e.Project == "" {
@@ -666,4 +787,59 @@ func def(v *float64, d float64) {
 	if *v == 0 {
 		*v = d
 	}
+}
+
+// PortBlock is one entry of NetworkPolicy.BlockedPorts: ports Lo-Hi of
+// Proto ("tcp", "udp", or "" for both).
+type PortBlock struct {
+	Lo, Hi int
+	Proto  string
+}
+
+// BlockedPorts parses NetworkPolicy.BlockedPorts.
+func BlockedPorts(entries []string) ([]PortBlock, error) {
+	var out []PortBlock
+	for _, e := range entries {
+		ports, proto, hasProto := strings.Cut(strings.TrimSpace(e), "/")
+		if hasProto && proto != "tcp" && proto != "udp" {
+			return nil, fmt.Errorf("%q: protocol %q is not tcp or udp", e, proto)
+		}
+		lo, hi, isRange := strings.Cut(ports, "-")
+		if !isRange {
+			hi = lo
+		}
+		l, err1 := strconv.Atoi(lo)
+		h, err2 := strconv.Atoi(hi)
+		if err1 != nil || err2 != nil || l < 1 || h > 65535 || h < l {
+			return nil, fmt.Errorf("%q: not a port or port range (1-65535)", e)
+		}
+		out = append(out, PortBlock{Lo: l, Hi: h, Proto: proto})
+	}
+	return out, nil
+}
+
+// ParseNets parses IPs and CIDRs (an IP is a /32 or /128).
+func ParseNets(entries []string) ([]*net.IPNet, error) {
+	var out []*net.IPNet
+	for _, e := range entries {
+		e = strings.TrimSpace(e)
+		if !strings.Contains(e, "/") {
+			ip := net.ParseIP(e)
+			if ip == nil {
+				return nil, fmt.Errorf("%q is not an IP address or network", e)
+			}
+			bits := 128
+			if ip.To4() != nil {
+				ip, bits = ip.To4(), 32
+			}
+			out = append(out, &net.IPNet{IP: ip, Mask: net.CIDRMask(bits, bits)})
+			continue
+		}
+		_, n, err := net.ParseCIDR(e)
+		if err != nil {
+			return nil, fmt.Errorf("%q is not an IP address or network", e)
+		}
+		out = append(out, n)
+	}
+	return out, nil
 }

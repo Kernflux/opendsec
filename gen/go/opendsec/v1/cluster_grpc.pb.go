@@ -205,6 +205,7 @@ const (
 	Edge_EndMove_FullMethodName           = "/opendsec.v1.Edge/EndMove"
 	Edge_CheckLayers_FullMethodName       = "/opendsec.v1.Edge/CheckLayers"
 	Edge_DeleteSnapshot_FullMethodName    = "/opendsec.v1.Edge/DeleteSnapshot"
+	Edge_ImportImage_FullMethodName       = "/opendsec.v1.Edge/ImportImage"
 )
 
 // EdgeClient is the client API for Edge service.
@@ -274,6 +275,9 @@ type EdgeClient interface {
 	// snapshot's files (and this edge's copy).
 	CheckLayers(ctx context.Context, in *CheckLayersRequest, opts ...grpc.CallOption) (*CheckLayersResponse, error)
 	DeleteSnapshot(ctx context.Context, in *DeleteSnapshotRequest, opts ...grpc.CallOption) (*Empty, error)
+	// Pulls an image from a registry into the store for a user (spec §43.3),
+	// within the limits given, reaching only public addresses.
+	ImportImage(ctx context.Context, in *EdgeImportRequest, opts ...grpc.CallOption) (*EdgeImportResponse, error)
 }
 
 type edgeClient struct {
@@ -723,6 +727,16 @@ func (c *edgeClient) DeleteSnapshot(ctx context.Context, in *DeleteSnapshotReque
 	return out, nil
 }
 
+func (c *edgeClient) ImportImage(ctx context.Context, in *EdgeImportRequest, opts ...grpc.CallOption) (*EdgeImportResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(EdgeImportResponse)
+	err := c.cc.Invoke(ctx, Edge_ImportImage_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // EdgeServer is the server API for Edge service.
 // All implementations must embed UnimplementedEdgeServer
 // for forward compatibility.
@@ -790,6 +804,9 @@ type EdgeServer interface {
 	// snapshot's files (and this edge's copy).
 	CheckLayers(context.Context, *CheckLayersRequest) (*CheckLayersResponse, error)
 	DeleteSnapshot(context.Context, *DeleteSnapshotRequest) (*Empty, error)
+	// Pulls an image from a registry into the store for a user (spec §43.3),
+	// within the limits given, reaching only public addresses.
+	ImportImage(context.Context, *EdgeImportRequest) (*EdgeImportResponse, error)
 	mustEmbedUnimplementedEdgeServer()
 }
 
@@ -919,6 +936,9 @@ func (UnimplementedEdgeServer) CheckLayers(context.Context, *CheckLayersRequest)
 }
 func (UnimplementedEdgeServer) DeleteSnapshot(context.Context, *DeleteSnapshotRequest) (*Empty, error) {
 	return nil, status.Error(codes.Unimplemented, "method DeleteSnapshot not implemented")
+}
+func (UnimplementedEdgeServer) ImportImage(context.Context, *EdgeImportRequest) (*EdgeImportResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ImportImage not implemented")
 }
 func (UnimplementedEdgeServer) mustEmbedUnimplementedEdgeServer() {}
 func (UnimplementedEdgeServer) testEmbeddedByValue()              {}
@@ -1622,6 +1642,24 @@ func _Edge_DeleteSnapshot_Handler(srv interface{}, ctx context.Context, dec func
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Edge_ImportImage_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(EdgeImportRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EdgeServer).ImportImage(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Edge_ImportImage_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EdgeServer).ImportImage(ctx, req.(*EdgeImportRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Edge_ServiceDesc is the grpc.ServiceDesc for Edge service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1768,6 +1806,10 @@ var Edge_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "DeleteSnapshot",
 			Handler:    _Edge_DeleteSnapshot_Handler,
+		},
+		{
+			MethodName: "ImportImage",
+			Handler:    _Edge_ImportImage_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

@@ -38,7 +38,7 @@ func (g *Gateway) portProxy(id string, port int) http.Handler {
 		}
 		// Dialed here, on the request's context: the transport's own dials
 		// go on after the request is gone. The connection lives on.
-		conn, derr := g.dialPort(client.WithToken(context.Background(), key), r.Context(), id, port)
+		conn, derr := g.dialPort(forwarded(client.WithToken(context.Background(), key), r), r.Context(), id, port)
 		var once atomic.Pointer[net.Conn]
 		if derr == nil {
 			once.Store(&conn)

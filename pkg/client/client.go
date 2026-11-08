@@ -54,6 +54,19 @@ func WithCAFile(path string) Option {
 	}
 }
 
+// WithSystemRoots enables TLS with the system's trusted CAs, for
+// apiservers behind a public certificate.
+func WithSystemRoots() Option {
+	return func(o *options) {
+		p, err := x509.SystemCertPool()
+		if err != nil {
+			o.err = err
+			return
+		}
+		o.pool = p
+	}
+}
+
 // WithCAPool enables TLS with the given trust roots.
 func WithCAPool(p *x509.CertPool) Option { return func(o *options) { o.pool = p } }
 

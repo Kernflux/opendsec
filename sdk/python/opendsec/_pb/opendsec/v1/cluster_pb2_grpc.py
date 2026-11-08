@@ -359,6 +359,11 @@ class EdgeStub(object):
                 request_serializer=opendsec_dot_v1_dot_cluster__pb2.DeleteSnapshotRequest.SerializeToString,
                 response_deserializer=opendsec_dot_v1_dot_types__pb2.Empty.FromString,
                 _registered_method=True)
+        self.ImportImage = channel.unary_unary(
+                '/opendsec.v1.Edge/ImportImage',
+                request_serializer=opendsec_dot_v1_dot_cluster__pb2.EdgeImportRequest.SerializeToString,
+                response_deserializer=opendsec_dot_v1_dot_cluster__pb2.EdgeImportResponse.FromString,
+                _registered_method=True)
 
 
 class EdgeServicer(object):
@@ -626,6 +631,14 @@ class EdgeServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def ImportImage(self, request, context):
+        """Pulls an image from a registry into the store for a user (spec §43.3),
+        within the limits given, reaching only public addresses.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_EdgeServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -828,6 +841,11 @@ def add_EdgeServicer_to_server(servicer, server):
                     servicer.DeleteSnapshot,
                     request_deserializer=opendsec_dot_v1_dot_cluster__pb2.DeleteSnapshotRequest.FromString,
                     response_serializer=opendsec_dot_v1_dot_types__pb2.Empty.SerializeToString,
+            ),
+            'ImportImage': grpc.unary_unary_rpc_method_handler(
+                    servicer.ImportImage,
+                    request_deserializer=opendsec_dot_v1_dot_cluster__pb2.EdgeImportRequest.FromString,
+                    response_serializer=opendsec_dot_v1_dot_cluster__pb2.EdgeImportResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -1912,6 +1930,33 @@ class Edge(object):
             '/opendsec.v1.Edge/DeleteSnapshot',
             opendsec_dot_v1_dot_cluster__pb2.DeleteSnapshotRequest.SerializeToString,
             opendsec_dot_v1_dot_types__pb2.Empty.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ImportImage(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/opendsec.v1.Edge/ImportImage',
+            opendsec_dot_v1_dot_cluster__pb2.EdgeImportRequest.SerializeToString,
+            opendsec_dot_v1_dot_cluster__pb2.EdgeImportResponse.FromString,
             options,
             channel_credentials,
             insecure,

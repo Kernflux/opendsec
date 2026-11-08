@@ -456,10 +456,13 @@ class DSecClient:
 
     def __init__(self, endpoint: str | None = None, token: str | None = None,
                  project: str | None = None, ca_file: str | None = None,
-                 server_name: str | None = None, retry_timeout: float = 60):
+                 server_name: str | None = None, retry_timeout: float = 60,
+                 tls: bool | None = None):
         """``endpoint`` (or OPENDSEC_ADDR) is ``host:port``, or several apiservers
         as ``ip:port,ip:port`` (calls go to whichever are up).
-        ``ca_file`` (or OPENDSEC_CA) enables TLS, trusting that CA certificate.
+        ``ca_file`` (or OPENDSEC_CA) enables TLS, trusting that CA certificate;
+        ``tls`` (or OPENDSEC_TLS=1) enables it with the system's trusted CAs,
+        for apiservers behind a public certificate.
         ``retry_timeout``: how long runtime calls (shell, streams, file reads)
         keep retrying while the sandbox's edge or the apiserver is unreachable,
         e.g. restarting; 0 disables retries."""
@@ -469,6 +472,9 @@ class DSecClient:
         self.ca_file = ca_file or os.environ.get("OPENDSEC_CA") or None
         self.server_name = server_name
         self.retry_timeout = retry_timeout
+        if tls is None:
+            tls = os.environ.get("OPENDSEC_TLS", "").lower() in ("1", "true", "yes")
+        self.tls = tls
         self._channel: grpc.aio.Channel | None = None
         self._stub: opendsec_pb2_grpc.DSecStub | None = None
 
@@ -500,6 +506,10 @@ class DSecClient:
                 if server_name:
                     options.append(("grpc.ssl_target_name_override", server_name))
                 self._channel = grpc.aio.secure_channel(target, creds, options=options)
+            elif self.tls:
+                if server_name:
+                    options.append(("grpc.ssl_target_name_override", server_name))
+                self._channel = grpc.aio.secure_channel(target, grpc.ssl_channel_credentials(), options=options)
             else:
                 # Plaintext: dev clusters only; production apiservers require TLS.
                 self._channel = grpc.aio.insecure_channel(target, options=options)
@@ -678,6 +688,17 @@ class DSecClient:
 
     async def delete_image(self, name: str) -> None:
         await _call(self._need().DeleteImage(opendsec_pb2.ImageRef(name=name)))
+
+    async def import_image(self, image: str, ref: str, username: str = "", password: str = "",
+                           overwrite: bool = False, timeout: float = 1800):
+        """Pull ``ref`` from a registry (``python:3.12-slim``,
+        ``ghcr.io/org/img:tag``) into the image store as ``image``
+        (``<project>/<repo>:<tag>``). The cluster pulls it; ``username`` and
+        ``password`` log in to a private registry. Bounded by the cluster's
+        image_import limits and the project's image quota. Returns the new
+        image's info."""
+        return await _call(self._need().ImportImage(opendsec_pb2.ImportImageRequest(
+            image=image, ref=ref, username=username, password=password, overwrite=overwrite), timeout=timeout))
 
     async def get_project(self, project: str | None = None) -> iam_pb2.Project:
         return await _call(self._need().GetProject(iam_pb2.GetProjectRequest(project=project or self.project)))
