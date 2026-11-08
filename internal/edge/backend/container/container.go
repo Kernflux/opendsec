@@ -14,7 +14,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -468,7 +467,10 @@ func (b *Backend) start(ctx context.Context, sb *backend.Sandbox, lease string, 
 		Resolv: resolv, ReadonlyPaths: spec.ReadonlyPaths, MaskedPaths: spec.MaskedPaths, Devices: devices, Mounts: gpuMounts,
 		Lower: lower, Disk: loopDev, DiskDir: disk, Rootfs: rootfs, AgentDir: b.opt.AgentDir, RunDir: runDir,
 		Hostname: "sb-" + lease[:12], CoreSched: b.opt.CoreSched,
+		// chronus by its path: aether's default (next to itself) needs
+		// /proc/self/exe, which was seen to fail now and then (kernel 7.0).
 		AetherArgs: []string{"--socket", "/.opendsec/run/aether.sock", "--rundir", "/.opendsec/run",
+			"--chronus", "/.opendsec/bin/opendsec-chronus",
 			"--workdir", workdir, "--user", user, "--env", string(aenv)},
 	})
 	self, err := os.Executable()
@@ -553,7 +555,26 @@ func (b *Backend) connect(ctx context.Context, s *sandbox, sock string, deadline
 	for {
 		watch, err := s.rt.Watch(context.Background(), &pb.Empty{})
 		if err == nil {
-			if _, err = watch.Recv(); err == nil {
+			// The first heartbeat, by the deadline: an aether that accepted
+			// the stream but never answers must not hang the creation.
+			got := make(chan error, 1)
+			go func() { _, err := watch.Recv(); got <- err }()
+			left := time.Until(deadline)
+			if left < 0 {
+				left = 0
+			}
+			select {
+			case err = <-got:
+			case <-time.After(left):
+				s.conn.Close() // ends the Recv
+				<-got
+				return nil, fmt.Errorf("aether accepted but sent no heartbeat within %v: %s", startTimeout, tail(filepath.Join(s.dir, "init.log")))
+			case <-s.exited:
+				s.conn.Close()
+				<-got
+				return nil, fmt.Errorf("sandbox init exited: %s", tail(filepath.Join(s.dir, "init.log")))
+			}
+			if err == nil {
 				return watch, nil
 			}
 		}
@@ -883,12 +904,26 @@ func (b *Backend) watch(s *sandbox, w pb.Runtime_WatchClient) {
 	b.onLost(id, reason)
 }
 
+// tail is the end of a log, for errors. A Go crash (fatal error, panic)
+// puts what matters first and a long goroutine dump after: its first lines
+// come first then.
 func tail(path string) string {
 	b, _ := os.ReadFile(path)
+	head := ""
+	for _, mark := range []string{"runtime: failed", "fatal error:", "panic:", "SIGSEGV", "SIGBUS"} {
+		if i := strings.Index(string(b), mark); i >= 0 {
+			end := i + 400
+			if end > len(b) {
+				end = len(b)
+			}
+			head = strings.TrimSpace(string(b[i:end])) + " … "
+			break
+		}
+	}
 	if len(b) > 2000 {
 		b = b[len(b)-2000:]
 	}
-	return strings.TrimSpace(string(b))
+	return head + strings.TrimSpace(string(b))
 }
 
 // teardown releases everything a (possibly half-created) sandbox holds.
@@ -1016,9 +1051,13 @@ func (b *Backend) MemoryCurrent(id string) int64 {
 // goMaxProcs sizes the Go runtime of the sandbox init to the sandbox's CPU
 // limit. The init starts before it can read its cgroup, and sized to a large
 // host's CPU count its runtime alone can exceed a small sandbox's memory.
+// goMaxProcs is the agents' GOMAXPROCS (theirs only: the processes they
+// start do not inherit it). Their work waits on I/O; a Go runtime sized to
+// a 384-thread host started ~80 threads and, in a 128 MB sandbox on a host
+// with transparent huge pages, failed to create the next one (ENOMEM).
 func goMaxProcs(cores float64) int {
 	if cores <= 0 {
-		return runtime.NumCPU()
+		return 4
 	}
-	return max(2, int(math.Ceil(cores)))
+	return min(16, max(2, int(math.Ceil(cores))))
 }

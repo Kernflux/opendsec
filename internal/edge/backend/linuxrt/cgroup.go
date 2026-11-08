@@ -182,6 +182,17 @@ func (c *Cgroup) Remove() {
 	}
 }
 
+// MemoryMax is the group's memory.max as written there ("max" or bytes).
+func (c *Cgroup) MemoryMax() (string, error) {
+	b, err := os.ReadFile(filepath.Join(c.Path, "memory.max"))
+	return strings.TrimSpace(string(b)), err
+}
+
+// SetMemoryMax writes memory.max ("max" or bytes).
+func (c *Cgroup) SetMemoryMax(v string) error {
+	return os.WriteFile(filepath.Join(c.Path, "memory.max"), []byte(v), 0)
+}
+
 func (c *Cgroup) MemoryCurrent() int64 {
 	b, err := os.ReadFile(filepath.Join(c.Path, "memory.current"))
 	if err != nil {

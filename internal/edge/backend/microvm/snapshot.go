@@ -135,8 +135,7 @@ func (b *Backend) snapshot(ctx context.Context, sb *backend.Sandbox, id string, 
 		tmpState, tmpMem := "/snap-"+id+".vmstate", "/snap-"+id+".mem"
 		defer os.Remove(filepath.Join(s.root, tmpState))
 		defer os.Remove(filepath.Join(s.root, tmpMem))
-		if err := v.api.call(ctx, "PUT", "/snapshot/create", map[string]string{"snapshot_type": typ,
-			"snapshot_path": tmpState, "mem_file_path": tmpMem}, nil); err != nil {
+		if err := b.snapshotCreate(ctx, s, v, typ, tmpState, tmpMem); err != nil {
 			v.api.setState(ctx, "Resumed")
 			return nil, fmt.Errorf("snapshot: %w", err)
 		}

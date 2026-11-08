@@ -229,6 +229,20 @@ docs/OPERATIONS.md §6.4.
   they go to the image store.
 
 ### Fixed
+- microVM snapshots (fork, snapshot images, pause): firecracker writes the
+  memory file from inside the VM's cgroup, whose page cache was charged on
+  top of the guest's memory; a guest using most of its memory got
+  firecracker OOM-killed mid-snapshot (seen on kernel 7.0). The group gets
+  the VM's memory size more while the snapshot is written, then the files
+  are flushed and dropped from the cache and the limit is put back.
+- Containers: the agents' GOMAXPROCS was the host's CPU count when a
+  sandbox set no CPUs (384 on our hosts): ~80 threads, and in a small
+  sandbox on a host with transparent huge pages the next thread failed
+  (ENOMEM) and the sandbox never started. Now 4 then, at most 16.
+- Containers: a creation no longer waits forever for an agent that accepts
+  its stream but never sends its first heartbeat (bounded by the start
+  timeout); the agent is given chronus's path instead of finding it through
+  /proc/self/exe; an init that crashes reports the crash's first lines.
 - Image quotas: an image made from an image of its own project (a
   pack_diff, snapshot or compose of it) now also counts that image's size.
   Before, an import overwritten by a pack_diff of itself (as Template

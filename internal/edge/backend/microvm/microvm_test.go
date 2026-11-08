@@ -136,6 +136,21 @@ func newBackendOpt(t *testing.T, parent string, st *images.Store, edit func(*Opt
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { os.RemoveAll(state) })
+	t.Cleanup(func() { // on failure, the VMs' consoles (firecracker's own log among them)
+		if !t.Failed() {
+			return
+		}
+		filepath.WalkDir(state, func(p string, d os.DirEntry, err error) error {
+			if err == nil && d.Name() == "console.log" {
+				b, _ := os.ReadFile(p)
+				if len(b) > 8<<10 {
+					b = b[len(b)-8<<10:]
+				}
+				t.Logf("%s (tail):\n%s", p, b)
+			}
+			return nil
+		})
+	})
 	if st == nil {
 		if st, err = images.NewStore(filepath.Join(state, "store")); err != nil {
 			t.Fatal(err)

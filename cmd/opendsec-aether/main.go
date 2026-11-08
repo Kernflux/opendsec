@@ -42,7 +42,11 @@ func main() {
 		os.Exit(2)
 	}
 	if *chronus == "" {
-		self, _ := os.Executable()
+		self, err := os.Executable()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "aether: cannot tell where it runs from (pass --chronus):", err)
+			os.Exit(2)
+		}
 		*chronus = filepath.Join(filepath.Dir(self), "opendsec-chronus")
 	}
 	a := aether.New(aether.Config{RunDir: *rundir, ChronusBin: *chronus, Workdir: *workdir, User: *user, Env: envMap})

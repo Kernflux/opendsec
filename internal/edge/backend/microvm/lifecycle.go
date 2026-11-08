@@ -539,8 +539,7 @@ func (b *Backend) Pause(ctx context.Context, sb *backend.Sandbox) error {
 	}
 	os.Remove(filepath.Join(s.root, pauseState))
 	os.Remove(filepath.Join(s.root, mem))
-	if err := v.api.call(ctx, "PUT", "/snapshot/create", map[string]string{"snapshot_type": typ,
-		"snapshot_path": pauseState, "mem_file_path": mem}, nil); err != nil {
+	if err := b.snapshotCreate(ctx, s, v, typ, pauseState, mem); err != nil {
 		v.api.setState(ctx, "Resumed")
 		return fmt.Errorf("pause snapshot: %w", err)
 	}
