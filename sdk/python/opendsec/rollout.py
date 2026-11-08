@@ -1,5 +1,5 @@
 """Rollouts: run a batch of inputs, each in a fresh sandbox, and collect the
-results (docs/private usability spec, P1; docs/en/PYTHON_SDK.md "Rollouts").
+results (docs/en/PYTHON_SDK.md, "Rollouts").
 
     run = await client.rollouts.start(
         args=DSecRunArgs(backend="microvm", image="root/py:3.12"),
