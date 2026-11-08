@@ -140,8 +140,9 @@ class _Retry:
     ``UNAVAILABLE`` errors are retried with backoff for up to ``window``
     seconds since the last progress."""
 
-    def __init__(self, window: float):
+    def __init__(self, window: float, hold: asyncio.Event | None = None):
         self.window = window
+        self.hold = hold
         self.since: float | None = None
         self.delay = 0.1
 
@@ -152,6 +153,12 @@ class _Retry:
         """Sleep before the next attempt; False if ``err`` is final."""
         if err.reason != UNAVAILABLE or self.window <= 0:
             return False
+        if self.hold is not None and not self.hold.is_set():
+            # Held (e.g. the sandbox's rollout is paused): a retry now would
+            # resume the sandbox. Wait, then retry with a fresh window.
+            await self.hold.wait()
+            self.progress()
+            return True
         now = asyncio.get_running_loop().time()
         if self.since is None:
             self.since = now
@@ -168,9 +175,10 @@ def _new_lease() -> str:
     return base64.b32encode(os.urandom(16)).decode().rstrip("=").lower()
 
 
-async def _retrying(window: float, make):
-    """Await ``make()`` (a fresh call each attempt), retrying UNAVAILABLE."""
-    r = _Retry(window)
+async def _retrying(window: float, make, hold: asyncio.Event | None = None):
+    """Await ``make()`` (a fresh call each attempt), retrying UNAVAILABLE
+    (not while ``hold`` is cleared)."""
+    r = _Retry(window, hold)
     while True:
         try:
             return await _call(make())
@@ -306,6 +314,9 @@ class Sandbox:
     def __init__(self, client: "DSecClient", info: types_pb2.Sandbox):
         self._client = client
         self.info = info
+        # While cleared, calls cut by the sandbox pausing wait to retry (a
+        # retry would resume it): set by rollouts while they are paused.
+        self.hold: asyncio.Event | None = None
 
     @property
     def id(self) -> str:
@@ -358,7 +369,7 @@ class Sandbox:
         return self._client._need()
 
     def _retrying(self, make):
-        return _retrying(self._client.retry_timeout, make)
+        return _retrying(self._client.retry_timeout, make, self.hold)
 
     def _exec_req(self, cmd, timeout, session, env, cwd, background=False, user=None):
         # The request id lets a retry find the command instead of running it twice.

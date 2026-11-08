@@ -54,6 +54,21 @@ run.export_jsonl("results.jsonl")              # 一行元数据，再每条输�
 - 清理：一批的所有 sandbox 都带 `task_id = run.run_id`。每条结束就停掉它的 sandbox，最后再扫一遍。`await run.cancel()` 停止派发并停掉全部；`async with run:` 出错时自动取消。程序被强制结束的话，`await client.rollouts.cleanup(run_id)`（或 `opendsecctl task stop <run_id>`）停掉它留下的；sandbox 还带着“整批预算 + 5 分钟”的 `ttl_max`。一批活在发起它的进程里：进程退出时还没开始的输入不会再跑。
 - `run.progress()` 或 `on_progress=回调`：各状态数量、活跃 sandbox、待清理数。
 
+### 暂停整批，以及从运行中的 microVM 开始
+
+```python
+await run.pause()      # 不再派发；这一批的所有 sandbox 一次暂停（pause_task）
+...                    # 例如训练端换权重
+await run.resume()     # 两者都返回 TaskActionResult：affected、failed、errors
+
+# 每条输入都从 source（运行中的 microVM）此刻的状态继续，包括内存：
+run = await client.rollouts.start_from(source, inputs, episode=continue_from_here, concurrency=64)
+```
+
+- 暂停期间：episode 在下一次调用 sandbox 前等待；被暂停打断的调用要等恢复后才重试（调用已暂停的 sandbox 会把它恢复）。`execution_timeout_s` 不算暂停时间，`run_timeout_s` 按墙钟算。恢复失败的 sandbox（`failed > 0`，例如没有空间）保持暂停，它的输入按自己的执行预算超时。`run.pauses` 记录每次暂停，导出的元数据里也有。
+- `start_from` 先把源保存为一个带内存的快照镜像（源只在那一刻暂停，之后继续运行），每条输入的 sandbox 都从这个镜像启动，所以不管多少条都从同一时刻开始。这个镜像属于这一批，期间计入项目的镜像配额，结束时删除（`keep_snapshot=True` 保留）。源不属于这一批，不会被它停掉。源和外部服务的连接不会带过去。
+- `journal="results.jsonl"`（命令行的 `--output`）在每条输入结束时立即写入它的结果：客户端崩溃时已有结果不丢，`rerun` 只重跑没成功或没跑完的输入。
+
 命令行（同一个数据模型）：
 
 ```sh

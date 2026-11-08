@@ -104,6 +104,11 @@ docs/OPERATIONS.md §6.4.
   (status, exit code, output tails, a result file), progress, JSON Lines
   export, cancel, rerun of what failed, and cleanup by run id (the run id
   is every sandbox's task_id). Command or episode (multi-step) mode.
+  Pausing a run (`run.pause()`/`resume()`: no dispatch, execution time
+  leaves out the pause), `start_from(source)`: every input continues from
+  a running microVM's memory at one instant (a snapshot image the run
+  owns), and a journal (`--output`) written as inputs finish, so a dead
+  client's results are kept and `rerun` runs only the rest.
 - Python SDK: `client.sandbox(args)` (a sandbox for an `async with` block,
   stopped at its end; an hour's `ttl_max` by default); `Sandbox.exec(argv)`
   (no shell: arguments reach the program as they are); the process API
@@ -224,6 +229,11 @@ docs/OPERATIONS.md §6.4.
   they go to the image store.
 
 ### Fixed
+- Edge: a runtime call cut by its sandbox pausing or moving (microVMs close
+  their agent connection) failed with an unclassified error; it is now
+  `unavailable`, which the SDK retries (commands by request id, so a
+  command is not run twice). The SDK's retries wait while a sandbox's
+  `hold` is cleared, so a paused rollout is not resumed by them.
 - Python SDK: `write_file` now rides out a restarting node like the other
   calls (whole-file writes; appends are not retried, which could write
   twice).

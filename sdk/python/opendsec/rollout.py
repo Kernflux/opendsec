@@ -27,6 +27,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import dataclasses
+import inspect
 import json
 import os
 import random
@@ -137,10 +138,12 @@ class Progress:
     cleanup_pending: int
     cleanup_failed: int
     elapsed_s: float
+    state: str = "running"  # running | pausing | paused | resuming (the run's)
 
     def line(self) -> str:
         c = self.counts
-        return (f"{self.run_id}  {sum(c.get(s, 0) for s in FINAL)}/{self.total} done  "
+        state = "" if self.state == "running" else f"[{self.state.upper()}]  "
+        return (f"{self.run_id}  {state}{sum(c.get(s, 0) for s in FINAL)}/{self.total} done  "
                 f"ok {c.get(SUCCEEDED, 0)}  failed {c.get(FAILED, 0)}  timed out {c.get(TIMED_OUT, 0)}  "
                 f"result errors {c.get(RESULT_ERROR, 0)}  create failed {c.get(CREATE_FAILED, 0)}  "
                 f"cancelled {c.get(CANCELLED, 0)}  unknown {c.get(UNKNOWN, 0)}  |  queued {c.get('queued', 0)}  "
@@ -162,12 +165,18 @@ class Rollouts:
                     result_path: str | None = None, run_id: str | None = None,
                     on_progress: Callable[[Progress], None] | None = None,
                     tail_bytes: int = 16 << 10, max_result_bytes: int = 8 << 20, max_payload_bytes: int = 1 << 20,
-                    attempt: int = 1, source_run_id: str = "") -> "RolloutRun":
+                    attempt: int = 1, source_run_id: str = "", journal: str | None = None,
+                    journal_overwrite: bool = False) -> "RolloutRun":
         """Start a run in the background and return its handle (see the
         module doc). ``command`` is an argv list (no shell), or with
         ``shell=True`` a shell command line; or pass ``episode``, an async
         function ``(sandbox, payload) -> JSON-able result``. In command mode
-        the payload is at $OPENDSEC_INPUT_PATH (JSON)."""
+        the payload is at $OPENDSEC_INPUT_PATH (JSON).
+
+        ``journal``: a file that gets the run's metadata line at once, and
+        each input's result line as soon as it is final (export_jsonl's
+        format). If this process dies, the results so far are there, and
+        rerun() with them runs only what did not finish."""
         if (command is None) == (episode is None):
             raise ValueError("give either command or episode")
         if command is not None:
@@ -183,7 +192,53 @@ class Rollouts:
                          run_timeout_s=run_timeout_s, result_path=result_path, run_id=run_id or new_run_id(),
                          on_progress=on_progress, tail_bytes=tail_bytes, max_result_bytes=max_result_bytes,
                          attempt=attempt, source_run_id=source_run_id)
+        if journal:
+            run._journal = open(journal, "w" if journal_overwrite else "x")
+            run._journal.write(json.dumps(run.meta) + "\n")
+            run._journal.flush()
         run._begin()
+        return run
+
+    async def start_from(self, source: Sandbox, inputs: Iterable[dict], *, args: DSecRunArgs | None = None,
+                         keep_snapshot: bool = False, **kw) -> "RolloutRun":
+        """Start a run whose sandboxes all continue from ``source``, a
+        running microVM, as it is now: its memory and processes included.
+
+        The source is saved once as a memory snapshot image (it pauses for
+        that moment and goes on running); every input's sandbox starts from
+        that image, so all begin from the same instant however many there
+        are and however they are batched. The image belongs to the run and
+        is deleted when it ends (``keep_snapshot`` keeps it); it counts
+        against the project's image quota meanwhile. The source does not
+        belong to the run: nothing here stops it.
+
+        ``args`` defaults to the source's (network rules, user); the
+        resources are the snapshot's own. Connections the source had to
+        outside services do not carry over: copies must reconnect. Other
+        keywords as start()."""
+        spec = source.info.spec
+        if spec.backend != "microvm":
+            raise ValueError(f"start_from needs a microvm source (its memory is the starting point); "
+                             f"{source.id} is {spec.backend}: save it with pack_diff and start() from that image")
+        _check_inputs(inputs := list(inputs), kw.get("max_payload_bytes", 1 << 20))
+        run_id = kw.pop("run_id", None) or new_run_id()
+        project = (args.project if args and args.project else None) or source.info.project or self._client.project
+        image = f"{project}/rollout-{run_id}:start"
+        await source.create_snapshot(image, memory=True)
+        base = args or DSecRunArgs(network_rules=dict(spec.network_rules), init_user=spec.init_user or "root")
+        # The snapshot's own shape: 0 lets the cluster fill it in.
+        base = dataclasses.replace(base, backend="microvm", image=image, cpu_cores_limit=0, memory_limit_mb=0,
+                                   disk_mb=0, project=project)
+        try:
+            run = await self.start(base, inputs, run_id=run_id, **kw)
+        except BaseException:
+            try:
+                await self._client.delete_image(image)
+            except DSecError:
+                pass
+            raise
+        run._snapshot_image = None if keep_snapshot else image
+        run.meta.update(source_sandbox=source.id, snapshot_image=image)
         return run
 
     async def run(self, args: DSecRunArgs, inputs: Iterable[dict], **kw) -> RolloutSummary:
@@ -199,18 +254,14 @@ class Rollouts:
                     statuses: Iterable[str] = (FAILED, TIMED_OUT, RESULT_ERROR, CREATE_FAILED, CANCELLED, UNKNOWN),
                     **kw) -> "RolloutRun":
         """Start a new run of the inputs whose previous result has one of
-        ``statuses`` (not succeeded, by default): a new run id, the same
+        ``statuses`` (not succeeded, by default), and of those with no
+        result at all (a journal of a run that died): a new run id, the same
         input ids, attempt + 1, source_run_id set. Whether redoing an input
         is safe (external side effects) is the caller's call."""
-        want = set(statuses)
-        prev = [r if isinstance(r, dict) else r.to_dict() for r in previous]
-        redo = {r["input_id"]: r for r in prev if r.get("status") in want}
-        chosen = [i for i in inputs if str(i["id"]) in redo]
+        chosen, attempt, source = select_rerun(inputs, previous, statuses)
         if not chosen:
             raise ValueError("no input to run again")
-        first = next(iter(redo.values()))
-        return await self.start(args, chosen, attempt=max(r.get("attempt", 1) for r in redo.values()) + 1,
-                                source_run_id=first.get("run_id", ""), **kw)
+        return await self.start(args, chosen, attempt=attempt, source_run_id=source, **kw)
 
     async def cleanup(self, run_id: str, project: str | None = None) -> list[str]:
         """Stop every sandbox a run left (any process can: by its task id).
@@ -277,12 +328,22 @@ class RolloutRun:
         self._deadline = 0.0
         self._cleanup_pending = 0
         self._summary: RolloutSummary | None = None
+        # Pausing (pause/resume): dispatch and episodes wait while cleared;
+        # execution time leaves out the paused spans.
+        self._running = asyncio.Event()
+        self._running.set()
+        self.state = "running"
+        self._paused_total = 0.0
+        self._paused_since: float | None = None
+        self.pauses: list[dict] = []
+        self._snapshot_image: str | None = None  # start_from's, deleted at the end
+        self._journal = None  # start(journal=...): results appended as they are final
         self.meta = {"type": "run", "run_id": run_id, "started_at": "", "backend": args.backend, "image": args.image,
                      "command": command if not callable(command) else None, "shell": shell,
                      "episode": getattr(episode, "__name__", None) if episode else None,
                      "concurrency": concurrency, "execution_timeout_s": execution_timeout_s,
                      "run_timeout_s": run_timeout_s, "result_path": result_path, "attempt": attempt,
-                     "source_run_id": source_run_id, "inputs": len(items)}
+                     "source_run_id": source_run_id, "inputs": len(items), "pauses": []}
 
     # -- lifecycle --------------------------------------------------------------------
 
@@ -342,10 +403,21 @@ class RolloutRun:
             leftover = await Rollouts(self.client).cleanup(self.run_id, self.args.project)
         except DSecError as e:
             leftover = [f"(sweep failed: {e.code}: {e.message})"]
+        if self._snapshot_image:  # start_from's starting point: the run's own
+            try:
+                await self.client.delete_image(self._snapshot_image)
+            except DSecError as e:
+                leftover.append(f"(image {self._snapshot_image} not deleted: {e.code}: {e.message})")
         for r in self.results:
             if not r.done:
                 r.status, r.error = UNKNOWN, r.error or _err("internal", "the run ended without a final status")
+        self.meta["pauses"] = self.pauses
         self._summary = self._snapshot_summary(leftover)
+        if self._journal:
+            for r in self.results:  # those that turned final here, not in _item
+                if r.status == UNKNOWN and r.error and r.error.get("message") == "the run ended without a final status":
+                    self._log(r)
+            self._journal.close()
         self._notify()
 
     def _snapshot_summary(self, leftover=None) -> RolloutSummary:
@@ -364,7 +436,7 @@ class RolloutRun:
         active = sum(counts.get(s, 0) for s in ("creating", "running", "collecting")) + self._cleanup_pending
         return Progress(self.run_id, len(self.results), counts, active, self._cleanup_pending,
                         sum(1 for r in self.results if r.cleanup_status == "failed"),
-                        asyncio.get_running_loop().time() - self._started)
+                        asyncio.get_running_loop().time() - self._started, self.state)
 
     def _notify(self) -> None:
         if self.on_progress:
@@ -377,6 +449,79 @@ class RolloutRun:
         r.status = status
         self._notify()
 
+    # -- pausing ----------------------------------------------------------------------
+
+    async def pause(self):
+        """Pause the whole run: no input is dispatched, episodes wait before
+        their next sandbox call, and every sandbox of the run is paused in
+        one call (pause_task). Returns its TaskActionResult; ``failed > 0``
+        is a partial pause (``errors`` says which), the others stay paused.
+        Execution time leaves out the paused span; run_timeout_s does not
+        (it is wall-clock)."""
+        if self.state != "running":
+            raise RuntimeError(f"run {self.run_id} is {self.state}")
+        loop = asyncio.get_running_loop()
+        self._running.clear()
+        self._paused_since = loop.time()
+        self.state = "pausing"
+        self._notify()
+        try:
+            res = await self.client.pause_task(self.run_id, self.args.project)
+        finally:
+            self.state = "paused"
+            self._notify()
+        self.pauses.append({"at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "affected": res.affected,
+                            "failed": res.failed, "errors": list(res.errors)[:20]})
+        return res
+
+    async def resume(self):
+        """Resume a paused run (resume_task). Returns its TaskActionResult:
+        sandboxes that could not resume (``failed``; e.g. no room) stay
+        paused, and their inputs time out by their execution budget."""
+        if self.state != "paused":
+            raise RuntimeError(f"run {self.run_id} is {self.state}")
+        loop = asyncio.get_running_loop()
+        self.state = "resuming"
+        self._notify()
+        try:
+            res = await self.client.resume_task(self.run_id, self.args.project)
+        finally:
+            self._paused_total += loop.time() - (self._paused_since or loop.time())
+            self._paused_since = None
+            self.state = "running"
+            self._running.set()
+            self._notify()
+        if self.pauses:
+            self.pauses[-1].update(resumed=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                                   resume_affected=res.affected, resume_failed=res.failed,
+                                   resume_errors=list(res.errors)[:20])
+        return res
+
+    def _uclock(self) -> float:
+        """Time the run has not been paused."""
+        now = asyncio.get_running_loop().time()
+        paused = self._paused_total + (now - self._paused_since if self._paused_since is not None else 0)
+        return now - paused
+
+    async def _within(self, aw, budget: float | None):
+        """Await aw for at most ``budget`` seconds of unpaused time
+        (asyncio.TimeoutError past it; aw is then cancelled)."""
+        task = asyncio.ensure_future(aw)
+        if budget is None:
+            return await task
+        start = self._uclock()
+        try:
+            while True:
+                left = budget - (self._uclock() - start)
+                if left <= 0 and self._running.is_set():
+                    raise asyncio.TimeoutError
+                done, _ = await asyncio.wait({task}, timeout=max(left, 0.05) if self._running.is_set() else 0.5)
+                if done:
+                    return task.result()
+        finally:
+            if not task.done():
+                task.cancel()
+
     # -- one input --------------------------------------------------------------------
 
     async def _item(self, n: int) -> None:
@@ -388,11 +533,19 @@ class RolloutRun:
                 if self._fatal or self._cancelled:
                     r.status, r.error = CANCELLED, self._fatal or _err("cancelled", "the run was cancelled")
                     return
+                await self._running.wait()  # paused: dispatch nothing
                 self._set(r, "creating")
                 sb = await self._create(r)
                 if sb is None:
                     return
                 r.sandbox_id = sb.id
+                sb.hold = self._running  # calls cut by a pause retry only after the resume
+                if not self._running.is_set():  # made while the run paused: pause it too
+                    try:
+                        await sb.pause()
+                    except DSecError:
+                        pass
+                    await self._running.wait()
                 r.queued_ms = int((loop.time() - self._started) * 1000)
                 try:
                     await self._execute(r, sb, n)
@@ -411,7 +564,16 @@ class RolloutRun:
             if sb is not None and not r.cleanup_status:
                 await asyncio.shield(self._stop(r, sb))
         finally:
+            if self._journal and r.done:
+                self._log(r)
             self._notify()
+
+    def _log(self, r: RolloutResult) -> None:
+        try:
+            self._journal.write(json.dumps({"type": "result", **r.to_dict()}) + "\n")
+            self._journal.flush()
+        except (OSError, ValueError):
+            pass
 
     async def _create(self, r: RolloutResult) -> Sandbox | None:
         loop = asyncio.get_running_loop()
@@ -439,14 +601,13 @@ class RolloutRun:
         _, payload, data = self.items[n]
         self._set(r, "running")
         t0 = loop.time()
+        # Execution time leaves out pauses (_within); the run's wall-clock
+        # budget is enforced by _finish.
         timeout = self.execution_timeout_s
-        if self._deadline != float("inf"):
-            left = self._deadline - loop.time()
-            timeout = left if timeout is None else min(timeout, left)
         try:
             if self.episode is not None:
                 try:
-                    value = await asyncio.wait_for(self.episode(sb, payload), timeout)
+                    value = await self._within(self.episode(_Gated(sb, self._running), payload), timeout)
                 except asyncio.TimeoutError:
                     r.status, r.error = TIMED_OUT, _err("timeout", "the episode ran past execution_timeout_s")
                     return
@@ -465,12 +626,23 @@ class RolloutRun:
                 return
 
             env = {"OPENDSEC_INPUT_PATH": INPUT_PATH, "OPENDSEC_INPUT_ID": r.input_id, "OPENDSEC_RUN_ID": self.run_id}
+            await self._running.wait()
             await sb.exec(["mkdir", "-p", INPUT_DIR], timeout=60)
             await sb.write_file(INPUT_PATH, data)
             if self.shell:
-                res = await sb.run_shell(self.command, timeout=timeout, env=env, session="rollout")
+                call = sb.run_shell(self.command, env=env, session="rollout")
             else:
-                res = await sb.exec(self.command, timeout=timeout, env=env)
+                call = sb.exec(self.command, env=env, session="rollout")
+            try:
+                res = await self._within(call, timeout)
+            except asyncio.TimeoutError:
+                # Past its budget (pauses not counted): end what it started.
+                try:
+                    await asyncio.wait_for(sb.close_session("rollout"), 30)
+                except (DSecError, asyncio.TimeoutError):
+                    pass
+                r.status, r.error = TIMED_OUT, _err("timeout", "the command ran past execution_timeout_s")
+                return
             r.exit_code = res.exit_code if res.done else None
             r.stdout_tail, cut_o = _tail(res.stdout_bytes, self.tail_bytes)
             r.stderr_tail, cut_e = _tail(res.stderr_bytes, self.tail_bytes)
@@ -576,3 +748,37 @@ def read_inputs(path: str) -> list[dict]:
                 except ValueError as e:
                     raise ValueError(f"{path}:{n}: not JSON: {e}") from None
     return out
+
+
+class _Gated:
+    """A sandbox handle for episodes: while the run is paused, its calls
+    wait (a call into a paused sandbox would resume it)."""
+
+    def __init__(self, sb: Sandbox, running: asyncio.Event):
+        self._sb, self._running = sb, running
+
+    def __getattr__(self, name):
+        attr = getattr(self._sb, name)
+        if not inspect.iscoroutinefunction(attr):
+            return attr
+
+        async def call(*a, **kw):
+            await self._running.wait()
+            return await attr(*a, **kw)
+        return call
+
+    def __repr__(self) -> str:
+        return repr(self._sb)
+
+
+def select_rerun(inputs: Iterable[dict], previous: Iterable[RolloutResult | dict],
+                 statuses: Iterable[str] = (FAILED, TIMED_OUT, RESULT_ERROR, CREATE_FAILED, CANCELLED, UNKNOWN)):
+    """The inputs to run again after ``previous`` results: those with one of
+    ``statuses``, and those with no result. Returns (inputs, attempt, source run id)."""
+    want = set(statuses)
+    prev = [r if isinstance(r, dict) else r.to_dict() for r in previous]
+    latest = {r["input_id"]: r for r in prev}
+    chosen = [i for i in inputs if str(i["id"]) not in latest or latest[str(i["id"])].get("status") in want]
+    attempt = max([r.get("attempt", 1) for r in prev] or [1]) + 1
+    source = prev[0].get("run_id", "") if prev else ""
+    return chosen, attempt, source

@@ -25,7 +25,7 @@ import sys
 
 from .client import DSecClient, DSecError, DSecRunArgs
 from .rollout import (CANCELLED, CREATE_FAILED, FAILED, RESULT_ERROR, TIMED_OUT, UNKNOWN, RolloutRun,
-                      read_inputs, read_results)
+                      read_inputs, read_results, select_rerun)
 
 
 class _Usage(Exception):
@@ -84,7 +84,7 @@ async def _run(ns, inputs, args, command, shell, attempt=1, source=""):
         run = await client.rollouts.start(args, inputs, command=command, shell=shell, concurrency=ns.concurrency,
                                           execution_timeout_s=ns.execution_timeout, run_timeout_s=ns.run_timeout,
                                           result_path=ns.result_path, run_id=ns.run_id, attempt=attempt,
-                                          source_run_id=source)
+                                          source_run_id=source, journal=ns.output, journal_overwrite=ns.overwrite)
         print(f"run {run.run_id}: {len(inputs)} inputs, concurrency {ns.concurrency} "
               f"(clean up if interrupted: python -m opendsec rollout cleanup {run.run_id})", file=sys.stderr, flush=True)
         rep = asyncio.create_task(_Reporter(ns.progress).run(run))
@@ -93,12 +93,12 @@ async def _run(ns, inputs, args, command, shell, attempt=1, source=""):
         except BaseException:  # Ctrl-C, or this task cancelled: end the run, keep what is known
             print(f"\ninterrupted: cancelling run {run.run_id} and stopping its sandboxes", file=sys.stderr, flush=True)
             summary = await asyncio.shield(run.cancel())
-            run.export_jsonl(ns.output, overwrite=ns.overwrite)
+            run.export_jsonl(ns.output, overwrite=True)
             print(summary, file=sys.stderr)
             raise
         finally:
             await rep
-        run.export_jsonl(ns.output, overwrite=ns.overwrite)
+        run.export_jsonl(ns.output, overwrite=True)
         print(summary, file=sys.stderr)
         for r in summary.failed()[:20]:
             e = r.error or {}
@@ -123,9 +123,7 @@ def cmd_run(ns) -> int:
 def cmd_rerun(ns) -> int:
     _out_ok(ns)
     meta, results = read_results(ns.results)
-    want = set(ns.status.split(","))
-    redo = {r["input_id"]: r for r in results if r.get("status") in want}
-    inputs = [i for i in read_inputs(ns.inputs) if str(i.get("id")) in redo]
+    inputs, attempt, source = select_rerun(read_inputs(ns.inputs), results, ns.status.split(","))
     if not inputs:
         print("nothing to run again", file=sys.stderr)
         return 0
@@ -137,8 +135,7 @@ def cmd_rerun(ns) -> int:
     for k in ("result_path", "execution_timeout"):
         if getattr(ns, k) is None:
             setattr(ns, k, meta.get(k if k == "result_path" else "execution_timeout_s"))
-    attempt = max(r.get("attempt", 1) for r in redo.values()) + 1
-    return asyncio.run(_run(ns, inputs, _args(ns, meta), command, shell, attempt, meta.get("run_id", "")))
+    return asyncio.run(_run(ns, inputs, _args(ns, meta), command, shell, attempt, meta.get("run_id", source)))
 
 
 def cmd_cleanup(ns) -> int:
@@ -180,7 +177,7 @@ def main(argv=None) -> int:
     run = ro.add_parser("run", help="run a command once per input")
     common(run)
     run.set_defaults(fn=cmd_run)
-    rerun = ro.add_parser("rerun", help="run again the inputs that did not succeed in a results file")
+    rerun = ro.add_parser("rerun", help="run again the inputs that did not succeed (or never finished) in a results file")
     common(rerun, rerun=True)
     rerun.add_argument("--results", required=True)
     rerun.add_argument("--status", default=",".join([FAILED, TIMED_OUT, RESULT_ERROR, CREATE_FAILED, CANCELLED, UNKNOWN]),

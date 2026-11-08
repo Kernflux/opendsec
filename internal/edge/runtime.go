@@ -7,6 +7,9 @@ import (
 	"strings"
 	"time"
 
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
 	pb "github.com/kernflux/opendsec/gen/go/opendsec/v1"
 	"github.com/kernflux/opendsec/internal/edge/backend"
 	"github.com/kernflux/opendsec/internal/images"
@@ -66,7 +69,20 @@ func unary[Req, Resp any](e *Edge, ctx context.Context, id string, req Req,
 		return zero, err
 	}
 	defer done()
-	return call(rt, ctx, req)
+	resp, err := call(rt, ctx, req)
+	return resp, connLost(ctx, id, err)
+}
+
+// connLost turns a runtime call cut by its connection closing underneath
+// (the sandbox paused or moved meanwhile: its agent connection is closed)
+// into unavailable, which callers retry: a retried command (request id) or
+// stream (offsets) picks up where it was, after the resume. A caller's own
+// cancel stays as it is.
+func connLost(ctx context.Context, id string, err error) error {
+	if err == nil || ctx.Err() != nil || status.Code(err) != codes.Canceled {
+		return err
+	}
+	return rpcutil.Err(rpcutil.Unavailable, "sandbox %s: its runtime connection closed during the call (paused or moved); retry", id)
 }
 
 func (s *Service) Exec(ctx context.Context, r *pb.ExecRequest) (*pb.ExecResult, error) {
@@ -138,9 +154,9 @@ func (s *Service) ExecStream(r *pb.ExecRequest, st pb.Edge_ExecStreamServer) err
 	defer done()
 	up, err := rt.ExecStream(ctx, r)
 	if err != nil {
-		return err
+		return connLost(ctx, r.SandboxId, err)
 	}
-	return rpcutil.PipeEvents(up, st)
+	return connLost(ctx, r.SandboxId, rpcutil.PipeEvents(up, st))
 }
 
 // PackDiff snapshots sandbox r's writable layer as a store layer. It holds
@@ -369,9 +385,9 @@ func processStream[S eventStream](e *Edge, ctx context.Context, id string,
 	defer done()
 	up, err := open(rt, ctx)
 	if err != nil {
-		return err
+		return connLost(ctx, id, err)
 	}
-	return rpcutil.Pipe[*pb.ProcessEvent](up, down)
+	return connLost(ctx, id, rpcutil.Pipe[*pb.ProcessEvent](up, down))
 }
 
 func (s *Service) ListProcesses(ctx context.Context, r *pb.ProcessRef) (*pb.ProcessList, error) {

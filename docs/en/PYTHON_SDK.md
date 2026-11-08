@@ -55,6 +55,21 @@ run.export_jsonl("results.jsonl")              # a metadata line, then one line 
 - Cleanup: every sandbox of a run has `task_id = run.run_id`. The run stops its sandboxes as inputs finish, and sweeps at the end. `await run.cancel()` stops dispatching and stops everything; `async with run:` cancels on an error. If the program is killed, `await client.rollouts.cleanup(run_id)` (or `opendsecctl task stop <run_id>`) stops what it left; sandboxes also carry a `ttl_max` of the run's budget plus 5 minutes. A run lives in its process: inputs not started when it exits are not run.
 - `run.progress()`, or `on_progress=callback`: counts by status, active sandboxes, cleanup pending.
 
+### Pausing a run, and starting from a running microVM
+
+```python
+await run.pause()      # nothing more is dispatched; every sandbox of the run pauses (pause_task)
+...                    # e.g. the trainer swaps weights
+await run.resume()     # both return the TaskActionResult: affected, failed, errors
+
+# Every input continues from `source` (a running microVM) as it is now, memory included:
+run = await client.rollouts.start_from(source, inputs, episode=continue_from_here, concurrency=64)
+```
+
+- While paused: episodes wait before their next sandbox call, and calls cut by the pause retry only after the resume (a call into a paused sandbox would resume it). `execution_timeout_s` leaves out paused time; `run_timeout_s` is wall-clock. A sandbox that cannot resume (`failed > 0`, e.g. no room) stays paused; its input times out by its own budget. `run.pauses` records each pause, and the export's metadata too.
+- `start_from` saves the source once as a memory snapshot image (it pauses for that moment and goes on running); every input's sandbox starts from that image, so all begin from the same instant however many there are. The image belongs to the run, counts against the project's image quota meanwhile, and is deleted at the end (`keep_snapshot=True` keeps it). The source does not belong to the run and is never stopped by it. Connections the source had to outside services do not carry over.
+- `journal="results.jsonl"` (the command line's `--output`) writes each input's result as soon as it is final: if the client dies, the results so far are kept, and `rerun` runs only the inputs that did not succeed or never finished.
+
 Command line (same model):
 
 ```sh

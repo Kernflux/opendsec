@@ -250,7 +250,10 @@ def test_cli_interrupt_cleans_up(cluster, tmp_path):
     proc = subprocess.Popen([sys.executable, "-m", "opendsec", "rollout", "run", "--image", "host", "--backend",
                              "container", "--cpu", "0.25", "--memory-mb", "128", "--inputs", str(inputs),
                              "--output", str(out), "--run-id", "r-int-1", "--progress", "none", "--concurrency", "2",
-                             "--", *CMD], env=env, stderr=subprocess.PIPE, text=True)
+                             "--", *CMD], env=env, stderr=subprocess.PIPE, text=True,
+                            # A background job of a non-interactive shell (CI) inherits SIGINT
+                            # ignored, and Python keeps it so: give the child the default.
+                            preexec_fn=lambda: signal.signal(signal.SIGINT, signal.SIG_DFL))
 
     async def running():
         async with client(cluster) as c:
@@ -320,3 +323,163 @@ async def test_rides_out_edge_restart(cluster):
         assert summary.counts["succeeded"] == 12, [(r.status, r.error) for r in summary.results]
         assert all(r.result == {"runs": 1} for r in summary.results)  # each command ran once
         assert not summary.leftover
+
+
+async def states(c, run_id):
+    return sorted(s.state for s in await c.list_sandboxes(task_id=run_id) if s.state != "STOPPED")
+
+
+async def test_pause_resume_command_mode(cluster):
+    """A paused run dispatches nothing, its sandboxes stay paused, and the
+    paused time does not count against execution_timeout_s."""
+    script = ("import json,time; time.sleep(3); json.dump({'ok': 1}, open('/tmp/result.json','w'))")
+    async with client(cluster) as c:
+        run = await c.rollouts.start(args(), inputs_from_count(6), command=["python3", "-c", script], concurrency=3,
+                                     execution_timeout_s=5, result_path="/tmp/result.json")
+        while run.progress().counts.get("running", 0) < 3:
+            await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
+        res = await run.pause()
+        assert res.affected == 3 and res.failed == 0, res
+        assert run.progress().state == "paused"
+        await asyncio.sleep(4)  # 0.5 + 4 + the rest of 3 s: past 5 s of wall clock, not of execution
+        assert await states(c, run.run_id) == ["PAUSED"] * 3
+        assert sum(1 for r in run.results if r.sandbox_id) == 3  # nothing dispatched while paused
+        res = await run.resume()
+        assert res.failed == 0, res
+        summary = await run.wait()
+        assert summary.counts["succeeded"] == 6, [(r.status, r.error) for r in summary.results]
+        assert len(run.pauses) == 1 and run.pauses[0]["affected"] == 3 and "resumed" in run.pauses[0]
+
+
+async def test_pause_holds_episodes(cluster):
+    """While the run is paused, episodes wait before their next sandbox call
+    (which would otherwise resume the sandbox)."""
+    async def episode(sb, payload):
+        for _ in range(15):
+            await sb.exec(["sleep", "0.2"])
+        return payload
+
+    async with client(cluster) as c:
+        run = await c.rollouts.start(args(), inputs_from_count(3, 7), episode=episode, concurrency=3)
+        while run.progress().counts.get("running", 0) < 3:
+            await asyncio.sleep(0.1)
+        await run.pause()
+        await asyncio.sleep(2)
+        assert await states(c, run.run_id) == ["PAUSED"] * 3
+        await run.resume()
+        summary = await run.wait()
+        assert summary.counts["succeeded"] == 3 and all(r.result == 7 for r in summary.results)
+
+
+async def test_start_from_needs_microvm(cluster):
+    async with client(cluster) as c:
+        async with c.sandbox(args()) as sb:
+            with pytest.raises(ValueError, match="microvm"):
+                await c.rollouts.start_from(sb, inputs_from_count(2), command=["true"])
+
+
+COUNTER = r"""
+import socket
+n = 0
+s = socket.socket(); s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+s.bind(("127.0.0.1", 7777)); s.listen()
+while True:
+    c, _ = s.accept()
+    cmd = c.recv(100).decode().split()
+    if cmd and cmd[0] == "add":
+        n += int(cmd[1])
+    c.sendall(str(n).encode()); c.close()
+"""
+ASK = """
+import socket, sys, time
+for _ in range(100):
+    try:
+        c = socket.create_connection(("127.0.0.1", 7777), timeout=2); break
+    except OSError:
+        time.sleep(0.1)
+c.sendall(" ".join(sys.argv[1:]).encode()); print(c.recv(100).decode())
+"""
+
+
+@pytest.mark.skipif(not os.environ.get("OPENDSEC_EXAMPLE_MICROVM"),
+                    reason="needs a cluster with microVMs: OPENDSEC_EXAMPLE_MICROVM=1, OPENDSEC_ADDR/TOKEN/PROJECT/IMAGE")
+async def test_start_from_microvm():
+    """start_from: every input continues from the source's memory at one
+    instant (a counter at 41), diverges on its own, and the source and its
+    counter are untouched; the run's snapshot image is gone afterwards."""
+    image = os.environ.get("OPENDSEC_IMAGE", "root/py:3.12")
+    async with DSecClient() as c:
+        async with c.sandbox(DSecContainerRunArgs(backend="microvm", container_image=image, cpu_cores_limit=1,
+                                                  memory_limit_mb=512)) as src:
+            await src.write_file("/tmp/counter.py", COUNTER)
+            await src.write_file("/tmp/ask.py", ASK)
+            await src.run_shell_background("python3 /tmp/counter.py", session="server")
+            assert (await src.exec(["python3", "/tmp/ask.py", "add", "41"])).stdout.strip() == "41"
+
+            async def episode(sb, x):
+                before = int((await sb.exec(["python3", "/tmp/ask.py", "get"])).stdout)
+                after = int((await sb.exec(["python3", "/tmp/ask.py", "add", str(x)])).stdout)
+                return [before, after]
+
+            inputs = [{"id": str(x), "payload": x} for x in range(12)]
+            run = await c.rollouts.start_from(src, inputs, episode=episode, concurrency=4)
+            image_name = run.meta["snapshot_image"]
+            summary = await run.wait()
+            assert summary.ok, [(r.status, r.error) for r in summary.results]
+            assert [r.result for r in summary.results] == [[41, 41 + x] for x in range(12)]
+            assert (await src.exec(["python3", "/tmp/ask.py", "get"])).stdout.strip() == "41"
+            assert (await src.refresh()).state == "RUNNING"
+            names = [i.name for i in await c.list_images()]
+            assert image_name not in names
+
+            # Pause and resume a microVM run with commands in flight: the
+            # sandboxes stay paused (calls cut by the pause wait to retry),
+            # and every input completes after the resume.
+            async def slow(sb, x):
+                for _ in range(10):
+                    await sb.exec(["sleep", "0.3"])
+                return int((await sb.exec(["python3", "/tmp/ask.py", "get"])).stdout)
+
+            run = await c.rollouts.start_from(src, inputs[:4], episode=slow, concurrency=4)
+            while run.progress().counts.get("running", 0) < 4:
+                await asyncio.sleep(0.05)
+            await asyncio.sleep(0.5)
+            p = await run.pause()
+            await asyncio.sleep(3)
+            assert await states(c, run.run_id) == ["PAUSED"] * 4
+            r = await run.resume()
+            summary = await run.wait()
+            assert summary.ok and p.failed == 0 and r.failed == 0, [(x.status, x.error) for x in summary.results]
+            assert all(x.result == 41 for x in summary.results)
+
+
+def test_cli_journal_survives_kill(cluster, tmp_path):
+    """--output is written as inputs finish: after the client is killed, the
+    finished results are there, and rerun runs only the rest."""
+    env = dict(os.environ, OPENDSEC_ADDR=cluster["addr"], OPENDSEC_TOKEN=cluster["token"], OPENDSEC_PROJECT="root")
+    env.pop("OPENDSEC_CA", None)
+    inputs = tmp_path / "in.jsonl"
+    inputs.write_text("".join(json.dumps({"id": str(n), "payload": {"mode": "ok" if n < 3 else "sleep", "s": 300}}) + "\n"
+                              for n in range(6)))
+    out = tmp_path / "out.jsonl"
+    proc = subprocess.Popen([sys.executable, "-m", "opendsec", "rollout", "run", "--image", "host", "--backend",
+                             "container", "--cpu", "0.25", "--memory-mb", "128", "--inputs", str(inputs),
+                             "--output", str(out), "--run-id", "r-journal-1", "--progress", "none", "--concurrency", "6",
+                             "--result-path", "/tmp/result.json", "--", *CMD], env=env)
+    for _ in range(300):
+        if out.exists() and out.read_text().count('"status": "succeeded"') == 3:
+            break
+        time.sleep(0.1)
+    proc.send_signal(signal.SIGKILL)
+    proc.wait()
+    rows = [json.loads(l) for l in out.read_text().splitlines()]
+    assert rows[0]["type"] == "run" and sorted(r["input_id"] for r in rows[1:]) == ["0", "1", "2"]
+    assert cli(cluster, "cleanup", "r-journal-1").returncode == 0
+
+    out2 = tmp_path / "out2.jsonl"
+    p = cli(cluster, "rerun", "--inputs", str(inputs), "--results", str(out), "--output", str(out2),
+            "--progress", "none", "--", "sh", "-c", "echo '{}' > /tmp/result.json")
+    assert p.returncode == 0, p.stderr
+    rows2 = [json.loads(l) for l in out2.read_text().splitlines()]
+    assert sorted(r["input_id"] for r in rows2[1:]) == ["3", "4", "5"] and rows2[0]["counts"]["succeeded"] == 3
