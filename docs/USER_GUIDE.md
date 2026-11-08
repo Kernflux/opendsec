@@ -1,5 +1,7 @@
 # OpenDsec 接入指南（调用方）
 
+> 第一次用？[GETTING_STARTED.md](GETTING_STARTED.md) 是最短的上手路径。
+
 > 给管理员：这份指南写给使用集群的人，可以改好下面带「管理员填写」的几处后交给他们。
 
 OpenDsec 提供隔离的代码执行环境，叫做 sandbox。你可以通过 Python SDK 创建 sandbox，在里面执行命令、读写文件，用完后停止。
@@ -8,7 +10,7 @@ OpenDsec 提供隔离的代码执行环境，叫做 sandbox。你可以通过 Py
 
 | 文件 / 信息 | 说明 |
 |---|---|
-| `opendsec-<版本>-py3-none-any.whl` | Python SDK，要求 Python 3.10 或以上 |
+| `opendsec_sdk-<版本>-py3-none-any.whl` | Python SDK，要求 Python 3.10 或以上 |
 | `ca.crt` | 集群 CA，用于校验服务端证书 |
 | token | 你的身份凭证，格式为 `dsk.<id>.<secret>`。**请当作密码保管**，不要写进代码仓库 |
 | 项目 | 例如 `root/prod`。你创建的 sandbox 都计入这个项目的配额 |
@@ -22,7 +24,7 @@ OpenDsec 提供隔离的代码执行环境，叫做 sandbox。你可以通过 Py
 ## 2. 安装与第一个 sandbox
 
 ```sh
-pip install opendsec-<版本>-py3-none-any.whl
+pip install opendsec_sdk-<版本>-py3-none-any.whl
 export OPENDSEC_ADDR=10.0.0.11:7100,10.0.0.12:7100,10.0.0.13:7100
 export OPENDSEC_TOKEN=dsk.prod-caller.xxxxxxxx
 export OPENDSEC_PROJECT=root/prod

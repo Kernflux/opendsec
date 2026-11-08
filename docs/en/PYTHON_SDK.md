@@ -9,13 +9,28 @@
 ## Install
 
 ```sh
+# from GitHub
+pip install "git+https://github.com/Kernflux/opendsec#subdirectory=sdk/python"
 # from the source repository
 python3 -m venv .venv && .venv/bin/pip install ./sdk/python
 # from a wheel your administrator gave you
-pip install opendsec-0.11.0-py3-none-any.whl
+pip install opendsec_sdk-0.11.0-py3-none-any.whl
 ```
 
-Offline: the offline bundle's `wheels/` directory holds the SDK and all its dependencies; install with `pip install --no-index --find-links wheels opendsec`.
+Offline: the offline bundle's `wheels/` directory holds the SDK and all its dependencies; install with `pip install --no-index --find-links wheels opendsec-sdk`.
+
+The distribution is `opendsec-sdk`; the module is `opendsec`. The PyPI name `opendsec` belongs to an unrelated project.
+
+## New in 0.11: shorter paths
+
+| Call | What |
+|---|---|
+| `async with client.sandbox(args) as sb` | a sandbox for the block, stopped when it ends (also on errors); `ttl_max` defaults to an hour; `keep_on_error=True` keeps a failed one for debugging |
+| `await sb.exec(argv, timeout=, env=, cwd=, user=)` | run a command given as a list, no shell: arguments reach the program as they are. Returns a `ShellResult`; idempotent across a node restart |
+| `sb.start_process(cmd, args, ...)`, `connect_process`, `send_process_input`, `close_process_stdin`, `signal_process`, `list_processes` | the process API: a process outside shell sessions, its events streamed (`ProcessEvent`: `started`, `stdout`, `stderr`, `exit_code`). Output while no stream is attached is not kept |
+| `DSecError.code`, `.retryable`, `.next_steps` | the stable reason, whether the same call may be repeated, a hint for people |
+| `Template()...build(client, name)` | declarative image builds (see "Images") |
+| `client.import_image(name, ref)` | have the cluster pull a registry's image |
 
 ## Quick example
 

@@ -25,7 +25,9 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import dataclasses
 import os
+import shlex
 import uuid
 from dataclasses import dataclass, field
 from typing import Iterable
@@ -53,6 +55,22 @@ UNAVAILABLE = "unavailable"
 TIMEOUT = "timeout"
 INTERNAL = "internal"
 
+# Calls failing with these may be repeated as they are, after a pause.
+_RETRYABLE = frozenset({"no_capacity", "rate_limited", "unavailable", "timeout"})
+
+_NEXT_STEPS = {
+    "unauthenticated": "Check OPENDSEC_TOKEN: it is missing, mistyped, revoked or expired. Get a new token from your project's admin.",
+    "forbidden": "Your token lacks a permission on this project (OPENDSEC_PROJECT), or the image's project. Ask a project admin for it.",
+    "not_found": "The sandbox, image or project does not exist, or is not yours: check the name (images are <project>/<repo>:<tag>).",
+    "quota_exceeded": "The project's quota is used up: stop sandboxes you no longer need or wait for others to end; a project admin can raise it.",
+    "rate_limited": "Too many calls at once: slow down and retry.",
+    "no_capacity": "The cluster has no room for this sandbox right now: retry later, or ask for fewer CPUs or less memory.",
+    "invalid": "The request was refused as it is: read the message, fix the arguments and try again.",
+    "unavailable": "An apiserver or the sandbox's node is unreachable (a restart?): retry in a few seconds.",
+    "timeout": "The call took too long: retry; for long commands, raise the timeout.",
+    "internal": "The cluster failed: retry; if it keeps failing, report it to the cluster's admin with the time and the sandbox id.",
+}
+
 _CODE_REASON = {
     grpc.StatusCode.UNAUTHENTICATED: UNAUTHENTICATED,
     grpc.StatusCode.PERMISSION_DENIED: FORBIDDEN,
@@ -65,12 +83,27 @@ _CODE_REASON = {
 
 
 class DSecError(Exception):
-    """An API error. ``reason`` is one of the module-level reason constants."""
+    """An API error. ``reason`` is one of the module-level reason constants
+    (a stable machine-readable code); ``retryable`` tells whether the same
+    call may be repeated as it is (not whether a task's work may be redone);
+    ``next_steps`` is a short hint for people."""
 
     def __init__(self, reason: str, message: str):
         super().__init__(f"{reason}: {message}")
         self.reason = reason
         self.message = message
+
+    @property
+    def code(self) -> str:
+        return self.reason
+
+    @property
+    def retryable(self) -> bool:
+        return self.reason in _RETRYABLE
+
+    @property
+    def next_steps(self) -> str:
+        return _NEXT_STEPS.get(self.reason, "")
 
 
 def _reason_from_trailers(err: grpc.aio.AioRpcError) -> str | None:
@@ -144,6 +177,32 @@ async def _retrying(window: float, make):
         except DSecError as e:
             if not await r.wait(e):
                 raise
+
+
+@dataclass
+class ProcessEvent:
+    """One event of a process stream: exactly one field is set."""
+
+    started: int | None = None   # pid
+    stdout: bytes | None = None
+    stderr: bytes | None = None
+    pty: bytes | None = None
+    exit_code: int | None = None  # -1 when killed by a signal
+    exit_status: str = ""
+
+
+async def _stream_events(call):
+    try:
+        async for ev in call:
+            kind = ev.WhichOneof("event")
+            if kind == "started":
+                yield ProcessEvent(started=ev.started)
+            elif kind in ("stdout", "stderr", "pty"):
+                yield ProcessEvent(**{kind: getattr(ev, kind)})
+            elif kind == "exit":
+                yield ProcessEvent(exit_code=ev.exit.exit_code, exit_status=ev.exit.status or ev.exit.error)
+    except grpc.aio.AioRpcError as e:
+        raise _wrap(e) from None
 
 
 # ---- run arguments ------------------------------------------------------------------------
@@ -332,6 +391,51 @@ class Sandbox:
         req = self._exec_req(cmd, timeout, session, env, cwd, background=True, user=user)
         r = await self._retrying(lambda: self._stub().Exec(req))
         return r.cmd_id
+
+    async def exec(self, argv: Iterable[str], timeout: float | None = None, env: dict[str, str] | None = None,
+                   cwd: str | None = None, user: str | None = None, session: str | None = None) -> ShellResult:
+        """Run a command given as an argv list (no shell syntax: each argument
+        reaches the program as it is, so untrusted values are safe) and wait
+        for it. Runs in its own shell session (``session``), which keeps
+        retries idempotent across a restarting node; ``timeout`` kills it
+        (``timed_out`` in the result)."""
+        argv = list(argv)
+        if not argv:
+            raise ValueError("exec needs a command")
+        if session is None:  # a session keeps its user: one per user
+            session = "exec" if not user else "exec-" + "".join(c if c.isalnum() else "_" for c in user)
+        return await self.run_shell(shlex.join(argv), timeout=timeout, session=session, env=env, cwd=cwd, user=user)
+
+    def start_process(self, cmd: str, args: Iterable[str] = (), env: dict[str, str] | None = None,
+                      cwd: str = "", user: str = "", tag: str = "", stdin: bool = False):
+        """Start a process outside shell sessions (the process API) and stream
+        its events: ``started`` (pid), ``stdout``/``stderr`` chunks, ``exit``
+        last. The process keeps running if the stream ends; reattach with
+        connect_process. Output while no stream is attached is not kept: for
+        commands whose output matters, use exec or run_shell."""
+        req = runtime_pb2.StartProcessRequest(sandbox_id=self.id, cmd=cmd, args=list(args), env=env or {},
+                                              cwd=cwd, user=user, tag=tag, stdin=stdin)
+        return _stream_events(self._stub().StartProcess(req))
+
+    def connect_process(self, pid: int = 0, tag: str = ""):
+        """Attach to a running process's events (as start_process)."""
+        return _stream_events(self._stub().ConnectProcess(runtime_pb2.ProcessRef(sandbox_id=self.id, pid=pid, tag=tag)))
+
+    async def list_processes(self) -> list[runtime_pb2.ProcessInfo]:
+        r = await _call(self._stub().ListProcesses(runtime_pb2.ProcessRef(sandbox_id=self.id)))
+        return list(r.processes)
+
+    async def send_process_input(self, data: bytes | str, pid: int = 0, tag: str = "") -> None:
+        if isinstance(data, str):
+            data = data.encode()
+        await _call(self._stub().SendProcessInput(runtime_pb2.ProcessInput(sandbox_id=self.id, pid=pid, tag=tag, data=data)))
+
+    async def close_process_stdin(self, pid: int = 0, tag: str = "") -> None:
+        await _call(self._stub().CloseProcessStdin(runtime_pb2.ProcessRef(sandbox_id=self.id, pid=pid, tag=tag)))
+
+    async def signal_process(self, signal: int = 15, pid: int = 0, tag: str = "") -> None:
+        """Send ``signal`` (default SIGTERM) to the process's process group."""
+        await _call(self._stub().SignalProcess(runtime_pb2.ProcessSignal(sandbox_id=self.id, pid=pid, tag=tag, signal=signal)))
 
     async def get_output(self, cmd_id: int, session: str = "default", wait: float = 0,
                          stdout_offset: int = 0, stderr_offset: int = 0) -> ShellResult:
@@ -555,6 +659,20 @@ class DSecClient:
                     raise
                 req.retry = True
 
+    def sandbox(self, args: DSecRunArgs, timeout: float | None = 120, keep_on_error: bool = False):
+        """A sandbox for the length of an ``async with`` block, stopped when
+        it ends, also on errors::
+
+            async with client.sandbox(DSecRunArgs(backend="microvm", image="root/py:3.12")) as sb:
+                r = await sb.exec(["python3", "-c", "print(6*7)"])
+
+        Without its own ``ttl_max`` the sandbox lives at most an hour, so a
+        killed program leaves nothing for long. A failure to stop it never
+        hides the block's own error (it is added as a note). With
+        ``keep_on_error`` a sandbox whose block raised is left running (until
+        its TTL) for debugging, and its id logged in the error."""
+        return _SandboxScope(self, args, timeout, keep_on_error)
+
     async def run_container(self, args: DSecContainerRunArgs, timeout: float | None = 120) -> Sandbox:
         return await self.run_sandbox(args, timeout)
 
@@ -707,6 +825,39 @@ class DSecClient:
         """Resource usage of a project and its subprojects per UTC day
         (``start``/``end``: ``YYYY-MM-DD``, inclusive); needs project.admin."""
         return await _call(self._need().GetUsage(iam_pb2.UsageRequest(project=project or self.project, **{"from": start}, to=end)))
+
+
+class _SandboxScope:
+    def __init__(self, client: "DSecClient", args: DSecRunArgs, timeout, keep_on_error: bool):
+        if not args.ttl_max:
+            args = dataclasses.replace(args, ttl_max=3600)
+        self.client, self.args, self.timeout, self.keep = client, args, timeout, keep_on_error
+        self.sb: Sandbox | None = None
+
+    async def __aenter__(self) -> Sandbox:
+        self.sb = await self.client.run_sandbox(self.args, timeout=self.timeout)
+        return self.sb
+
+    async def __aexit__(self, exc_type, exc, tb) -> None:
+        if self.sb is None:
+            return
+        if exc is not None and self.keep:
+            _note(exc, f"sandbox {self.sb.id} kept for debugging until its ttl_max ({self.args.ttl_max} s)")
+            return
+        try:
+            await self.sb.stop()
+        except Exception as e:  # never hide the block's own error
+            if exc is None:
+                raise
+            _note(exc, f"stopping sandbox {self.sb.id} failed too: {e}")
+
+
+def _note(exc: BaseException, msg: str) -> None:
+    if hasattr(exc, "add_note"):  # Python 3.11+
+        exc.add_note(msg)
+    else:
+        import logging
+        logging.getLogger("opendsec").warning("%s (while handling %r)", msg, exc)
 
 
 class _AuthChannel:

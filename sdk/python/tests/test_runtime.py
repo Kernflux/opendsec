@@ -173,3 +173,93 @@ async def test_calls_ride_out_edge_restart(cluster):
         assert r.ok and r.stdout == "fg\n", r
         assert (await sb.read_file("/tmp/runs")) == b"once\n"
         await sb.stop()
+
+
+async def test_exec_argv_and_processes(cluster):
+    """exec passes each argument as it is (no shell), and times out; the
+    process API streams a process's events."""
+    async with DSecClient(cluster["addr"], cluster["token"], "root") as client:
+        async with client.sandbox(DSecContainerRunArgs(container_image="host", memory_limit_mb=256)) as sb:
+            tricky = "a b; echo pwned $(id) `x` '\"*"
+            r = await sb.exec(["printf", "%s|", tricky, "--x"])
+            assert r.ok and r.stdout == tricky + "|--x|", r.stdout
+            r = await sb.exec(["sh", "-c", "exit 7"])
+            assert r.exit_code == 7 and not r.ok
+            r = await sb.exec(["sleep", "30"], timeout=1)
+            assert r.timed_out
+            r = await sb.exec(["id", "-u"], user="65534")
+            assert r.stdout.strip() == "65534"
+            r = await sb.exec(["pwd"], cwd="/tmp", env={"X": "1"})
+            assert r.stdout.strip() == "/tmp"
+
+            out, code = b"", None
+            async for ev in sb.start_process("sh", ["-c", "echo out; echo err >&2; exit 3"]):
+                if ev.stdout:
+                    out += ev.stdout
+                if ev.exit_code is not None:
+                    code = ev.exit_code
+            assert out == b"out\n" and code == 3
+
+
+async def test_sandbox_scope(cluster):
+    """client.sandbox stops its sandbox when the block ends, also on errors,
+    and caps its life when none was asked."""
+    async with DSecClient(cluster["addr"], cluster["token"], "root") as client:
+        async with client.sandbox(DSecContainerRunArgs(container_image="host", memory_limit_mb=256)) as sb:
+            assert sb.info.spec.ttl_max_s == 3600
+            first = sb
+        await first.refresh()
+        assert first.state == "STOPPED"
+
+        with pytest.raises(RuntimeError) as ei:
+            async with client.sandbox(DSecContainerRunArgs(container_image="host", memory_limit_mb=256)) as sb:
+                second = sb
+                raise RuntimeError("the work failed")
+        assert str(ei.value) == "the work failed"
+        await second.refresh()
+        assert second.state == "STOPPED"
+
+        with pytest.raises(RuntimeError) as ei:
+            async with client.sandbox(DSecContainerRunArgs(container_image="host", memory_limit_mb=256, ttl_max=120),
+                                      keep_on_error=True) as sb:
+                kept = sb
+                raise RuntimeError("debug me")
+        await kept.refresh()
+        assert kept.state == "RUNNING" and kept.info.spec.ttl_max_s == 120
+        if hasattr(ei.value, "__notes__"):
+            assert kept.id in ei.value.__notes__[0]
+        await kept.stop()
+
+
+def _run_example(cluster, name: str, extra: dict | None = None) -> str:
+    import sys
+    path = os.path.join(os.path.dirname(__file__), "..", "examples", name)
+    env = dict(os.environ, OPENDSEC_ADDR=cluster["addr"], OPENDSEC_TOKEN=cluster["token"], OPENDSEC_PROJECT="root",
+               OPENDSEC_BACKEND="container", OPENDSEC_IMAGE="host", **(extra or {}))
+    env.pop("OPENDSEC_CA", None)
+    out = subprocess.run([sys.executable, path], env=env, capture_output=True, text=True, timeout=300)
+    assert out.returncode == 0, out.stdout + out.stderr
+    return out.stdout
+
+
+async def test_example_execute_code(cluster):
+    out = _run_example(cluster, "execute_code.py")
+    assert "exit 0" in out and "stdout: [1, 4, 9, 16, 25]" in out and "sandbox stopped" in out, out
+
+
+async def test_example_task_pause(cluster):
+    out = _run_example(cluster, "task_pause.py")
+    assert "a 4 s gap while paused, ticking again after it" in out and "stopped task" in out, out
+    task = re.search(r"task (demo-\w+):", out).group(1)
+    async with DSecClient(cluster["addr"], cluster["token"], "root") as c:
+        assert not [s for s in await c.list_sandboxes(task_id=task) if s.state != "STOPPED"]
+
+
+@pytest.mark.skipif(not os.environ.get("OPENDSEC_EXAMPLE_MICROVM"),
+                    reason="memory_fork.py needs a cluster with microVMs (KVM): set OPENDSEC_EXAMPLE_MICROVM=1 "
+                           "and OPENDSEC_ADDR/TOKEN/PROJECT/IMAGE for one (docs/RELEASING.md)")
+async def test_example_memory_fork():
+    import sys
+    path = os.path.join(os.path.dirname(__file__), "..", "examples", "memory_fork.py")
+    out = subprocess.run([sys.executable, path], capture_output=True, text=True, timeout=300)
+    assert out.returncode == 0 and "OK: memory inherited and isolated" in out.stdout, out.stdout + out.stderr

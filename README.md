@@ -15,6 +15,10 @@ OpenDsec runs large numbers of isolated sandboxes (Firecracker microVMs, contain
 - **Control plane**: multi-level projects with quotas and delegation, a Raft-replicated IAM, mTLS between components, short-lived revocable tokens, audit logs. Every component restarts without disturbing running sandboxes.
 - **Operations**: Prometheus metrics and alerts, batch pause/resume of a whole task, staged fleet-wide rollouts with automatic rollback, and an async Python SDK that rides through apiserver and edge restarts.
 
+**Two ways in:**
+- **Use a cluster** someone runs: [docs/en/GETTING_STARTED.md](docs/en/GETTING_STARTED.md): install the SDK, connect, run code, build an image (5 minutes).
+- **Run your own**: [Try it on one machine](#try-it-on-one-machine) below, then [Deploy a cluster](#deploy-a-cluster).
+
 The design, every decision and every measurement are in [docs/SPEC.md](docs/SPEC.md) (Chinese). How each component works inside is in [docs/COMPONENTS.md](docs/COMPONENTS.md) (Chinese).
 
 ## Based on the DSec paper
@@ -272,7 +276,8 @@ python -c 'from e2b import Sandbox; print(Sandbox.create().commands.run("echo hi
 - Enable it with an `e2b` section in the cluster config: the gateways' addresses, the project sandboxes go to, and the templates, i.e. which image, backend and resources an E2B template id means (SDKs default to `base`). Then give a node the fleet role `e2b=<index>`. See docs/OPERATIONS.md. `deploy/quickstart.sh` sets one up on its machine.
 - Supported: sandboxes (create, info, list, kill, timeout, pause, connect), commands (output, exit codes, background, stdin, signals, envs, cwd), PTYs, files (read, write, list, mkdir, rename, remove), servers on other ports of a sandbox (HTTP, streamed responses, WebSocket), which E2B's code interpreter uses, fork and snapshots (`fork()`, `create_snapshot()`, `Sandbox.create(snapshot_id)`; with memory on microVMs), autoPause, and network options (`allow_internet_access`, `allow_out`, `deny_out` of all traffic, `update_network()`). E2B's Python (sync and async) and JS/TS SDKs pass the gateway's acceptance check.
 - E2B's code interpreter (`e2b_code_interpreter`) works with a template built by `deploy/e2b/build-code-interpreter.py` (Python kernel; a memory snapshot, so `Sandbox.create()` takes about 280 ms and the first `run_code` about 45 ms).
-- Not yet: watching directories, signed file URLs, unauthenticated (browser) access to sandbox ports, building templates.
+- Template builds: E2B's `Template.build()` runs through the gateway; the template becomes an image in your project (docs/en/E2B.md).
+- Not yet: watching directories, signed file URLs, unauthenticated (browser) access to sandbox ports.
 - **Moving from E2B**: [docs/en/E2B.md](docs/en/E2B.md) lists what works, what differs, and timings.
 
 ## Develop

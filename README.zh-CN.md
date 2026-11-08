@@ -11,6 +11,10 @@
 
 设计与分阶段计划见 **[docs/SPEC.md](docs/SPEC.md)**。版本兼容策略见 [docs/VERSIONING.md](docs/VERSIONING.md)，各版本变更见 [CHANGELOG.md](CHANGELOG.md)。各组件的实现说明见 **[docs/COMPONENTS.md](docs/COMPONENTS.md)**。许可证：服务端和工具是 AGPL-3.0（[LICENSE](LICENSE)）；客户端部分，即 Python SDK（`sdk/python/`）、Go 客户端（`pkg/`）、API 定义和生成的代码（`proto/`、`gen/`），是 Apache-2.0，调用 OpenDsec 的程序不受 AGPL 约束。AGPL 不允许的用法（闭源修改、不公开修改就作为服务对外提供）和企业版需要商业授权，联系 zhyb1528@aliyun.com。详见 [NOTICE](NOTICE)；贡献代码需要签署 CLA，见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
+**两个入口：**
+- **使用别人运行的集群**：[docs/GETTING_STARTED.md](docs/GETTING_STARTED.md)：装 SDK、连接、运行代码、做镜像（5 分钟）。
+- **自己运行**：下面的[单机部署](#单机部署约-10-分钟)，再看 README 的 Deploy a cluster。
+
 ## 借鉴自 DSec 论文
 
 OpenDsec 是照着 DSec 论文做的。论文描述了 DeepSeek 用于智能体强化学习训练的 sandbox 基础设施，感谢论文作者把设计公开得如此详细。
@@ -196,7 +200,8 @@ python -c 'from e2b import Sandbox; print(Sandbox.create().commands.run("echo hi
 - 启用方法：在集群配置里加 `e2b` 一节，写上网关地址、sandbox 所在的项目，以及各个 template（E2B 的 template id 对应哪个镜像、后端和资源；SDK 默认用 `base`）。然后给一台机器加上 fleet 角色 `e2b=<序号>`。详见 docs/OPERATIONS.md。`deploy/quickstart.sh` 在本机已经装好一个。
 - 已支持：sandbox 的创建、查询、列出、删除、超时、暂停、重新连接；命令的输出、退出码、后台运行、stdin、信号、环境变量、工作目录；PTY；文件的读写、列目录、建目录、改名、删除；访问 sandbox 里其他端口上的服务（HTTP、流式响应、WebSocket），E2B 的 code interpreter 就靠这个。fork 和快照（`fork()`、`create_snapshot()`、`Sandbox.create(snapshot_id)`；microVM 上连内存一起）；autoPause；网络选项（`allow_internet_access`、`allow_out`、拒绝全部流量的 `deny_out`、`update_network()`）。E2B 官方的 Python SDK（同步和异步）和 JS/TS SDK 的验收检查全部通过。
 - E2B 的 code interpreter（`e2b_code_interpreter`）：用 `deploy/e2b/build-code-interpreter.py` 构建的 template 即可使用（Python 内核）。它是内存快照，`Sandbox.create()` 约 280 ms，第一次 `run_code` 约 45 ms。
-- 还不支持：监听目录、签名的文件 URL、不带 token（浏览器直接打开）访问 sandbox 端口、构建 template。
+- 构建 template：E2B 的 `Template.build()` 经网关执行，template 成为你项目里的镜像（docs/E2B.md）。
+- 还不支持：监听目录、签名的文件 URL、不带 token（浏览器直接打开）访问 sandbox 端口。
 - **从 E2B 迁移**：[docs/E2B.md](docs/E2B.md) 列出了支持的功能、和 E2B 的差别，以及实测耗时。
 
 ## 镜像

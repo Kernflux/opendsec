@@ -286,7 +286,7 @@ smoke container || ok=
 
 sdk="./sdk/python" e2b="e2b" venv="apt install python3-venv"
 if [ -d "$REPO/wheels" ]; then # an offline bundle
-	sdk="--no-index --find-links $REPO/wheels opendsec" e2b="--no-index --find-links $REPO/wheels e2b"
+	sdk="--no-index --find-links $REPO/wheels opendsec-sdk" e2b="--no-index --find-links $REPO/wheels e2b"
 	venv="sh $REPO/debs/apt-local.sh python3-venv"
 fi
 cat <<EOF

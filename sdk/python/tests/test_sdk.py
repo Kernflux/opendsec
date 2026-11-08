@@ -184,3 +184,14 @@ async def test_batch_replay_is_not_progress():
 
     with pytest.raises(DSecError):
         await asyncio.wait_for(DSecClient("127.0.0.1:1", "t", "root", retry_timeout=1)._batch(make, req, 3), 10)
+
+
+def test_error_hints():
+    """Errors carry a stable code, whether the call may be repeated, and a hint."""
+    e = DSecError("no_capacity", "no edge fits")
+    assert e.code == "no_capacity" and e.retryable and "retry" in e.next_steps
+    e = DSecError(QUOTA_EXCEEDED, "sandboxes 10/10")
+    assert not e.retryable and "quota" in e.next_steps
+    for reason in (UNAUTHENTICATED, FORBIDDEN, INVALID):
+        assert not DSecError(reason, "").retryable and DSecError(reason, "").next_steps
+    assert DSecError("something_new", "").next_steps == ""

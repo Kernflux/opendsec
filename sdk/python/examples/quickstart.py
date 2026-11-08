@@ -1,6 +1,6 @@
 """OpenDsec quickstart: create a sandbox, run code in it, stop it.
 
-    pip install opendsec            # or the wheel your cluster admin gave you
+    pip install "git+https://github.com/Kernflux/opendsec#subdirectory=sdk/python"   # or the wheel your admin gave you
     export OPENDSEC_ADDR=<apiserver addresses>  OPENDSEC_TOKEN=<your token>
     export OPENDSEC_PROJECT=<your project>  OPENDSEC_CA=./ca.crt
     python quickstart.py

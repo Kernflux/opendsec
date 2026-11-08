@@ -1,5 +1,7 @@
 # OpenDsec caller guide
 
+> New here? [GETTING_STARTED.md](GETTING_STARTED.md) is the short path to a first run.
+>
 > For administrators: this guide is written for the people who use the cluster. Fill in the items marked "administrator fills in" and hand it to them.
 
 OpenDsec provides isolated environments for running code, called sandboxes. You create sandboxes with the Python SDK, run commands and read and write files in them, and stop them when you are done.
@@ -8,7 +10,7 @@ OpenDsec provides isolated environments for running code, called sandboxes. You 
 
 | File or item | Meaning |
 |---|---|
-| `opendsec-<version>-py3-none-any.whl` | The Python SDK; needs Python 3.10 or newer |
+| `opendsec_sdk-<version>-py3-none-any.whl` | The Python SDK; needs Python 3.10 or newer |
 | `ca.crt` | The cluster CA, to verify the server's certificate |
 | token | Your credential, `dsk.<id>.<secret>`. **Treat it like a password** and keep it out of code repositories |
 | project | E.g. `root/prod`. Every sandbox you create counts against this project's quota |
@@ -22,7 +24,7 @@ OpenDsec provides isolated environments for running code, called sandboxes. You 
 ## 2. Install and a first sandbox
 
 ```sh
-pip install opendsec-<version>-py3-none-any.whl
+pip install opendsec_sdk-<version>-py3-none-any.whl
 export OPENDSEC_ADDR=10.0.0.11:7100,10.0.0.12:7100,10.0.0.13:7100
 export OPENDSEC_TOKEN=dsk.prod-caller.xxxxxxxx
 export OPENDSEC_PROJECT=root/prod

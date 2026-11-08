@@ -39,6 +39,10 @@ docs/OPERATIONS.md §6.4.
   refuses a project path with `.` or `..`.
 
 ### Breaking
+- The Python SDK's distribution is now `opendsec-sdk` (wheel
+  `opendsec_sdk-<version>-py3-none-any.whl`; `pip install opendsec-sdk`);
+  the module is still `opendsec`. The PyPI name `opendsec` belongs to an
+  unrelated project. Uninstall an older `opendsec` wheel of ours first.
 - **`opendsecctl exec <id> <command> ...`**: everything after the command
   name now goes to the command, each argument as given (quoted for the
   sandbox's shell, as `docker exec` takes them): `exec <id> python3 -c
@@ -90,6 +94,21 @@ docs/OPERATIONS.md §6.4.
   apiservers.
 
 ### Added
+- Getting started for developers on an existing cluster
+  (docs/en/GETTING_STARTED.md), apart from deployment; complete SDK
+  examples: `execute_code.py`, `memory_fork.py` (process memory inherited
+  and isolated across a fork), `task_pause.py`.
+- Python SDK: `client.sandbox(args)` (a sandbox for an `async with` block,
+  stopped at its end; an hour's `ttl_max` by default); `Sandbox.exec(argv)`
+  (no shell: arguments reach the program as they are); the process API
+  (`start_process`, `connect_process`, `signal_process`, ...);
+  `DSecError.code`, `.retryable`, `.next_steps`.
+- Clusters for untrusted users (SPEC §43): per-project TTL caps and image
+  limits with expiry (`admission.projects`), `network.blocked_ports`,
+  `admission.trusted_proxies`, `e2b.home_projects`, `WhoAmI` returns the
+  project; `ImportImage` (`opendsecctl image pull`,
+  `client.import_image`); declarative builds (`Template`) and E2B's
+  `Template.build` through the gateway; `OPENDSEC_TLS=1`.
 - **E2B gateway** (`opendsec-e2b`, SPEC §37): E2B's SDKs run their
   sandboxes on OpenDsec unchanged (`E2B_API_URL`, `E2B_SANDBOX_URL`,
   `E2B_API_KEY` = an OpenDsec token). Configured by the cluster config's

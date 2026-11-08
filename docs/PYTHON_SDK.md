@@ -12,10 +12,24 @@
 # 从源码仓库
 python3 -m venv .venv && .venv/bin/pip install ./sdk/python
 # 从管理员给的 wheel
-pip install opendsec-0.11.0-py3-none-any.whl
+pip install opendsec_sdk-0.11.0-py3-none-any.whl
 ```
 
-离线环境：离线安装包的 `wheels/` 目录里有 SDK 和它的全部依赖，用 `pip install --no-index --find-links wheels opendsec`。
+离线环境：离线安装包的 `wheels/` 目录里有 SDK 和它的全部依赖，用 `pip install --no-index --find-links wheels opendsec-sdk`。
+
+
+包名是 `opendsec-sdk`，模块名是 `opendsec`。PyPI 上的 `opendsec` 属于一个无关的项目。也可以直接从 GitHub 安装：`pip install "git+https://github.com/Kernflux/opendsec#subdirectory=sdk/python"`。
+
+## 0.11 新增：更短的写法
+
+| 调用 | 作用 |
+|---|---|
+| `async with client.sandbox(args) as sb` | 代码块期间的 sandbox，块结束时停掉（出错也停）；`ttl_max` 默认一小时；`keep_on_error=True` 出错时保留以便排查 |
+| `await sb.exec(argv, timeout=, env=, cwd=, user=)` | 用列表传命令，不经过 shell，参数原样交给程序；返回 `ShellResult`；节点重启时重试不会重复执行 |
+| `sb.start_process(cmd, args, ...)`、`connect_process`、`send_process_input`、`close_process_stdin`、`signal_process`、`list_processes` | 进程 API：会话之外的进程，事件以流返回（`ProcessEvent`：`started`、`stdout`、`stderr`、`exit_code`）；没有流连着时的输出不保留 |
+| `DSecError.code`、`.retryable`、`.next_steps` | 稳定的错误码、同样的调用能否直接重试、给人看的提示 |
+| `Template()...build(client, name)` | 声明式构建镜像 |
+| `client.import_image(name, ref)` | 让集群从镜像仓库拉取镜像 |
 
 ## 快速示例
 

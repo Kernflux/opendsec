@@ -41,3 +41,11 @@
    - 打包，附件为 `opendsec-<版本>.tar.gz` 和 SDK wheel；
    - 发布 GitHub release。
 4. 已有集群升级：先下载并解开 `opendsec-<版本>.tar.gz`，放到运维目录的 `releases/` 下，然后执行 `opendsecctl fleet release push` 和 `fleet rollout create`。详见 docs/OPERATIONS.md §6.2。
+5. 示例验收（需要 KVM，CI 里跳过）：在有 KVM 的测试机上，对一个带 microvm 后端的集群运行 SDK 的三个示例，结果写进发布记录：
+   ```sh
+   export OPENDSEC_ADDR=... OPENDSEC_TOKEN=... OPENDSEC_PROJECT=... OPENDSEC_IMAGE=root/py:3.12
+   cd sdk/python/examples && for ex in execute_code.py memory_fork.py task_pause.py; do python $ex || break; done
+   # 或者作为测试：OPENDSEC_EXAMPLE_MICROVM=1 pytest tests/test_runtime.py -k memory_fork
+   ```
+   单机测试集群：`opendsecctl cluster up -sim-edges 1 -runtime linux -image-store DIR -microvm-kernel <vmlinux>`，再 `opendsecctl image import docker.io/library/python:3.12-slim -as root/py:3.12 -store DIR -addr ... -token ...`。容器部分（`execute_code.py`、`task_pause.py`）由 `sdk/python/tests/test_runtime.py` 在 CI 里跑。
+6. SDK 发布到 PyPI（包名 `opendsec-sdk`，模块名 `opendsec`；`opendsec` 这个 PyPI 名字属于无关项目）：`python -m build --wheel sdk/python && twine upload dist/opendsec_sdk-*`。
