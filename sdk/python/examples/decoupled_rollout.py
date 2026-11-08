@@ -12,7 +12,9 @@ GPUs:
   resumes it transparently;
 * when the trainer publishes new weights, the whole rollout task is paused
   in one call (pause_task) and resumed after (resume_task);
-* sandboxes end with the job (stop_task).
+* sandboxes end with the job: client.rollouts runs one trajectory per
+  input in its own sandbox and stops them all when the run ends (or is
+  cancelled).
 
 Run against a cluster with a container runtime, e.g.
 ``opendsecctl cluster up -runtime linux``::
@@ -31,7 +33,7 @@ import random
 import time
 from dataclasses import dataclass, field
 
-from opendsec import DSecClient, DSecContainerRunArgs, Sandbox
+from opendsec import DSecClient, DSecContainerRunArgs, Sandbox, inputs_from_count
 
 
 @dataclass
@@ -71,22 +73,21 @@ async def run(addr: str, token: str, project: str, image: str, backend: str, n: 
     stats = Stats()
     async with DSecClient(addr, token, project) as client:
         args = DSecContainerRunArgs(container_image=image, backend=backend, memory_limit_mb=mem_mb, disk_mb=disk_mb,
-                                    cpu_cores_limit=1, ttl_running_stop=600, task_id=task)
-        created = await client.run_containers(args, n)
-        sandboxes = [s for s in created if isinstance(s, Sandbox)]
-        if len(sandboxes) != n:
-            await client.stop_task(task)
-            raise RuntimeError(f"created {len(sandboxes)} of {n} sandboxes: {[e for e in created if not isinstance(e, Sandbox)]}")
-        try:
-            rollout = asyncio.gather(*(trajectory(sb, steps, think_s, pause, stats) for sb in sandboxes))
+                                    cpu_cores_limit=1, ttl_running_stop=600)
+        # One trajectory per input, each in its own sandbox; the run makes,
+        # tracks and stops them (task_id = the run id).
+        rollout = await client.rollouts.start(args, inputs_from_count(n), concurrency=n, run_id=task,
+                                              episode=lambda sb, _: trajectory(sb, steps, think_s, pause, stats))
+        async with rollout:  # on an error here, the run is cancelled and its sandboxes stopped
             # Halfway, the trainer swaps weights: freeze the rollout task.
             await asyncio.sleep(steps * think_s / 2)
-            await client.pause_task(task)
+            await client.pause_task(rollout.run_id)
             await asyncio.sleep(think_s)
-            await client.resume_task(task)
-            stats.trajectories = await rollout
-        finally:
-            await client.stop_task(task)
+            await client.resume_task(rollout.run_id)
+            summary = await rollout.wait()
+    if not summary.ok:
+        raise RuntimeError(str(summary))
+    stats.trajectories = [r.result for r in summary.results]
     return stats
 
 

@@ -93,7 +93,19 @@ await t.build(client, "root/team/myenv:v1")
 The cluster pulls and builds it; then use `image="root/team/myenv:v1"`.
 Your project may limit how many images it keeps and for how long.
 
-## 6. Fork and pause
+## 6. A batch of inputs
+
+```python
+summary = await client.rollouts.run(
+    DSecRunArgs(backend="microvm", image="root/team/myenv:v1"),
+    inputs=[{"id": str(i), "payload": {"seed": i}} for i in range(100)],
+    command=["python3", "/app/eval.py"], concurrency=10, result_path="/tmp/result.json")
+print(summary)
+```
+
+Each input runs in a fresh sandbox; results come back per input, and every sandbox is stopped. From the shell: `python -m opendsec rollout run ...`. See [PYTHON_SDK.md](PYTHON_SDK.md), "Rollouts".
+
+## 7. Fork and pause
 
 | Example | What it shows | Needs |
 |---|---|---|
@@ -101,7 +113,7 @@ Your project may limit how many images it keeps and for how long.
 | [`task_pause.py`](../../sdk/python/examples/task_pause.py) | pause and resume a whole batch (`task_id`) in one call each | microvm or container |
 | [`decoupled_rollout.py`](../../sdk/python/examples/decoupled_rollout.py) | RL rollouts that pause while waiting for inference | container |
 
-## 7. More
+## 8. More
 
 - [USER_GUIDE.md](USER_GUIDE.md): limits, errors and retries, tokens.
 - [PYTHON_SDK.md](PYTHON_SDK.md): every call.

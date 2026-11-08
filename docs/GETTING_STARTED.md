@@ -84,7 +84,19 @@ await t.build(client, "root/team/myenv:v1")
 
 集群负责拉取和构建；之后用 `image="root/team/myenv:v1"`。项目可能限制镜像的数量和保留时间。
 
-## 6. fork 和暂停
+## 6. 一批输入
+
+```python
+summary = await client.rollouts.run(
+    DSecRunArgs(backend="microvm", image="root/team/myenv:v1"),
+    inputs=[{"id": str(i), "payload": {"seed": i}} for i in range(100)],
+    command=["python3", "/app/eval.py"], concurrency=10, result_path="/tmp/result.json")
+print(summary)
+```
+
+每条输入在一个新 sandbox 里运行，结果逐条返回，sandbox 全部停掉。命令行：`python -m opendsec rollout run ...`。详见 [PYTHON_SDK.md](PYTHON_SDK.md) 的 Rollout 一节。
+
+## 7. fork 和暂停
 
 | 示例 | 演示什么 | 需要 |
 |---|---|---|
@@ -92,7 +104,7 @@ await t.build(client, "root/team/myenv:v1")
 | [`task_pause.py`](../sdk/python/examples/task_pause.py) | 一次调用暂停、恢复整批 sandbox（`task_id`） | microvm 或 container |
 | [`decoupled_rollout.py`](../sdk/python/examples/decoupled_rollout.py) | 等推理时暂停的 RL rollout | container |
 
-## 7. 更多
+## 8. 更多
 
 - [USER_GUIDE.md](USER_GUIDE.md)：限制、错误与重试、token。
 - [PYTHON_SDK.md](PYTHON_SDK.md)：所有调用。

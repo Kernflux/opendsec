@@ -32,6 +32,40 @@ The distribution is `opendsec-sdk`; the module is `opendsec`. The PyPI name `ope
 | `Template()...build(client, name)` | declarative image builds (see "Images") |
 | `client.import_image(name, ref)` | have the cluster pull a registry's image |
 
+
+## Rollouts: a batch of inputs, each in a fresh sandbox
+
+```python
+run = await client.rollouts.start(
+    DSecRunArgs(backend="microvm", image="root/py:3.12"),
+    inputs=[{"id": "seed-1", "payload": {"seed": 1}}, {"id": "seed-2", "payload": {"seed": 2}}],
+    command=["python3", "/app/rollout.py"],   # argv, no shell; the payload is at $OPENDSEC_INPUT_PATH (JSON)
+    concurrency=10,                            # sandboxes being made or in use at once
+    execution_timeout_s=300,                   # per command, from when it starts
+    run_timeout_s=1800,                        # the whole run: waiting, creating, running
+    result_path="/tmp/result.json")            # optional: a JSON file the command writes
+summary = await run.wait()
+print(summary)                                 # counts; "NOT CLEANED UP" if anything was left
+run.export_jsonl("results.jsonl")              # a metadata line, then one line per input (no payloads)
+```
+
+- Or `episode=async def (sandbox, payload) -> result` instead of `command`: for multi-step rollouts that call a model between commands. `client.rollouts.run(...)` is start + wait.
+- Results (`summary.results`, in input order): `input_id`, `status` (`succeeded`, `failed`, `timed_out`, `result_error`, `create_failed`, `cancelled`, `unknown`), `exit_code`, `stdout_tail`/`stderr_tail` (last 16 KB), `output_truncated`, `result`, `error` (`code`, `message`, `next_steps`), `cleanup_status`, `duration_ms`, `queued_ms`. One input failing never loses the others.
+- Waiting: no capacity, quota, rate limits and unreachable nodes are waited out with backoff within `run_timeout_s`. A wrong image, permission or argument stops the run early. A command or episode that started is never retried; `client.rollouts.rerun(args, inputs, previous_results)` runs the ones that did not succeed again, as a new run (attempt + 1).
+- Cleanup: every sandbox of a run has `task_id = run.run_id`. The run stops its sandboxes as inputs finish, and sweeps at the end. `await run.cancel()` stops dispatching and stops everything; `async with run:` cancels on an error. If the program is killed, `await client.rollouts.cleanup(run_id)` (or `opendsecctl task stop <run_id>`) stops what it left; sandboxes also carry a `ttl_max` of the run's budget plus 5 minutes. A run lives in its process: inputs not started when it exits are not run.
+- `run.progress()`, or `on_progress=callback`: counts by status, active sandboxes, cleanup pending.
+
+Command line (same model):
+
+```sh
+python -m opendsec rollout run --image root/py:3.12 --inputs inputs.jsonl --concurrency 10 \
+    --result-path /tmp/result.json --output results.jsonl -- python3 /app/rollout.py
+python -m opendsec rollout rerun --inputs inputs.jsonl --results results.jsonl --output results-2.jsonl
+python -m opendsec rollout cleanup <run-id>
+```
+
+`inputs.jsonl`: one `{"id": ..., "payload": ...}` per line. Progress goes to stderr (a redrawn line on a terminal, plain lines otherwise, `--progress json` for machines). Exit status 0 when every input succeeded and nothing was left, 1 otherwise, 2 for usage or connection errors, 130 when interrupted (Ctrl-C cancels the run, stops its sandboxes and writes what is known).
+
 ## Quick example
 
 ```python

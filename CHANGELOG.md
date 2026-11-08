@@ -98,6 +98,12 @@ docs/OPERATIONS.md §6.4.
   (docs/en/GETTING_STARTED.md), apart from deployment; complete SDK
   examples: `execute_code.py`, `memory_fork.py` (process memory inherited
   and isolated across a fork), `task_pause.py`.
+- Rollouts (Python SDK `client.rollouts`, `python -m opendsec rollout`): a
+  batch of inputs, each in a fresh sandbox, with a concurrency limit,
+  waiting out capacity and quota within a time budget, per-input results
+  (status, exit code, output tails, a result file), progress, JSON Lines
+  export, cancel, rerun of what failed, and cleanup by run id (the run id
+  is every sandbox's task_id). Command or episode (multi-step) mode.
 - Python SDK: `client.sandbox(args)` (a sandbox for an `async with` block,
   stopped at its end; an hour's `ttl_max` by default); `Sandbox.exec(argv)`
   (no shell: arguments reach the program as they are); the process API
@@ -218,6 +224,9 @@ docs/OPERATIONS.md §6.4.
   they go to the image store.
 
 ### Fixed
+- Python SDK: `write_file` now rides out a restarting node like the other
+  calls (whole-file writes; appends are not retried, which could write
+  twice).
 - **A sandbox's lifecycle during failures.** A sandbox found lost during a
   pause or resume is now stopped after that operation and stays FAILED; the
   liveness probe skips a sandbox in an operation, so one being paused is no

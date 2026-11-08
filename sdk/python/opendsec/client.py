@@ -488,7 +488,9 @@ class Sandbox:
             data = data.encode()
         req = runtime_pb2.WriteFileRequest(sandbox_id=self.id, session=session, path=path, data=data,
                                            mode=mode, append=append)
-        return await _call(self._stub().WriteFile(req))
+        if append:  # not idempotent: a retry could append twice
+            return await _call(self._stub().WriteFile(req))
+        return await self._retrying(lambda: self._stub().WriteFile(req))
 
     async def list_dir(self, path: str, session: str = "default") -> list[runtime_pb2.FileInfo]:
         req = runtime_pb2.FileRequest(sandbox_id=self.id, session=session, path=path)
@@ -658,6 +660,12 @@ class DSecClient:
                 if (end is not None and loop.time() >= end) or not await r.wait(e):
                     raise
                 req.retry = True
+
+    @property
+    def rollouts(self):
+        """Batches of inputs, each in a fresh sandbox (opendsec.rollout)."""
+        from .rollout import Rollouts
+        return Rollouts(self)
 
     def sandbox(self, args: DSecRunArgs, timeout: float | None = 120, keep_on_error: bool = False):
         """A sandbox for the length of an ``async with`` block, stopped when

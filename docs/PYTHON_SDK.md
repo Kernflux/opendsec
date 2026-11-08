@@ -31,6 +31,40 @@ pip install opendsec_sdk-0.11.0-py3-none-any.whl
 | `Template()...build(client, name)` | 声明式构建镜像 |
 | `client.import_image(name, ref)` | 让集群从镜像仓库拉取镜像 |
 
+
+## Rollout：一批输入，每条一个新 sandbox
+
+```python
+run = await client.rollouts.start(
+    DSecRunArgs(backend="microvm", image="root/py:3.12"),
+    inputs=[{"id": "seed-1", "payload": {"seed": 1}}, {"id": "seed-2", "payload": {"seed": 2}}],
+    command=["python3", "/app/rollout.py"],   # argv，不经过 shell；payload 在 $OPENDSEC_INPUT_PATH（JSON）
+    concurrency=10,                            # 同时在创建或使用中的 sandbox 数
+    execution_timeout_s=300,                   # 每条命令，从开始执行算
+    run_timeout_s=1800,                        # 整批：等待、创建、执行
+    result_path="/tmp/result.json")            # 可选：命令写出的 JSON 结果文件
+summary = await run.wait()
+print(summary)                                 # 各状态的数量；有没清理掉的会写“NOT CLEANED UP”
+run.export_jsonl("results.jsonl")              # 一行元数据，再每条输入一行（不含 payload）
+```
+
+- 也可以用 `episode=async def (sandbox, payload) -> result` 代替 `command`：适合在命令之间调模型的多轮 rollout。`client.rollouts.run(...)` 是 start + wait。
+- 结果（`summary.results`，按输入顺序）：`input_id`、`status`（`succeeded`、`failed`、`timed_out`、`result_error`、`create_failed`、`cancelled`、`unknown`）、`exit_code`、`stdout_tail`/`stderr_tail`（最后 16 KB）、`output_truncated`、`result`、`error`（`code`、`message`、`next_steps`）、`cleanup_status`、`duration_ms`、`queued_ms`。某条失败不影响其他条的结果。
+- 等待：容量不足、配额满、限流、节点暂时连不上，都在 `run_timeout_s` 内退避等待。镜像不存在、没有权限、参数错误会让整批尽早停止。已经开始的命令或 episode 不会自动重试；`client.rollouts.rerun(args, inputs, previous_results)` 把没成功的作为新的一批再跑（attempt + 1）。
+- 清理：一批的所有 sandbox 都带 `task_id = run.run_id`。每条结束就停掉它的 sandbox，最后再扫一遍。`await run.cancel()` 停止派发并停掉全部；`async with run:` 出错时自动取消。程序被强制结束的话，`await client.rollouts.cleanup(run_id)`（或 `opendsecctl task stop <run_id>`）停掉它留下的；sandbox 还带着“整批预算 + 5 分钟”的 `ttl_max`。一批活在发起它的进程里：进程退出时还没开始的输入不会再跑。
+- `run.progress()` 或 `on_progress=回调`：各状态数量、活跃 sandbox、待清理数。
+
+命令行（同一个数据模型）：
+
+```sh
+python -m opendsec rollout run --image root/py:3.12 --inputs inputs.jsonl --concurrency 10 \
+    --result-path /tmp/result.json --output results.jsonl -- python3 /app/rollout.py
+python -m opendsec rollout rerun --inputs inputs.jsonl --results results.jsonl --output results-2.jsonl
+python -m opendsec rollout cleanup <run-id>
+```
+
+`inputs.jsonl`：每行一个 `{"id": ..., "payload": ...}`。进度输出到 stderr（终端里是刷新的一行，否则是普通的行，`--progress json` 给程序读）。退出码：全部成功且没有残留为 0，否则 1，用法或连接错误 2，被中断 130（Ctrl-C 会取消这一批、停掉它的 sandbox 并写出已有结果）。
+
 ## 快速示例
 
 ```python
