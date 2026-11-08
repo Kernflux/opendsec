@@ -100,6 +100,23 @@ func TestImportImage(t *testing.T) {
 	if info.Env["FROM_REGISTRY"] != "1" || info.Workdir != "/srv" || len(info.Layers) != 1 || info.SizeBytes == 0 {
 		t.Fatalf("imported: %+v", info)
 	}
+	// An image made from it in the same project holds its data too (an
+	// import overwritten by a pack_diff of itself must not count only the
+	// diff); one made from another project's image does not.
+	derived, err := dev.ComposeImage(cx, &pb.ComposeImageRequest{Name: "root/u/app:2", Parts: []string{"root/u/app:1"}})
+	if err != nil || derived.SizeBytes != info.SizeBytes {
+		t.Fatalf("derived in the project: %v %v, want size %d", derived.GetSizeBytes(), err, info.SizeBytes)
+	}
+	if _, err := admin.ComposeImage(cx, &pb.ComposeImageRequest{Name: "root/base:1", Parts: []string{"root/u/app:1"}}); err != nil {
+		t.Fatal(err)
+	}
+	admin.Grant(cx, &pb.GrantRequest{Project: "root", Principal: "dev", Perms: []string{"layer.use"}})
+	if other, err := dev.ComposeImage(cx, &pb.ComposeImageRequest{Name: "root/u/app:3", Parts: []string{"root/base:1"}}); err != nil || other.SizeBytes != 0 {
+		t.Fatalf("derived from another project: %v %v", other.GetSizeBytes(), err)
+	}
+	for _, n := range []string{"root/u/app:2", "root/u/app:3"} {
+		dev.DeleteImage(cx, &pb.ImageRef{Name: n})
+	}
 	if _, err := imp(dev, "root/other:1", host(small)+"/test/app:v1"); rpcutil.Reason(err) != rpcutil.Forbidden {
 		t.Fatalf("into a project without layer.publish: %v", err)
 	}

@@ -229,6 +229,10 @@ docs/OPERATIONS.md §6.4.
   they go to the image store.
 
 ### Fixed
+- Image quotas: an image made from an image of its own project (a
+  pack_diff, snapshot or compose of it) now also counts that image's size.
+  Before, an import overwritten by a pack_diff of itself (as Template
+  builds do) counted only the diff, while its layers stayed in the store.
 - Edge: a runtime call cut by its sandbox pausing or moving (microVMs close
   their agent connection) failed with an unclassified error; it is now
   `unavailable`, which the SDK retries (commands by request id, so a

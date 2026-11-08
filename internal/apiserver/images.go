@@ -183,6 +183,7 @@ func (s *Server) ComposeImage(ctx context.Context, r *pb.ComposeImageRequest) (*
 		if err != nil {
 			return nil, err
 		}
+		m.Size += s.inheritedSize(ctx, pm.Name, projectOf(name))
 		for _, l := range pm.Layers {
 			if !seen[l] { // a shared base layer appears once, at its lowest position
 				seen[l] = true
@@ -319,9 +320,18 @@ func (s *Server) PackDiff(ctx context.Context, r *pb.PackDiffRequest) (*pb.Image
 	}
 	m := &images.Manifest{Name: name, Layers: append(append([]string{}, parent.Layers...), res.LayerId),
 		Env: parent.Env, Workdir: parent.Workdir, User: parent.User, Parent: parent.Name,
-		Source: "pack_diff " + r.SandboxId, CreatedBy: p, Size: res.SizeBytes}
+		Source: "pack_diff " + r.SandboxId, CreatedBy: p, Size: res.SizeBytes + s.inheritedSize(ctx, parent.Name, projectOf(name))}
 	if err := st.Put(ctx, m, r.Overwrite); err != nil {
 		return nil, err
 	}
 	return infoPB(m), nil
+}
+
+// projectOf is image name's project ("" if it is not a store name).
+func projectOf(name string) string {
+	p, _, _, err := images.ParseName(name)
+	if err != nil {
+		return ""
+	}
+	return p
 }

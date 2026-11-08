@@ -64,6 +64,26 @@ func (s *Server) imageRoom(ctx context.Context, name string) (int64, error) {
 	return lim.MaxImageMB<<20 - bytes, nil
 }
 
+// inheritedSize is what an image made from parent in project inherits of
+// its data: the parent's size when the parent is an image of the same
+// project (else 0: a shared base is not the project's). Without it, an
+// import overwritten by a pack_diff of itself (as Template builds do)
+// would leave its layers in the store but count only the diff. Keeping
+// both counts the parent twice: quotas err on the high side.
+func (s *Server) inheritedSize(ctx context.Context, parent, project string) int64 {
+	if parent == "" {
+		return 0
+	}
+	if p, _, _, err := images.ParseName(parent); err != nil || p != project {
+		return 0
+	}
+	m, err := s.catalog().Get(ctx, parent)
+	if err != nil {
+		return 0
+	}
+	return m.Size
+}
+
 // touchEvery: how stale an image's UsedAt may get before a start records
 // a new one (one catalog write per image per period, not per sandbox).
 const touchEvery = time.Hour

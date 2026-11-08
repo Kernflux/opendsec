@@ -156,7 +156,8 @@ func (s *Server) CreateSnapshot(ctx context.Context, r *pb.CreateSnapshotRequest
 		return nil, rpcutil.Err(rpcutil.Invalid, "sandbox %s runs on the edge-local image %q, which the store cannot hold", sb.Id, snap.Base)
 	}
 	m := &images.Manifest{Name: name, Layers: snap.Layers, Env: snap.Env, Workdir: snap.Workdir, User: snap.User,
-		Parent: sb.Spec.GetImage(), Source: "snapshot " + sb.Id, CreatedBy: p, Snapshot: snap.ID, Memory: snap.Memory, Size: res.SizeBytes}
+		Parent: sb.Spec.GetImage(), Source: "snapshot " + sb.Id, CreatedBy: p, Snapshot: snap.ID, Memory: snap.Memory,
+		Size: res.SizeBytes + s.inheritedSize(ctx, sb.Spec.GetImage(), projectOf(name))}
 	if err := st.Put(ctx, m, r.Overwrite); err != nil {
 		return nil, err
 	}
