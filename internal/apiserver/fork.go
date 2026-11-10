@@ -158,7 +158,7 @@ func (s *Server) CreateSnapshot(ctx context.Context, r *pb.CreateSnapshotRequest
 	m := &images.Manifest{Name: name, Layers: snap.Layers, Env: snap.Env, Workdir: snap.Workdir, User: snap.User,
 		Parent: sb.Spec.GetImage(), Source: "snapshot " + sb.Id, CreatedBy: p, Snapshot: snap.ID, Memory: snap.Memory,
 		Size: res.SizeBytes + s.inheritedSize(ctx, sb.Spec.GetImage(), projectOf(name))}
-	if err := st.Put(ctx, m, r.Overwrite); err != nil {
+	if err := s.publishImage(ctx, m, r.Overwrite, false); err != nil {
 		return nil, err
 	}
 	return infoPB(m), nil

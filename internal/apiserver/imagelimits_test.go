@@ -2,9 +2,15 @@ package apiserver
 
 import (
 	"context"
+	"fmt"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"google.golang.org/grpc/metadata"
+
+	pb "github.com/kernflux/opendsec/gen/go/opendsec/v1"
 	"github.com/kernflux/opendsec/internal/config"
 	"github.com/kernflux/opendsec/internal/images"
 	"github.com/kernflux/opendsec/internal/rpcutil"
@@ -15,7 +21,8 @@ func limitsRig(t *testing.T, projects map[string]config.ProjectAdmission) (*Serv
 	st, layer := testStore(t)
 	c := newCatalog(nil, newFakeKV(), fakeEdges{st}, quietLog())
 	startCatalog(t, c)
-	s := &Server{imagesOn: true, log: quietLog()}
+	s := &Server{imagesOn: true, log: quietLog(), iam: c.iam, authz: map[string]time.Time{},
+		authn: map[string]authnEntry{"tok": {principal: "u", exp: time.Now().Add(time.Hour)}}}
 	s.catOnce.Do(func() { s.cat = c })
 	s.SetAdmission(config.Admission{Projects: projects})
 	return s, c, layer
@@ -111,5 +118,138 @@ func TestImageExpiry(t *testing.T) {
 				t.Fatalf("expired an entry used after it was listed: %v %v", gone, err)
 			}
 		}
+	}
+}
+
+func sizedLayer(t *testing.T, st *images.Store, size int64) string {
+	t.Helper()
+	id := images.NewDiffLayerID()
+	w, _, err := st.BeginLayer(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.Commit(images.LayerMeta{Source: "test", Size: size}); err != nil {
+		t.Fatal(err)
+	}
+	return id
+}
+
+// RegisterImage counts the layers' data whatever the caller does: an
+// overwrite does not reset it, and another name for the same layers counts.
+func TestRegisterImageSize(t *testing.T) {
+	st, _ := testStore(t)
+	c := newCatalog(nil, newFakeKV(), fakeEdges{st}, quietLog())
+	startCatalog(t, c)
+	s := &Server{imagesOn: true, log: quietLog(), iam: c.iam, authz: map[string]time.Time{},
+		authn: map[string]authnEntry{"tok": {principal: "u", exp: time.Now().Add(time.Hour)}}}
+	s.catOnce.Do(func() { s.cat = c })
+	s.SetAdmission(config.Admission{Projects: map[string]config.ProjectAdmission{"root/try/u": {MaxImageMB: 8}}})
+	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs("authorization", "Bearer tok"))
+	big := sizedLayer(t, st, 5<<20)
+	reg := func(name string, overwrite bool) (*pb.ImageInfo, error) {
+		return s.RegisterImage(ctx, &pb.RegisterImageRequest{Overwrite: overwrite,
+			Image: &pb.ImageInfo{Name: name, Layers: []string{big}, SizeBytes: 1}})
+	}
+	for _, overwrite := range []bool{false, true} {
+		info, err := reg("root/try/u/a:1", overwrite)
+		if err != nil || info.SizeBytes != 5<<20 {
+			t.Fatalf("overwrite=%v: %v %v", overwrite, info, err)
+		}
+	}
+	if _, err := reg("root/try/u/b:1", false); rpcutil.Reason(err) != rpcutil.QuotaExceeded {
+		t.Fatalf("the same layers under a second name, over the room left: %v", err)
+	}
+}
+
+// With edges too old to report sizes and no store here, a project with a
+// data limit is refused rather than counted as nothing.
+func TestRegisterImageSizeUnknown(t *testing.T) {
+	c := newCatalog(nil, newFakeKV(), oldEdges{}, quietLog())
+	if n := c.layersSize(context.Background(), []string{"x"}); n != -1 {
+		t.Fatalf("size from old edges: %d", n)
+	}
+}
+
+// Publishes at once under different names cannot all pass the check.
+func TestPublishQuotaConcurrent(t *testing.T) {
+	ctx := context.Background()
+	s, c, layer := limitsRig(t, map[string]config.ProjectAdmission{"root/try/u": {MaxImages: 1}})
+	c.iam.(*fakeKV).listFor = 5 * time.Millisecond // all would pass the check before any writes
+	var ok, refused atomic.Int32
+	var wg sync.WaitGroup
+	for i := range 16 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			err := s.publishImage(ctx, &images.Manifest{Name: fmt.Sprintf("root/try/u/gh-1/n%d:1", i), Layers: []string{layer}}, false, false)
+			switch rpcutil.Reason(err) {
+			case "":
+				ok.Add(1)
+			case rpcutil.QuotaExceeded:
+				refused.Add(1)
+			default:
+				t.Error(err)
+			}
+		}()
+	}
+	wg.Wait()
+	if ok.Load() != 1 || refused.Load() != 15 {
+		t.Fatalf("%d published, %d refused", ok.Load(), refused.Load())
+	}
+}
+
+// Strict publishes stop at the room left; the others may pass it once.
+func TestPublishStrict(t *testing.T) {
+	ctx := context.Background()
+	s, _, layer := limitsRig(t, map[string]config.ProjectAdmission{"root/try/u": {MaxImageMB: 3}})
+	m := func(n string) *images.Manifest {
+		return &images.Manifest{Name: "root/try/u/gh-1/" + n, Layers: []string{layer}, Size: 4 << 20}
+	}
+	if err := s.publishImage(ctx, m("a:1"), false, true); rpcutil.Reason(err) != rpcutil.QuotaExceeded {
+		t.Fatalf("strict, over the room: %v", err)
+	}
+	if err := s.publishImage(ctx, m("a:1"), false, false); err != nil {
+		t.Fatalf("not strict: %v", err)
+	}
+}
+
+// A write whose lock ran out is refused, and not reported as a name taken.
+func TestPutLostLock(t *testing.T) {
+	ctx := context.Background()
+	_, c, layer := limitsRig(t, nil)
+	m := &images.Manifest{Name: "root/a:1", Layers: []string{layer}}
+	for _, overwrite := range []bool{false, true} {
+		err := c.put(ctx, m, overwrite, &pb.Fence{Lock: "l", Holder: "gone"})
+		if rpcutil.Reason(err) != rpcutil.Unavailable {
+			t.Fatalf("overwrite=%v: %v", overwrite, err)
+		}
+	}
+	if _, err := c.Fresh(ctx, m.Name); rpcutil.Reason(err) != rpcutil.NotFound {
+		t.Fatalf("written without the lock: %v", err)
+	}
+}
+
+func TestTouchEvery(t *testing.T) {
+	for _, c := range []struct{ ttl, want float64 }{{4, 5}, {600, 150}, {3600, 900}, {30 * 86400, 3600}} {
+		if got := touchEvery(c.ttl); got != c.want {
+			t.Errorf("ttl %v: %v, want %v", c.ttl, got, c.want)
+		}
+	}
+}
+
+// With an IAM that refuses the locks (older, during an upgrade), publishes
+// go on as before them, quotas still checked.
+func TestPublishOlderIAM(t *testing.T) {
+	ctx := context.Background()
+	s, c, layer := limitsRig(t, map[string]config.ProjectAdmission{"root/try/u": {MaxImages: 1}})
+	c.iam.(*fakeKV).lockErr = rpcutil.Err(rpcutil.Forbidden, "apiserver/0 may not call /opendsec.v1.IAM/AcquireLock")
+	m := func(n string) *images.Manifest {
+		return &images.Manifest{Name: "root/try/u/gh-1/" + n, Layers: []string{layer}}
+	}
+	if err := s.publishImage(ctx, m("a:1"), false, false); err != nil {
+		t.Fatalf("first image: %v", err)
+	}
+	if err := s.publishImage(ctx, m("b:1"), false, false); rpcutil.Reason(err) != rpcutil.QuotaExceeded {
+		t.Fatalf("second image: %v", err)
 	}
 }

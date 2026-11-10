@@ -145,9 +145,17 @@ func (s *Server) RegisterImage(ctx context.Context, r *pb.RegisterImageRequest) 
 	if err := s.checkImageQuota(ctx, name); err != nil {
 		return nil, err
 	}
+	// Its size is the store's word, as for an import: all its layers.
+	size := st.layersSize(ctx, img.Layers)
+	if size < 0 {
+		if s.adm.For(projectOf(name)).Image.MaxImageMB > 0 {
+			return nil, rpcutil.Err(rpcutil.Unavailable, "image %s: its size cannot be read from the image store (edges too old?)", name)
+		}
+		size = 0
+	}
 	m := &images.Manifest{Name: name, Layers: img.Layers, Env: img.Env, Workdir: img.Workdir, User: img.User,
-		Source: img.Source, CreatedBy: p}
-	if err := st.Put(ctx, m, r.Overwrite); err != nil {
+		Source: img.Source, CreatedBy: p, Size: size}
+	if err := s.publishImage(ctx, m, r.Overwrite, true); err != nil {
 		return nil, err
 	}
 	return infoPB(m), nil
@@ -209,7 +217,7 @@ func (s *Server) ComposeImage(ctx context.Context, r *pb.ComposeImageRequest) (*
 	if r.User != "" {
 		m.User = r.User
 	}
-	if err := st.Put(ctx, m, r.Overwrite); err != nil {
+	if err := s.publishImage(ctx, m, r.Overwrite, false); err != nil {
 		return nil, err
 	}
 	return infoPB(m), nil
@@ -321,7 +329,7 @@ func (s *Server) PackDiff(ctx context.Context, r *pb.PackDiffRequest) (*pb.Image
 	m := &images.Manifest{Name: name, Layers: append(append([]string{}, parent.Layers...), res.LayerId),
 		Env: parent.Env, Workdir: parent.Workdir, User: parent.User, Parent: parent.Name,
 		Source: "pack_diff " + r.SandboxId, CreatedBy: p, Size: res.SizeBytes + s.inheritedSize(ctx, parent.Name, projectOf(name))}
-	if err := st.Put(ctx, m, r.Overwrite); err != nil {
+	if err := s.publishImage(ctx, m, r.Overwrite, false); err != nil {
 		return nil, err
 	}
 	return infoPB(m), nil

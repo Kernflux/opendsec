@@ -49,8 +49,9 @@ type Manifest struct {
 	// Size is the data the image holds for its project: what it added (its
 	// pack_diff layer, its snapshot's files, its imported layers) plus the
 	// Size of a same-project image it was made from (0: none, or not known).
-	// UsedAt is when a sandbox last started from it, kept (at most hourly)
-	// for projects whose images expire (spec §43.2).
+	// UsedAt is when a sandbox last started from it, kept (at most a
+	// quarter of the ttl stale, an hour at most) for projects whose images
+	// expire (spec §43.2).
 	Size   int64   `json:"size,omitempty"`
 	UsedAt float64 `json:"used_at,omitempty"`
 }
@@ -222,6 +223,23 @@ func (s *Store) LayerMeta(id string) (*LayerMeta, error) {
 		return nil, err
 	}
 	return &m, nil
+}
+
+// LayersSize adds up the recorded sizes of layers; those the store lacks
+// count nothing.
+func (s *Store) LayersSize(layers []string) (int64, error) {
+	var n int64
+	for _, id := range layers {
+		m, err := s.LayerMeta(id)
+		if rpcutil.Reason(err) == rpcutil.NotFound {
+			continue
+		}
+		if err != nil {
+			return 0, err
+		}
+		n += m.Size
+	}
+	return n, nil
 }
 
 // LayerWriter stages a new layer; Commit publishes it atomically.

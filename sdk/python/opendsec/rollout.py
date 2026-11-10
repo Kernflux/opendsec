@@ -580,6 +580,10 @@ class RolloutRun:
         args = dataclasses.replace(self.args, labels={**self.args.labels, "rollout.input_id": r.input_id[:63]})
         delay = 0.5
         while True:
+            await self._running.wait()  # paused while backing off: no new attempt
+            if self._fatal or self._cancelled:
+                r.status, r.error = CANCELLED, self._fatal or _err("cancelled", "the run was cancelled")
+                return None
             try:
                 return await self.client.run_sandbox(args)
             except DSecError as e:

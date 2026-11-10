@@ -207,8 +207,11 @@ func (x *CheckLayersRequest) GetSnapshotId() string {
 }
 
 type CheckLayersResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Missing       []string               `protobuf:"bytes,1,rep,name=missing,proto3" json:"missing,omitempty"`
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Missing []string               `protobuf:"bytes,1,rep,name=missing,proto3" json:"missing,omitempty"`
+	// The recorded size of the layers found. Absent: an older edge, or the
+	// records could not be read.
+	TotalBytes    *int64 `protobuf:"varint,2,opt,name=total_bytes,json=totalBytes,proto3,oneof" json:"total_bytes,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -248,6 +251,13 @@ func (x *CheckLayersResponse) GetMissing() []string {
 		return x.Missing
 	}
 	return nil
+}
+
+func (x *CheckLayersResponse) GetTotalBytes() int64 {
+	if x != nil && x.TotalBytes != nil {
+		return *x.TotalBytes
+	}
+	return 0
 }
 
 type DeleteSnapshotRequest struct {
@@ -1350,9 +1360,12 @@ const file_opendsec_v1_cluster_proto_rawDesc = "" +
 	"\x12CheckLayersRequest\x12\x1b\n" +
 	"\tlayer_ids\x18\x01 \x03(\tR\blayerIds\x12\x1f\n" +
 	"\vsnapshot_id\x18\x02 \x01(\tR\n" +
-	"snapshotId\"/\n" +
+	"snapshotId\"e\n" +
 	"\x13CheckLayersResponse\x12\x18\n" +
-	"\amissing\x18\x01 \x03(\tR\amissing\"8\n" +
+	"\amissing\x18\x01 \x03(\tR\amissing\x12$\n" +
+	"\vtotal_bytes\x18\x02 \x01(\x03H\x00R\n" +
+	"totalBytes\x88\x01\x01B\x0e\n" +
+	"\f_total_bytes\"8\n" +
 	"\x15DeleteSnapshotRequest\x12\x1f\n" +
 	"\vsnapshot_id\x18\x01 \x01(\tR\n" +
 	"snapshotId\"K\n" +
@@ -1672,6 +1685,7 @@ func file_opendsec_v1_cluster_proto_init() {
 	}
 	file_opendsec_v1_types_proto_init()
 	file_opendsec_v1_runtime_proto_init()
+	file_opendsec_v1_cluster_proto_msgTypes[3].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{

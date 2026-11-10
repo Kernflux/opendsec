@@ -3,10 +3,12 @@ package iam
 import (
 	"bytes"
 	"compress/gzip"
+	"context"
 	"io"
 	"path/filepath"
 	"testing"
 
+	"github.com/kernflux/opendsec/internal/pki"
 	"github.com/kernflux/opendsec/internal/rpcutil"
 )
 
@@ -143,5 +145,22 @@ func TestKVReplicated(t *testing.T) {
 	rs.converged()
 	if g := rs.nodes[follower].KVGet("fleet/node/a"); g == nil || g.Rev != e.Rev {
 		t.Fatalf("restarted replica: %+v", g)
+	}
+}
+
+// Apiservers hold only the image catalog's locks, not the fleet's or the
+// watchers'.
+func TestLockScope(t *testing.T) {
+	api := rpcutil.WithIdentity(context.Background(), pki.Identity{Role: pki.RoleAPIServer, ID: "0"})
+	watcher := rpcutil.WithIdentity(context.Background(), pki.Identity{Role: pki.RoleWatcher, ID: "0"})
+	for _, c := range []struct {
+		ctx  context.Context
+		name string
+		ok   bool
+	}{{api, "img-quota/root/a", true}, {api, "fleet-controller", false}, {api, "watcher-reconcile", false},
+		{watcher, "watcher-reconcile", true}, {context.Background(), "fleet-controller", true}} {
+		if err := lockScope(c.ctx, c.name); (err == nil) != c.ok {
+			t.Errorf("%s: %v, want ok=%v", c.name, err, c.ok)
+		}
 	}
 }

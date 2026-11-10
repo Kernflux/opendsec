@@ -47,6 +47,12 @@ func PeerIdentity(ctx context.Context) (pki.Identity, bool) {
 	return id, ok
 }
 
+// WithIdentity returns ctx as the internal services see a call from id
+// (for in-process callers and tests).
+func WithIdentity(ctx context.Context, id pki.Identity) context.Context {
+	return context.WithValue(ctx, identityKey{}, id)
+}
+
 func identityFromPeer(ctx context.Context) (pki.Identity, error) {
 	p, ok := peer.FromContext(ctx)
 	if !ok {
@@ -136,8 +142,10 @@ var (
 		"/opendsec.v1.IAM/LeaseEdge":     {pki.RoleEdge, pki.RoleAPIServer, pki.RoleIAM},
 		"/opendsec.v1.IAM/ReconcileEdge": {pki.RoleWatcher, pki.RoleIAM},
 		"/opendsec.v1.IAM/SweepUnbound":  {pki.RoleWatcher, pki.RoleIAM},
-		"/opendsec.v1.IAM/AcquireLock":   {pki.RoleWatcher, pki.RoleFleet, pki.RoleIAM},
-		"/opendsec.v1.IAM/ReleaseLock":   {pki.RoleWatcher, pki.RoleFleet, pki.RoleIAM},
+		// Apiservers hold only img-quota/ locks (IAM checks): a project's
+		// image publishes, across apiservers.
+		"/opendsec.v1.IAM/AcquireLock": {pki.RoleWatcher, pki.RoleFleet, pki.RoleAPIServer, pki.RoleIAM},
+		"/opendsec.v1.IAM/ReleaseLock": {pki.RoleWatcher, pki.RoleFleet, pki.RoleAPIServer, pki.RoleIAM},
 		// The key-value area holds the fleet service's state (spec §28.3);
 		// apiservers reach only its ext/ keys (IAM checks), their
 		// extensions' state, and img/, the image catalog.

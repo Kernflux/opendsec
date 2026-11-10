@@ -209,6 +209,9 @@ func (s *Service) CheckLayers(ctx context.Context, r *pb.CheckLayersRequest) (*p
 		}
 	}
 	st.Touch(found, r.SnapshotId)
+	if n, err := st.LayersSize(found); err == nil {
+		out.TotalBytes = &n
+	}
 	return out, nil
 }
 

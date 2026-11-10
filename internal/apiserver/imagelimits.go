@@ -64,6 +64,29 @@ func (s *Server) imageRoom(ctx context.Context, name string) (int64, error) {
 	return lim.MaxImageMB<<20 - bytes, nil
 }
 
+// publishImage writes m to the catalog within its project's quota, across
+// apiservers: the quota is checked again, now that m's size is known, under
+// a lock of the project that also guards the write. strict refuses an image
+// bigger than the room left; otherwise the last image may go past MaxImageMB
+// by its own size. The earlier checkImageQuota only spares doomed work.
+func (s *Server) publishImage(ctx context.Context, m *images.Manifest, overwrite, strict bool) error {
+	c := s.catalog()
+	project := projectOf(m.Name)
+	if lim := s.adm.For(project).Image; lim.MaxImages <= 0 && lim.MaxImageMB <= 0 {
+		return c.Put(ctx, m, overwrite)
+	}
+	return c.locked(ctx, "img-quota/"+project, func(fence *pb.Fence) error {
+		room, err := s.imageRoom(ctx, m.Name)
+		if err != nil {
+			return err
+		}
+		if strict && room >= 0 && m.Size > room {
+			return rpcutil.Err(rpcutil.QuotaExceeded, "image %s holds %d MB, but its project has %d MB left", m.Name, m.Size>>20, room>>20)
+		}
+		return c.put(ctx, m, overwrite, fence)
+	})
+}
+
 // inheritedSize is what an image made from parent in project inherits of
 // its data: the parent's size when the parent is an image of the same
 // project (else 0: a shared base is not the project's). Without it, an
@@ -84,20 +107,26 @@ func (s *Server) inheritedSize(ctx context.Context, parent, project string) int6
 	return m.Size
 }
 
-// touchEvery: how stale an image's UsedAt may get before a start records
-// a new one (one catalog write per image per period, not per sandbox).
-const touchEvery = time.Hour
+// touchEvery is how stale an image's UsedAt may get before a start records
+// a new one (one catalog write per image per period, not per sandbox): a
+// quarter of its project's ttl, so that an image in use never looks unused
+// and the write has time to land, at most an hour, at least 5 seconds.
+func touchEvery(ttl float64) float64 { return min(max(ttl/4, 5), 3600) }
 
 // noteImageUse records that a sandbox starts from m, if m's project has
 // expiring images and its record is stale. In the background: creation
 // does not wait for it.
 func (s *Server) noteImageUse(m *images.Manifest) {
 	project, _, _, err := images.ParseName(m.Name)
-	if err != nil || s.adm.For(project).Image.ImageTTL <= 0 {
+	if err != nil {
+		return
+	}
+	ttl := s.adm.For(project).Image.ImageTTL
+	if ttl <= 0 {
 		return
 	}
 	now := float64(time.Now().UnixNano()) / 1e9
-	if now-max(m.UsedAt, m.CreatedAt) < touchEvery.Seconds() {
+	if now-max(m.UsedAt, m.CreatedAt) < touchEvery(ttl) {
 		return
 	}
 	go func() {
@@ -227,12 +256,9 @@ func (s *Server) ImportImage(ctx context.Context, r *pb.ImportImageRequest) (*pb
 	if err != nil {
 		return nil, err
 	}
-	if room >= 0 && res.SizeBytes > room {
-		return nil, rpcutil.Err(rpcutil.QuotaExceeded, "image %s holds %d MB, but its project has %d MB left", name, res.SizeBytes>>20, room>>20)
-	}
 	m := &images.Manifest{Name: name, Layers: res.Layers, Env: res.Env, Workdir: res.Workdir, User: res.User,
 		Source: res.Source, CreatedBy: p, Size: res.SizeBytes}
-	if err := st.Put(ctx, m, r.Overwrite); err != nil {
+	if err := s.publishImage(ctx, m, r.Overwrite, true); err != nil {
 		return nil, err
 	}
 	s.log.Info("image imported", "image", name, "ref", r.Ref, "by", p, "mb", res.SizeBytes>>20, "pulled", res.Pulled)

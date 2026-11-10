@@ -24,14 +24,17 @@ import (
 // refuse makes it answer like an IAM that does not accept img/ keys.
 type fakeKV struct {
 	pb.IAMClient
-	mu     sync.Mutex
-	rev    uint64
-	kv     map[string]*pb.KVEntry
-	refuse bool
-	puts   int
+	mu      sync.Mutex
+	rev     uint64
+	kv      map[string]*pb.KVEntry
+	refuse  bool
+	puts    int
+	locks   map[string]string // name -> holder
+	listFor time.Duration     // how long a KVList's answer takes to arrive
+	lockErr error             // AcquireLock's answer (an older IAM)
 }
 
-func newFakeKV() *fakeKV { return &fakeKV{kv: map[string]*pb.KVEntry{}} }
+func newFakeKV() *fakeKV { return &fakeKV{kv: map[string]*pb.KVEntry{}, locks: map[string]string{}} }
 
 func (f *fakeKV) check(key string, check bool, expect uint64) error {
 	if f.refuse && strings.HasPrefix(key, "img/") {
@@ -57,6 +60,7 @@ func (f *fakeKV) KVGet(_ context.Context, r *pb.KVGetRequest, _ ...grpc.CallOpti
 }
 
 func (f *fakeKV) KVList(_ context.Context, r *pb.KVListRequest, _ ...grpc.CallOption) (*pb.KVEntries, error) {
+	defer time.Sleep(f.listFor) // after reading: the answer is already old
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	out := &pb.KVEntries{}
@@ -72,6 +76,9 @@ func (f *fakeKV) KVList(_ context.Context, r *pb.KVListRequest, _ ...grpc.CallOp
 func (f *fakeKV) KVPut(_ context.Context, r *pb.KVPutRequest, _ ...grpc.CallOption) (*pb.KVEntry, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if r.Fence != nil && f.locks[r.Fence.Lock] != r.Fence.Holder {
+		return nil, rpcutil.Err(rpcutil.Conflict, "%s does not hold lock %s", r.Fence.Holder, r.Fence.Lock)
+	}
 	if err := f.check(r.Key, r.Check, r.ExpectRev); err != nil {
 		return nil, err
 	}
@@ -79,6 +86,32 @@ func (f *fakeKV) KVPut(_ context.Context, r *pb.KVPutRequest, _ ...grpc.CallOpti
 	f.puts++
 	f.kv[r.Key] = &pb.KVEntry{Key: r.Key, Value: append([]byte(nil), r.Value...), Rev: f.rev}
 	return &pb.KVEntry{Key: r.Key, Value: r.Value, Rev: f.rev}, nil
+}
+
+func (f *fakeKV) AcquireLock(_ context.Context, r *pb.LockRequest, _ ...grpc.CallOption) (*pb.LockState, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.lockErr != nil {
+		return nil, f.lockErr
+	}
+	if h := f.locks[r.Name]; h != "" && h != r.Holder {
+		return &pb.LockState{Name: r.Name, Holder: h}, nil
+	}
+	f.locks[r.Name] = r.Holder
+	return &pb.LockState{Name: r.Name, Holder: r.Holder, Acquired: true}, nil
+}
+
+func (f *fakeKV) ReleaseLock(_ context.Context, r *pb.LockRequest, _ ...grpc.CallOption) (*pb.Empty, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.locks[r.Name] == r.Holder {
+		delete(f.locks, r.Name)
+	}
+	return &pb.Empty{}, nil
+}
+
+func (f *fakeKV) Authorize(context.Context, *pb.AuthorizeRequest, ...grpc.CallOption) (*pb.Empty, error) {
+	return &pb.Empty{}, nil
 }
 
 func (f *fakeKV) KVDelete(_ context.Context, r *pb.KVDeleteRequest, _ ...grpc.CallOption) (*pb.Empty, error) {
@@ -319,6 +352,9 @@ func (f fakeEdge) CheckLayers(_ context.Context, r *pb.CheckLayersRequest, _ ...
 		if !f.st.HasLayer(l) {
 			out.Missing = append(out.Missing, l)
 		}
+	}
+	if n, err := f.st.LayersSize(r.LayerIds); err == nil {
+		out.TotalBytes = &n
 	}
 	return out, nil
 }

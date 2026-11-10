@@ -79,6 +79,16 @@ func (s *Service) KVDelete(ctx context.Context, r *pb.KVDeleteRequest) (*pb.Empt
 	return &pb.Empty{}, s.IAM.KVDeleteFenced(r.Key, r.Check, r.ExpectRev, fenceOf(r.Fence))
 }
 
+// lockScope keeps apiservers to the image catalog's locks (img-quota/): the
+// others elect the fleet controller and the watchers' reconciler. Checked
+// before any forwarding, as kvScope.
+func lockScope(ctx context.Context, name string) error {
+	if id, ok := rpcutil.PeerIdentity(ctx); ok && id.Role == pki.RoleAPIServer && !strings.HasPrefix(name, "img-quota/") {
+		return rpcutil.Err(rpcutil.Forbidden, "%s may hold only img-quota/ locks, not %q", id, name)
+	}
+	return nil
+}
+
 // kvScope keeps apiservers to the extensions' keys (ext/) and the image
 // catalog (img/): the rest is the fleet service's, which says what runs on
 // every node. It is checked where the call comes in, before any forwarding

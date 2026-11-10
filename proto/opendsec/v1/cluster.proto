@@ -111,6 +111,9 @@ message CheckLayersRequest {
 
 message CheckLayersResponse {
   repeated string missing = 1;
+  // The recorded size of the layers found. Absent: an older edge, or the
+  // records could not be read.
+  optional int64 total_bytes = 2;
 }
 
 message DeleteSnapshotRequest {

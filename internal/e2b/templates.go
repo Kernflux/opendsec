@@ -44,6 +44,8 @@ const (
 	buildFiles    = buildDir + "/files"
 	buildStatus   = buildDir + "/status.json"
 	buildLog      = buildDir + "/log.jsonl"
+	buildClaim    = buildDir + "/started" // made once, by the request that runs the build
+	claimTaken    = 73                    // the claim command's exit code when it is
 	// maxUpload bounds one COPY step's files (compressed).
 	maxUpload = 2 << 30
 	// buildTimeout bounds a whole build.
@@ -52,6 +54,7 @@ const (
 )
 
 var (
+	heartbeatEvery = 10 * time.Second // a build's; tests shorten it
 	templateNameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,63}$`)
 	filesHashRe    = regexp.MustCompile(`^[0-9a-f]{64}$`)
 )
@@ -127,7 +130,7 @@ func (g *Gateway) requestBuild(ctx context.Context, w http.ResponseWriter, r *ht
 		return
 	}
 	b := &builder{g: g, ctx: ctx, stage: sb.Id}
-	if err := b.mkdirs(); err == nil {
+	if err = b.mkdirs(); err == nil {
 		err = b.setStatus(buildState{Status: "waiting"})
 	}
 	if err != nil {
@@ -299,7 +302,19 @@ func (g *Gateway) startBuild(ctx context.Context, w http.ResponseWriter, r *http
 	// its own.
 	bctx, cancel := context.WithTimeout(forwarded(client.WithToken(context.Background(), apiKey(r)), r), buildTimeout)
 	b := &builder{g: g, ctx: bctx, stage: stage, name: tid, project: project, spec: req, cpu: cpu, mem: mem}
+	claimed, err := b.claim()
+	if err != nil {
+		cancel()
+		writeAPIErr(w, err)
+		return
+	}
+	if !claimed { // a repeated request: the first one's build is the build
+		cancel()
+		w.WriteHeader(http.StatusAccepted)
+		return
+	}
 	if err := b.setStatus(buildState{Status: "building", Heartbeat: now()}); err != nil {
+		b.unclaim()
 		cancel()
 		writeAPIErr(w, err)
 		return
@@ -396,9 +411,34 @@ func (b *builder) mkdirs() error {
 	return err
 }
 
-func (b *builder) setStatus(st buildState) error {
+// claim takes the build for this request, atomically across gateways: mkdir
+// in the staging sandbox succeeds once. False: another request has it.
+func (b *builder) claim() (bool, error) {
+	cmd := "mkdir " + buildClaim + " || { [ -d " + buildClaim + " ] && exit " + strconv.Itoa(claimTaken) + "; exit 1; }"
+	res, err := b.g.api.Exec(b.ctx, &pb.ExecRequest{SandboxId: b.stage, Session: "build-claim", Cmd: cmd, TimeoutS: 30, RequestId: ids.NewLease()})
+	switch {
+	case err != nil:
+		return false, err
+	case res.ExitCode == 0 && !res.TimedOut:
+		return true, nil
+	case res.ExitCode == claimTaken:
+		return false, nil
+	}
+	return false, fmt.Errorf("claiming the build: exited with %d: %s", res.ExitCode, tail(string(res.Stderr), 1024))
+}
+
+// unclaim gives back a claim whose build did not start.
+func (b *builder) unclaim() {
+	if _, err := b.g.api.Remove(b.ctx, &pb.FileRequest{SandboxId: b.stage, Path: buildClaim, Recursive: true}); err != nil {
+		b.g.log.Warn("template build: giving back its claim failed", "template", b.name, "err", err)
+	}
+}
+
+func (b *builder) setStatus(st buildState) error { return b.setStatusCtx(b.ctx, st) }
+
+func (b *builder) setStatusCtx(ctx context.Context, st buildState) error {
 	data, _ := json.Marshal(st)
-	_, err := b.g.api.WriteFile(b.ctx, &pb.WriteFileRequest{SandboxId: b.stage, Path: buildStatus, Data: data})
+	_, err := b.g.api.WriteFile(ctx, &pb.WriteFileRequest{SandboxId: b.stage, Path: buildStatus, Data: data})
 	return err
 }
 
@@ -440,23 +480,32 @@ func (b *builder) log(level, step, msg string) {
 
 // run builds, then records the outcome; it never returns an error.
 func (b *builder) run() {
-	stop := make(chan struct{})
+	stop, beat := make(chan struct{}), make(chan struct{})
 	go func() { // heartbeat: tells a running build from one whose gateway went away
-		t := time.NewTicker(10 * time.Second)
+		defer close(beat)
+		t := time.NewTicker(heartbeatEvery)
 		defer t.Stop()
 		for {
 			select {
 			case <-stop:
 				return
 			case <-t.C:
-				b.setStatus(buildState{Status: "building", Heartbeat: now()})
+				ctx, cancel := context.WithTimeout(b.ctx, heartbeatEvery)
+				b.setStatusCtx(ctx, buildState{Status: "building", Heartbeat: now()})
+				cancel()
 			}
 		}
 	}()
 	img, step, err := b.build()
 	close(stop)
+	<-beat // a heartbeat still being written would land on the final status
+	// The build's own context may have run out (buildTimeout): the outcome
+	// is still recorded.
+	fctx, cancel := context.WithTimeout(context.WithoutCancel(b.ctx), time.Minute)
+	defer cancel()
+	b.ctx = fctx
 	if b.box != "" {
-		ctx, cancel := context.WithTimeout(context.WithoutCancel(b.ctx), 30*time.Second)
+		ctx, cancel := context.WithTimeout(fctx, 30*time.Second)
 		b.g.api.StopSandbox(ctx, &pb.SandboxRef{Id: b.box})
 		cancel()
 	}
@@ -466,12 +515,16 @@ func (b *builder) run() {
 			msg = s
 		}
 		b.log("error", step, msg)
-		b.setStatus(buildState{Status: "error", Reason: &buildReason{Message: msg, Step: step}})
+		if serr := b.setStatus(buildState{Status: "error", Reason: &buildReason{Message: msg, Step: step}}); serr != nil {
+			b.g.log.Warn("template build: recording its failure failed", "template", b.name, "err", serr)
+		}
 		b.g.log.Info("template build failed", "template", b.name, "project", b.project, "step", step, "err", msg)
 		return
 	}
 	b.log("info", "", "Template built: "+img)
-	b.setStatus(buildState{Status: "ready", Image: img})
+	if serr := b.setStatus(buildState{Status: "ready", Image: img}); serr != nil {
+		b.g.log.Warn("template build: recording its success failed", "template", b.name, "err", serr)
+	}
 	b.g.log.Info("template built", "template", b.name, "image", img)
 	// The staging sandbox is read a little longer (the last logs), then goes.
 	b.g.api.SetSandboxTimeout(b.ctx, &pb.SetTimeoutRequest{SandboxId: b.stage, TimeoutS: 600})

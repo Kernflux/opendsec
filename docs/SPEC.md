@@ -3214,8 +3214,10 @@ E2B 的 `sandbox.fork()`、`create_snapshot()`、`Sandbox.create(snapshot_id)` �
 - 业界做法（E2B、Daytona）：用户不直接上传文件系统，平台按套餐限制模板数量和大小，不用的模板由平台回收。这里按项目限制。
 - `admission.projects` 的每一项新增 `max_images`、`max_image_mb`、`image_ttl_s`，对匹配的每个项目分别计算（只算项目自己的镜像，不含子项目）。祖先和子项目的设置从短到长逐项合并，后者覆盖前者；寿命上限仍只能更低。
 - 清单新增 `size`（镜像新增的数据：pack_diff 的层、快照的文件、导入的全部层）和 `used_at`（最近一次从它创建 sandbox）。`ImageInfo` 新增 `size_bytes`、`used_at`。
-- 发布前检查（RegisterImage、ComposeImage、PackDiff、CreateSnapshot、ImportImage）：数量到上限或数据到上限就返回 `quota_exceeded`。覆盖同名镜像时不算被替换的那个。新增数据写完才知道大小，所以最后一个镜像可以超出它自身的大小。
-- `used_at`：从镜像创建 sandbox 时，若所在项目设置了 `image_ttl_s` 且记录已超过 1 小时，后台用 CAS 更新一次（不是每次创建都写）。
+- 发布前检查（RegisterImage、ComposeImage、PackDiff、CreateSnapshot、ImportImage）：数量到上限或数据到上限就返回 `quota_exceeded`。覆盖同名镜像时不算被替换的那个。新增数据写完才知道大小，所以最后一个镜像可以超出它自身的大小；ImportImage 和 RegisterImage 例外，超过剩余额度就拒绝。
+- 配额跨 apiserver 生效：写目录前，在项目的 IAM 锁（`img-quota/<project>`）内按已知大小再查一次，写入带 fence。锁只包住这一步，不包住导入和打包。apiserver 只能持有 `img-quota/` 前缀的锁（IAM 在转发前检查），选主用的锁不能碰。IAM 是旧版本、拒绝加锁时（升级期间），退回到不加锁的检查，并按分钟记一条告警。没有设镜像配额的项目不加锁。
+- RegisterImage 的 `size` 由服务端按 layer 记录求和（edge 的 `CheckLayers` 返回 `total_bytes`），不信任也不接收客户端的值。升级顺序：先升 edge；读不到大小时，设了 `max_image_mb` 的项目返回 `unavailable`。
+- `used_at`：从镜像创建 sandbox 时，若所在项目设置了 `image_ttl_s` 且记录已超过 `image_ttl_s` 的四分之一（最长 1 小时，最短 5 秒），后台用 CAS 更新一次（不是每次创建都写）。
 - 过期：每个 apiserver 每 9–11 分钟扫一遍设置了 `image_ttl_s` 的项目，删除 `max(used_at, created_at)` 超过期限的镜像。删除用 CAS：列出后被使用或覆盖过的不删。数据由 `image gc` 回收；新增 `deploy/systemd/opendsec-image-gc.{service,timer}`，在一台挂了共享存储的节点上每天跑一次。
 
 ### 43.3 从镜像仓库导入（2026-11-08）

@@ -310,6 +310,9 @@ func (s *Service) SecurityEpoch(ctx context.Context, r *pb.Empty) (*pb.EpochResp
 }
 
 func (s *Service) AcquireLock(ctx context.Context, r *pb.LockRequest) (*pb.LockState, error) {
+	if err := lockScope(ctx, r.Name); err != nil {
+		return nil, err
+	}
 	if c, err := s.fwd(); c != nil || err != nil {
 		if err != nil {
 			return nil, err
@@ -324,6 +327,9 @@ func (s *Service) AcquireLock(ctx context.Context, r *pb.LockRequest) (*pb.LockS
 }
 
 func (s *Service) ReleaseLock(ctx context.Context, r *pb.LockRequest) (*pb.Empty, error) {
+	if err := lockScope(ctx, r.Name); err != nil {
+		return nil, err
+	}
 	if c, err := s.fwd(); c != nil || err != nil {
 		if err != nil {
 			return nil, err

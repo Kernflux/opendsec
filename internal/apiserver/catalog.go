@@ -13,6 +13,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	pb "github.com/kernflux/opendsec/gen/go/opendsec/v1"
+	"github.com/kernflux/opendsec/internal/ids"
 	"github.com/kernflux/opendsec/internal/images"
 	"github.com/kernflux/opendsec/internal/rpcutil"
 )
@@ -47,6 +48,10 @@ const (
 	// catalogImportEvery is how often files without a catalog entry are
 	// looked for, and IAM is probed again while it refuses img/ keys.
 	catalogImportEvery = time.Minute
+	// catalogLockTTL bounds a lock whose holder died; catalogLockWait, past
+	// it, how long a publish waits for one.
+	catalogLockTTL  = 30 * time.Second
+	catalogLockWait = 45 * time.Second
 )
 
 // storeEdges reaches the edges, which access the store's data.
@@ -62,7 +67,8 @@ type catalog struct {
 	edges storeEdges
 	log   *slog.Logger
 
-	kv atomic.Bool // IAM keeps the catalog (else: the files)
+	kv           atomic.Bool  // IAM keeps the catalog (else: the files)
+	unlockedWarn atomic.Int64 // when publishing without a lock was last logged (unix s)
 
 	mu    sync.Mutex
 	cache map[string]catalogEntry // key -> entry
@@ -252,6 +258,82 @@ func (c *catalog) kvGet(ctx context.Context, key string, v any) (found bool, rev
 
 // Put publishes m. Without overwrite, an existing name is an error.
 func (c *catalog) Put(ctx context.Context, m *images.Manifest, overwrite bool) error {
+	return c.put(ctx, m, overwrite, nil)
+}
+
+// locked runs f holding the cluster-wide lock name; f's catalog write,
+// fenced by what it is given, applies only while the lock is held. Without
+// the catalog in IAM f runs unlocked (fence nil).
+func (c *catalog) locked(ctx context.Context, name string, f func(fence *pb.Fence) error) error {
+	if !c.kv.Load() {
+		return f(nil)
+	}
+	holder := "apiserver-" + ids.NewLease()
+	deadline := time.Now().Add(catalogLockWait)
+	for delay := 20 * time.Millisecond; ; delay = min(delay*2, time.Second) {
+		actx, cancel := context.WithTimeout(ctx, kvTimeout)
+		l, err := c.iam.AcquireLock(actx, &pb.LockRequest{Name: name, Holder: holder, TtlS: catalogLockTTL.Seconds()})
+		cancel()
+		if rpcutil.ReasonOf(err) == rpcutil.Forbidden || status.Code(err) == codes.Unimplemented {
+			// An IAM older than these locks (during an upgrade): publish as
+			// before them, unlocked.
+			if now := time.Now().Unix(); c.unlockedWarn.Swap(now) < now-60 {
+				c.log.Warn("image catalog: IAM refuses publish locks (older?): image quotas checked without one", "lock", name, "err", err)
+			}
+			return f(nil)
+		}
+		if err != nil {
+			return err
+		}
+		if l.Acquired {
+			break
+		}
+		if time.Now().After(deadline) {
+			return rpcutil.Err(rpcutil.Unavailable, "lock %s is busy", name)
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(delay/2 + rand.N(delay)):
+		}
+	}
+	defer func() {
+		rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), kvTimeout)
+		defer cancel()
+		if _, err := c.iam.ReleaseLock(rctx, &pb.LockRequest{Name: name, Holder: holder}); err != nil {
+			c.log.Warn("image catalog: releasing a lock failed", "lock", name, "err", err)
+		}
+	}()
+	return f(&pb.Fence{Lock: name, Holder: holder})
+}
+
+// layersSize is the data layers hold, as the image store records it (-1:
+// not known, the edges being too old and the store not mounted here).
+// Layers the store lacks count nothing: put refuses them.
+func (c *catalog) layersSize(ctx context.Context, layers []string) int64 {
+	var total *int64
+	err := c.onEdge(ctx, "", func(ctx context.Context, ec pb.EdgeClient) error {
+		r, err := ec.CheckLayers(ctx, &pb.CheckLayersRequest{LayerIds: layers})
+		if err == nil {
+			total = r.TotalBytes
+		}
+		return err
+	})
+	if err == nil && total != nil {
+		return *total
+	}
+	if c.st == nil {
+		return -1
+	}
+	n, err := onFiles(ctx, c.st, func() (int64, error) { return c.st.LayersSize(layers) })
+	if err != nil {
+		return -1
+	}
+	return n
+}
+
+// put is Put, its catalog write applying only while fence's lock is held.
+func (c *catalog) put(ctx context.Context, m *images.Manifest, overwrite bool, fence *pb.Fence) error {
 	if err := images.ValidateManifest(m); err != nil {
 		return err
 	}
@@ -289,8 +371,14 @@ func (c *catalog) Put(ctx context.Context, m *images.Manifest, overwrite bool) e
 	defer cancel()
 	// The entry decides: of two writers without overwrite, one fails; with
 	// overwrite, the later one wins, and the files converge on it below.
-	e, err := c.iam.KVPut(kctx, &pb.KVPutRequest{Key: key, Value: b, Check: !overwrite})
+	e, err := c.iam.KVPut(kctx, &pb.KVPutRequest{Key: key, Value: b, Check: !overwrite, Fence: fence})
 	if rpcutil.ReasonOf(err) == rpcutil.Conflict {
+		if fence != nil {
+			// The lock ran out, or (only without overwrite) the name was taken.
+			if _, ferr := c.Fresh(ctx, m.Name); overwrite || rpcutil.Reason(ferr) == rpcutil.NotFound {
+				return rpcutil.Err(rpcutil.Unavailable, "image %s: publishing took too long, try again", m.Name)
+			}
+		}
 		return rpcutil.Err(rpcutil.Invalid, "image %s already exists", m.Name)
 	}
 	if err != nil {
