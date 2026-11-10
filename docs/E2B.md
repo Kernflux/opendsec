@@ -63,7 +63,7 @@ print(sbx.run_code("6 * 7").text)               # 42
 | | E2B | OpenDsec 网关 |
 |---|---|---|
 | API key | E2B 的 key | OpenDsec 的 token |
-| 模板 | 用 E2B 的模板构建生成 | 管理员在集群配置里把模板名对应到 OpenDsec 的镜像、后端和规格；也可以直接写 OpenDsec 的镜像名（`root/py:3.12`）。没有模板构建 API |
+| 模板 | 用 E2B 的模板构建生成 | 可以经网关用 E2B 的 Template SDK 构建（见下文「模板构建」）；也可以由管理员在集群配置里把模板名对应到 OpenDsec 的镜像、后端和规格，或者直接写 OpenDsec 的镜像名（`root/py:3.12`） |
 | sandbox 端口 | 可以开放公开访问 | 必须带 token（SDK 会自动带上）；不能直接用浏览器访问 |
 | 暂停的 sandbox | 只有开了 autoResume 时，有流量才会恢复 | 任何调用都会让它恢复 |
 | 自动恢复之后 | 重新开始计原来的超时 | 按空闲超时计 |
@@ -102,6 +102,7 @@ print(sbx.run_code("6 * 7").text)               # 42
      "max_timeout_s": 86400
    }
    ```
+   设了 `"home_projects": ["root/users"]` 时，主体建在这些项目之下某个项目里的调用方，用自己所在的项目代替 `project`（适合每个用户一个项目的场景，比如公开试用集群）。
 2. 一台一台地给节点加上 fleet 角色 `e2b=<序号>`（`opendsecctl fleet node set`，然后 `fleet node sync`）。
 3. 前面放一个负载均衡：TCP 7400，健康检查用 HTTP 9467 `/readyz`，空闲超时不低于 60 秒。TLS 可以在负载均衡上终止，也可以由网关自己提供：
    - 网关的 unit 以动态用户运行，读不到 `/etc/opendsec`，所以证书和私钥通过 systemd 凭据传入。在每台网关机器上加一个 drop-in `/etc/systemd/system/opendsec-e2b@.service.d/tls.conf`：
@@ -115,3 +116,22 @@ print(sbx.run_code("6 * 7").text)               # 42
 4. 给调用方的 token 授予项目上的 `sandbox.create` 和 `sandbox.operate`，以及镜像所在项目上的 `layer.use`。用快照还需要项目上的 `layer.publish`，因为快照就是这个项目里的一个镜像。
 5. code interpreter 需要它的模板：`deploy/e2b/build-code-interpreter.py` 会构建 `root/code-interpreter:v1`，即一个运行着 E2B code-interpreter 服务的 microVM 的内存快照，再在模板配置里把一个名字对应到它。
 6. 和 E2B 一样，经网关创建的 sandbox 默认可以访问公网，除非调用方关闭（`allow_internet_access=False`，或者 `deny_out` 全部流量），不受集群 `network.default_rules` 的影响。
+
+## 模板构建
+
+E2B 的 Template SDK 可以经网关使用：
+
+```python
+from e2b import Template, Sandbox
+
+t = (Template()
+     .from_image("python:3.12-slim")          # 或者 .from_template("base")
+     .pip_install(["pandas"])
+     .copy("app", "/app/")
+     .set_envs({"MODE": "prod"})
+     .set_workdir("/app"))
+Template.build(t, "myenv")
+sb = Sandbox.create("myenv")
+```
+
+模板会成为镜像 `<你的项目>/myenv:default`，计入项目的镜像配额。`from_image` 由集群代为拉取（受 `image_import` 的限制；内网的镜像仓库要管理员允许才能访问）。用了 `set_start_cmd` 时，构建在 microVM 上进行并保存内存，和 E2B 一样。不支持 AWS 和 GCP 镜像仓库的凭据。模板的 CPU 和内存只用于构建。

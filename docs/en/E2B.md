@@ -63,7 +63,7 @@ Checked with E2B's Python SDK (sync and async), JS/TS SDK and code interpreter S
 | | E2B | OpenDsec gateway |
 |---|---|---|
 | API key | E2B key | an OpenDsec token |
-| Templates | built by E2B's template build | names an administrator maps to an OpenDsec image, backend and size in the cluster config; an OpenDsec image name (`root/py:3.12`) also works. No template build API |
+| Templates | built by E2B's template build | built through the gateway with E2B's Template SDK ("Template builds" below), or names an administrator maps to an OpenDsec image, backend and size in the cluster config; an OpenDsec image name (`root/py:3.12`) also works |
 | Sandbox ports | public access can be enabled | always need the token (the SDKs send it); no plain browser access |
 | Paused sandboxes | resumed by traffic only with autoResume | any call resumes them |
 | After an auto-resume | the original timeout restarts | the idle timeout applies |

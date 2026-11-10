@@ -117,8 +117,22 @@
 | `create_burst` | 32768 | 突发：允许一整个批量请求立即开始 |
 | `auth_fail_rate` | 5 | 每个客户端地址每秒允许的认证失败次数，超过后暂时不再为它认证新 token |
 | `max_inflight_creates` | 2048 | 每个 apiserver 同时进行的创建数 |
+| `trusted_proxies` | 无 | apiserver 前面的代理的地址（IP 或网段），例如 TLS 代理、E2B 网关。来自它们的调用，按地址计的限制取 `X-Forwarded-For` 里最后一个不是代理的地址 |
+| `projects` | 无 | 对一个项目及其子项目的限制；路径上的各项合并，路径更长的那项的字段优先。超时字段同上（项目的 `max_ttl_max_s` 只能比集群的更低），另外每个项目可以设：`max_images`（镜像数）、`max_image_mb`（它的镜像新增的数据量）、`image_ttl_s`（这么久没用过的镜像会被删除，数据随下一次 `image gc` 清掉）。例如 `{"root/users": {"max_ttl_max_s": 3600, "max_images": 5, "max_image_mb": 5120, "image_ttl_s": 2592000}}` |
 
 单个创建超速返回 `rate_limited`；批量创建在服务端按速率排队，不会因为限流部分失败。apiserver 在负载均衡后面时，请让负载均衡保留客户端源地址，否则认证失败会全部算到负载均衡的地址上。
+
+## image_import
+
+用户从镜像仓库拉取镜像（`ImportImage`：`opendsecctl image pull`、SDK 的 `import_image` 和 `Template.from_registry`、E2B 的 `Template.from_image`）。由 edge 拉取，只连接公网地址。管理员在镜像库节点上执行的 `opendsecctl image import` 不受这里的限制。
+
+| 字段 | 默认 | 说明 |
+|---|---|---|
+| `disabled` | false | 关闭用户导入 |
+| `max_mb` | 10240 | 一个镜像新增的层解开后的大小上限（同时受项目 `max_image_mb` 剩余额度的限制） |
+| `max_files` | 500000 | 一个镜像解开后的文件数上限 |
+| `timeout_s` | 900 | 一次导入的时限 |
+| `allow_registries` | 无 | 允许访问的内网镜像仓库（例如镜像源）：`"host:port"`，不用 TLS 时写 `"http://host:port"` |
 
 ## image_store
 
@@ -137,6 +151,7 @@
 | `rule_sets` | 规则集：名字 → 目标列表（域名、IPv4 地址或网段，可带 `:端口[/协议]`）。例如 `{"pypi": ["pypi.org", "files.pythonhosted.org"], "github": ["github.com", "codeload.github.com", "objects.githubusercontent.com"]}` |
 | `default_rules` | 每个 sandbox 默认带的规则，sandbox 自己的 `network_rules` 叠加在上面。例如 `{"*": true}` 让所有 sandbox 默认能访问公网，`{"pypi": true}` 默认只放行 PyPI |
 | `upstream_dns` | edge 上 DNS 代理使用的上游解析服务器，默认用宿主机的 `/etc/resolv.conf` |
+| `blocked_ports` | 无论规则怎么放行，所有 sandbox 都不能访问的目标端口，例如 `["25/tcp", "465/tcp", "587/tcp"]`（邮件端口，适合对公众开放的集群）；写 `"53"` 时 tcp 和 udp 都封 |
 
 规则的语法和行为见[网络策略](NETWORK.md)。
 
