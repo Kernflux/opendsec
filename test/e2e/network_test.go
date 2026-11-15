@@ -142,6 +142,16 @@ func TestNetworkPolicy(t *testing.T) {
 			t.Fatalf("replace rules: %v %v", upd, err)
 		}
 		expect(sb.Id, be+" with example.com only", false, true)
+		// A caller does not name private addresses: its node's network and
+		// the cloud's metadata service are the administrator's to open.
+		for _, rule := range []string{"169.254.169.254:80/tcp", "10.0.0.0/8", "0.0.0.0/0"} {
+			if _, err := c.UpdateNetwork(cx, &pb.UpdateNetworkRequest{SandboxId: sb.Id, Rules: map[string]bool{rule: true}}); rpcutil.Reason(err) != rpcutil.Forbidden {
+				t.Errorf("%s: update with %s: %v", be, rule, err)
+			}
+			if _, err := c.Create(cx, &pb.SandboxSpec{Backend: be, Image: "root/net:1", Resources: res, NetworkRules: map[string]bool{rule: true}}); rpcutil.Reason(err) != rpcutil.Forbidden {
+				t.Errorf("%s: create with %s: %v", be, rule, err)
+			}
+		}
 		if _, err := c.UpdateNetwork(cx, &pb.UpdateNetworkRequest{SandboxId: sb.Id, Rules: map[string]bool{"no-such-set": true}}); rpcutil.Reason(err) != rpcutil.Invalid {
 			t.Errorf("unknown rule: %v", err)
 		}
