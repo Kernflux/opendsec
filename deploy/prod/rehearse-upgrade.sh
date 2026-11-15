@@ -60,7 +60,7 @@ phase() {
 	wait
 	grep -vE '^FAIL' "$LOGS/load-$tag.log" | tail -1
 	# Failures by reason: the first one each line names.
-	grep -E '^FAIL' "$LOGS/load-$tag.log" | sed -nE 's/.*\b(no_capacity|quota_exceeded|unavailable|timeout|internal|invalid|forbidden|not_found|unauthenticated|rate_limited|conflict)\b.*/\1/p' | sort | uniq -c
+	grep -E '^FAIL' "$LOGS/load-$tag.log" | awk 'match($0, /no_capacity|quota_exceeded|unavailable|timeout|internal|invalid|forbidden|not_found|unauthenticated|rate_limited|conflict/) { print substr($0, RSTART, RLENGTH) }' | sort | uniq -c
 	local other
 	other=$(grep -E '^FAIL' "$LOGS/load-$tag.log" | grep -vc no_capacity)
 	if [ "$other" != 0 ]; then
