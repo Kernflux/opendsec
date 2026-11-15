@@ -117,7 +117,8 @@ Each sandbox has two timeouts, set at creation, in seconds:
 - Paused time does not count toward the idle timeout: it starts from zero again on resume.
 - `touch()` resets the idle timer and does nothing else.
 - **Pause instead of stop on timeout**: with `ttl_paused_s` set (used through the API and E2B's `autoPause` for now), a sandbox reaching its idle timeout or lifetime is paused and kept `ttl_paused_s` more seconds. Any call during that time resumes it.
-- E2B's `set_timeout` maps to the API's `SetSandboxTimeout`: the lifetime becomes the sandbox's current age plus the timeout.
+- Once resumed, a sandbox paused this way is run by its idle timeout alone: idle, it is paused again; in use, it is not paused when the time its pause was kept for comes. Without an idle timeout, it still is.
+- E2B's `set_timeout` maps to the API's `SetSandboxTimeout`: the lifetime becomes the sandbox's current age plus the timeout. On a paused sandbox it sets how long the pause is kept, and leaves the idle timeout.
 
 **`stop()` sandboxes when you are done**: a sandbox holds its project's quota until it stops.
 

@@ -117,7 +117,8 @@ sandbox 是一个隔离的执行环境：有自己的文件系统、进程空间
 - 暂停期间不计空闲时间：恢复后从零开始计。
 - `touch()` 刷新空闲计时，不做别的事。
 - **超时后暂停而不是停止**：设置 `ttl_paused_s`（目前通过 API 和 E2B 的 `autoPause` 使用）后，空闲超时或最长寿命到期时，sandbox 被暂停，再保留 `ttl_paused_s` 秒。这期间任何调用都会恢复它。
-- E2B 的 `set_timeout` 对应 API `SetSandboxTimeout`：把最长寿命改为「当前已运行时间 + timeout」。
+- 这样暂停的 sandbox 被恢复后，只由空闲超时控制：空闲了再次暂停，使用中不会因为保留期到点而被暂停。没有设空闲超时的，到保留期仍会暂停。
+- E2B 的 `set_timeout` 对应 API `SetSandboxTimeout`：把最长寿命改为「当前已运行时间 + timeout」。对暂停中的 sandbox，它设的是暂停保留多久，不改空闲超时。
 
 **用完请及时 `stop()`**：sandbox 停止之前一直占用项目配额。
 
