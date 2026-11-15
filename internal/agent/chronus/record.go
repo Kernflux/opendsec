@@ -73,6 +73,9 @@ func (r *recorder) run() {
 				w, _ := out.Write(buf[:keep])
 				r.size += int64(w)
 				r.total.Add(int64(w))
+				if lost := keep - int64(w); lost > 0 { // the disk is full
+					r.dropped.Add(lost)
+				}
 			}
 			r.mu.Unlock()
 			if int64(n) > keep {
