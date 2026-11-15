@@ -229,6 +229,20 @@ docs/OPERATIONS.md §6.4.
   they go to the image store.
 
 ### Fixed
+- **A sandbox paused at its lifetime (`ttl_paused_s`) was stopped** when
+  the pause took longer than the reaper's one-second sweep, as a microVM's
+  does: the next sweep saw it past `ttl_max_s` and queued a stop that ran
+  right after the pause. E2B sandboxes with `on_timeout: pause` always hit
+  this, as their timeout is their lifetime.
+- **A sandbox resumed from an automatic pause was paused again while in
+  use**, once the time its pause was to be kept had passed. It now runs on
+  its idle timeout alone (SPEC §37.11); `Sandbox.pause_deadline` marks it.
+- **E2B gateway: a sandbox paused with `pause()` and resumed had a 30-day
+  timeout** (or the admission cap): keeping the pause raised its idle
+  timeout too. `SetSandboxTimeout` on a paused sandbox no longer raises the
+  idle timeout, and `connect()` gives a sandbox it resumes the timeout
+  asked for. Sandboxes paused by an earlier build keep the long idle
+  timeout until `connect()` or `set_timeout()`.
 - microVM snapshots (fork, snapshot images, pause): firecracker writes the
   memory file from inside the VM's cgroup, whose page cache was charged on
   top of the guest's memory; a guest using most of its memory got

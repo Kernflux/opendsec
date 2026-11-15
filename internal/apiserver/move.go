@@ -188,7 +188,8 @@ func (s *Server) moveOnce(ctx context.Context, id string) (*pb.Sandbox, error) {
 		tc, err := s.edgeClient(d.Edge.Id)
 		if err == nil {
 			out, err = tc.CreateSandbox(ctx, &pb.EdgeCreateRequest{Id: id, Project: sb.Project, Principal: sb.Principal,
-				Spec: spec, SnapshotPeer: &pb.EdgePeer{Id: from, Addr: addr}, Move: true, CreatedAt: sb.CreatedAt})
+				Spec: spec, SnapshotPeer: &pb.EdgePeer{Id: from, Addr: addr}, Move: true, CreatedAt: sb.CreatedAt,
+				PauseDeadline: sb.PauseDeadline})
 		}
 		if err == nil {
 			s.routes.Store(id, d.Edge.Id)

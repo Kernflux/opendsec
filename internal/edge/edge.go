@@ -382,6 +382,7 @@ func (e *Edge) create(ctx context.Context, req *pb.EdgeCreateRequest) (*pb.Sandb
 		sb: &pb.Sandbox{
 			Id: req.Id, Project: req.Project, Principal: req.Principal, EdgeId: e.cfg.ID,
 			Spec: spec, State: pb.SandboxState_CREATING, CreatedAt: unix(created),
+			PauseDeadline: req.Move && req.PauseDeadline,
 		},
 		lease: lease, createdAt: created, lastActive: now,
 		op: make(chan struct{}, 1), peer: peer, manifest: manifest, snapRec: snapRec,
@@ -641,6 +642,14 @@ func (e *Edge) Pause(ctx context.Context, id string) (*pb.Sandbox, error) {
 	if err != nil {
 		return nil, err
 	}
+	return e.pause(ctx, r, false)
+}
+
+// pause pauses r. With auto (autoPause), a sandbox that pauses is kept
+// ttl_paused_s more: its ttl_max is set as it becomes PAUSED, so that no
+// sweep sees it paused and still past its lifetime.
+func (e *Edge) pause(ctx context.Context, r *record, auto bool) (*pb.Sandbox, error) {
+	id := r.sb.Id
 	if err := lock(ctx, r); err != nil {
 		return nil, err
 	}
@@ -661,6 +670,14 @@ func (e *Edge) Pause(ctx context.Context, id string) (*pb.Sandbox, error) {
 	if !r.ended() {
 		r.sb.State = pb.SandboxState_PAUSED
 		e.rebateLocked(r, true)
+		// A sandbox whose ttl_max is an earlier pause's deadline is kept
+		// anew when paused by hand: that deadline may have passed while it
+		// ran, and would stop it now.
+		if auto || r.sb.PauseDeadline {
+			keep := e.now().Sub(r.createdAt) + time.Duration(r.sb.Spec.TtlPausedS)*time.Second
+			r.sb.Spec.TtlMaxS = int64((keep + time.Second - 1) / time.Second)
+			r.sb.PauseDeadline = true
+		}
 	}
 	e.mu.Unlock()
 	e.persist(r)
@@ -671,15 +688,9 @@ func (e *Edge) Pause(ctx context.Context, id string) (*pb.Sandbox, error) {
 // spec §37.11) and keeps it paused ttl_paused_s more; a sandbox that does
 // not pause is stopped, as without ttl_paused_s.
 func (e *Edge) autoPause(ctx context.Context, r *record, msg string) {
-	if _, err := e.Pause(ctx, r.sb.Id); err != nil {
+	if _, err := e.pause(ctx, r, true); err != nil {
 		e.stop(ctx, r, msg+"; pausing instead failed: "+err.Error())
-		return
 	}
-	e.mu.Lock()
-	keep := e.now().Sub(r.createdAt) + time.Duration(r.sb.Spec.TtlPausedS)*time.Second
-	r.sb.Spec.TtlMaxS = int64((keep + time.Second - 1) / time.Second)
-	e.mu.Unlock()
-	e.persist(r)
 }
 
 // rebateLocked stops (on) or resumes charging the memory a paused sandbox
@@ -779,9 +790,11 @@ func (e *Edge) Touch(ctx context.Context, id string) (*pb.Sandbox, error) {
 }
 
 // SetTimeout ends sandbox id timeout from now (spec §37): its ttl_max
-// becomes its age plus timeout (at most maxLife, when set), and its idle
-// timeout is raised to timeout, so that it does not end earlier. A paused
-// sandbox stays paused.
+// becomes its age plus timeout (at most maxLife, when set), a lifetime
+// again if it was a pause's deadline. A running sandbox's idle timeout is
+// raised to timeout, so that it does not end earlier. A paused sandbox
+// stays paused, and keeps its idle timeout for when it runs again: timeout
+// is how long its pause is kept.
 func (e *Edge) SetTimeout(ctx context.Context, id string, timeout, maxLife time.Duration) (*pb.Sandbox, error) {
 	r, err := e.get(id)
 	if err != nil {
@@ -803,7 +816,8 @@ func (e *Edge) SetTimeout(ctx context.Context, id string, timeout, maxLife time.
 	}
 	spec := r.sb.Spec
 	spec.TtlMaxS = int64((ttl + time.Second - 1) / time.Second)
-	if t := int64(timeout / time.Second); spec.TtlRunningStopS > 0 && spec.TtlRunningStopS < t {
+	r.sb.PauseDeadline = false
+	if t := int64(timeout / time.Second); r.sb.State == pb.SandboxState_RUNNING && spec.TtlRunningStopS > 0 && spec.TtlRunningStopS < t {
 		spec.TtlRunningStopS = t
 	}
 	e.mu.Unlock()
@@ -1121,7 +1135,13 @@ func (e *Edge) Sweep(ctx context.Context) {
 			unsaved = append(unsaved, r)
 		}
 		spec := r.sb.Spec
-		if r.sb.State == pb.SandboxState_STOPPING {
+		switch r.sb.State {
+		case pb.SandboxState_STOPPING:
+			continue
+		case pb.SandboxState_PAUSING, pb.SandboxState_RESUMING:
+			// Mid-operation, an automatic pause among them: a stop queued
+			// now would run right after it and end the sandbox it just
+			// paused. The next sweep judges the state it settles in.
 			continue
 		}
 		if !r.moving.IsZero() {
@@ -1132,8 +1152,12 @@ func (e *Edge) Sweep(ctx context.Context) {
 			continue
 		}
 		running := r.sb.State == pb.SandboxState_RUNNING
+		// Resumed from an automatic pause, ttl_max is that pause's
+		// deadline: the idle timeout alone ends or pauses the sandbox
+		// (spec §37.11). Without one, ttl_max still does.
+		resumed := running && r.sb.PauseDeadline && spec.TtlRunningStopS > 0
 		switch {
-		case spec.TtlMaxS > 0 && now.Sub(r.createdAt) > time.Duration(spec.TtlMaxS)*time.Second:
+		case !resumed && spec.TtlMaxS > 0 && now.Sub(r.createdAt) > time.Duration(spec.TtlMaxS)*time.Second:
 			if running && spec.TtlPausedS > 0 {
 				pause = append(pause, job{r, "max lifetime (ttl_max) reached"})
 			} else {

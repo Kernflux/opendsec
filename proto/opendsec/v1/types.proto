@@ -70,6 +70,10 @@ message Sandbox {
   double last_active_at = 8;
   double ended_at = 9;
   string message = 10;                 // reason for FAILED / STOPPED
+  // spec.ttl_max_s is how long an automatic pause is kept (ttl_paused_s),
+  // not a lifetime: once resumed, a sandbox with an idle timeout is ended
+  // or paused by that alone. SetSandboxTimeout makes it a lifetime again.
+  bool pause_deadline = 11;
 }
 
 message SandboxRef {

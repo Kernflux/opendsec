@@ -71,8 +71,22 @@ try:
     s.files.write("/tmp/kept", "yes")
     check(s.get_info().lifecycle["on_timeout"] == "pause", f"lifecycle: {s.get_info().lifecycle}")
     check(wait_state(s.sandbox_id, "paused"), f"paused at the timeout: {state(s.sandbox_id)}")
+    time.sleep(3)  # a reaper sweep later, it is still kept
+    check(state(s.sandbox_id) == "paused", f"kept paused: {state(s.sandbox_id)}")
     s2 = Sandbox.connect(s.sandbox_id, timeout=60)
     check(state(s.sandbox_id) == "running" and s2.files.read("/tmp/kept") == "yes", "connect resumes it")
+    left = s2.get_info().end_at.timestamp() - time.time()
+    check(30 < left < 90, f"resumed, it runs for connect's timeout: {left:.0f} s left")
+
+    # Paused by hand, it is kept long; resumed, it has connect's timeout again.
+    p = Sandbox.create(timeout=30)
+    made.append(p)
+    p.pause()
+    check(p.get_info().end_at.timestamp() - time.time() > 3600, "a paused sandbox is kept")
+    p2 = Sandbox.connect(p.sandbox_id, timeout=20)
+    left = p2.get_info().end_at.timestamp() - time.time()
+    check(state(p.sandbox_id) == "running" and left < 60, f"resumed after pause(): {left:.0f} s left")
+    p2.kill()
 
     # Without it, the timeout kills.
     k = Sandbox.create(timeout=3)

@@ -208,6 +208,8 @@ message EdgeCreateRequest {
   // The record of the snapshot the sandbox starts from (spec.snapshot, or
   // the image's), as JSON; empty if none.
   bytes snapshot_record = 9;
+  // With move: the sandbox's pause_deadline, kept as its creation time is.
+  bool pause_deadline = 10;
 }
 
 message EdgeTaskActionRequest {

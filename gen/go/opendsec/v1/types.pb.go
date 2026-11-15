@@ -417,17 +417,21 @@ func (x *SandboxSpec) GetTtlPausedS() int64 {
 }
 
 type Sandbox struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"` // "<edge_id>.<lease>", edge_id that of the edge it was created on
-	Project       string                 `protobuf:"bytes,2,opt,name=project,proto3" json:"project,omitempty"`
-	Principal     string                 `protobuf:"bytes,3,opt,name=principal,proto3" json:"principal,omitempty"`
-	EdgeId        string                 `protobuf:"bytes,4,opt,name=edge_id,json=edgeId,proto3" json:"edge_id,omitempty"` // the edge it runs on (another one once moved, spec §26.2)
-	Spec          *SandboxSpec           `protobuf:"bytes,5,opt,name=spec,proto3" json:"spec,omitempty"`
-	State         SandboxState           `protobuf:"varint,6,opt,name=state,proto3,enum=opendsec.v1.SandboxState" json:"state,omitempty"`
-	CreatedAt     float64                `protobuf:"fixed64,7,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	LastActiveAt  float64                `protobuf:"fixed64,8,opt,name=last_active_at,json=lastActiveAt,proto3" json:"last_active_at,omitempty"`
-	EndedAt       float64                `protobuf:"fixed64,9,opt,name=ended_at,json=endedAt,proto3" json:"ended_at,omitempty"`
-	Message       string                 `protobuf:"bytes,10,opt,name=message,proto3" json:"message,omitempty"` // reason for FAILED / STOPPED
+	state        protoimpl.MessageState `protogen:"open.v1"`
+	Id           string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"` // "<edge_id>.<lease>", edge_id that of the edge it was created on
+	Project      string                 `protobuf:"bytes,2,opt,name=project,proto3" json:"project,omitempty"`
+	Principal    string                 `protobuf:"bytes,3,opt,name=principal,proto3" json:"principal,omitempty"`
+	EdgeId       string                 `protobuf:"bytes,4,opt,name=edge_id,json=edgeId,proto3" json:"edge_id,omitempty"` // the edge it runs on (another one once moved, spec §26.2)
+	Spec         *SandboxSpec           `protobuf:"bytes,5,opt,name=spec,proto3" json:"spec,omitempty"`
+	State        SandboxState           `protobuf:"varint,6,opt,name=state,proto3,enum=opendsec.v1.SandboxState" json:"state,omitempty"`
+	CreatedAt    float64                `protobuf:"fixed64,7,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	LastActiveAt float64                `protobuf:"fixed64,8,opt,name=last_active_at,json=lastActiveAt,proto3" json:"last_active_at,omitempty"`
+	EndedAt      float64                `protobuf:"fixed64,9,opt,name=ended_at,json=endedAt,proto3" json:"ended_at,omitempty"`
+	Message      string                 `protobuf:"bytes,10,opt,name=message,proto3" json:"message,omitempty"` // reason for FAILED / STOPPED
+	// spec.ttl_max_s is how long an automatic pause is kept (ttl_paused_s),
+	// not a lifetime: once resumed, a sandbox with an idle timeout is ended
+	// or paused by that alone. SetSandboxTimeout makes it a lifetime again.
+	PauseDeadline bool `protobuf:"varint,11,opt,name=pause_deadline,json=pauseDeadline,proto3" json:"pause_deadline,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -530,6 +534,13 @@ func (x *Sandbox) GetMessage() string {
 		return x.Message
 	}
 	return ""
+}
+
+func (x *Sandbox) GetPauseDeadline() bool {
+	if x != nil {
+		return x.PauseDeadline
+	}
+	return false
 }
 
 type SandboxRef struct {
@@ -1722,7 +1733,7 @@ const file_opendsec_v1_types_proto_rawDesc = "" +
 	"\x05value\x18\x02 \x01(\bR\x05value:\x028\x01\x1a9\n" +
 	"\vLabelsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xc3\x02\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xea\x02\n" +
 	"\aSandbox\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x18\n" +
 	"\aproject\x18\x02 \x01(\tR\aproject\x12\x1c\n" +
@@ -1735,7 +1746,8 @@ const file_opendsec_v1_types_proto_rawDesc = "" +
 	"\x0elast_active_at\x18\b \x01(\x01R\flastActiveAt\x12\x19\n" +
 	"\bended_at\x18\t \x01(\x01R\aendedAt\x12\x18\n" +
 	"\amessage\x18\n" +
-	" \x01(\tR\amessage\"\x1c\n" +
+	" \x01(\tR\amessage\x12%\n" +
+	"\x0epause_deadline\x18\v \x01(\bR\rpauseDeadline\"\x1c\n" +
 	"\n" +
 	"SandboxRef\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"u\n" +

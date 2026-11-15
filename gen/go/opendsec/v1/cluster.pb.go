@@ -966,8 +966,10 @@ type EdgeCreateRequest struct {
 	// The record of the snapshot the sandbox starts from (spec.snapshot, or
 	// the image's), as JSON; empty if none.
 	SnapshotRecord []byte `protobuf:"bytes,9,opt,name=snapshot_record,json=snapshotRecord,proto3" json:"snapshot_record,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// With move: the sandbox's pause_deadline, kept as its creation time is.
+	PauseDeadline bool `protobuf:"varint,10,opt,name=pause_deadline,json=pauseDeadline,proto3" json:"pause_deadline,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *EdgeCreateRequest) Reset() {
@@ -1061,6 +1063,13 @@ func (x *EdgeCreateRequest) GetSnapshotRecord() []byte {
 		return x.SnapshotRecord
 	}
 	return nil
+}
+
+func (x *EdgeCreateRequest) GetPauseDeadline() bool {
+	if x != nil {
+		return x.PauseDeadline
+	}
+	return false
 }
 
 type EdgeTaskActionRequest struct {
@@ -1420,7 +1429,7 @@ const file_opendsec_v1_cluster_proto_rawDesc = "" +
 	"\x0einclude_leases\x18\x01 \x01(\bR\rincludeLeases\"r\n" +
 	"\x12EdgeStatusResponse\x12,\n" +
 	"\x05state\x18\x01 \x01(\v2\x16.opendsec.v1.EdgeStateR\x05state\x12.\n" +
-	"\x06leases\x18\x02 \x03(\v2\x16.opendsec.v1.LeaseInfoR\x06leases\"\xbd\x02\n" +
+	"\x06leases\x18\x02 \x03(\v2\x16.opendsec.v1.LeaseInfoR\x06leases\"\xe4\x02\n" +
 	"\x11EdgeCreateRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x18\n" +
 	"\aproject\x18\x02 \x01(\tR\aproject\x12\x1c\n" +
@@ -1431,7 +1440,9 @@ const file_opendsec_v1_cluster_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\a \x01(\x01R\tcreatedAt\x12\x1a\n" +
 	"\bmanifest\x18\b \x01(\fR\bmanifest\x12'\n" +
-	"\x0fsnapshot_record\x18\t \x01(\fR\x0esnapshotRecord\"{\n" +
+	"\x0fsnapshot_record\x18\t \x01(\fR\x0esnapshotRecord\x12%\n" +
+	"\x0epause_deadline\x18\n" +
+	" \x01(\bR\rpauseDeadline\"{\n" +
 	"\x15EdgeTaskActionRequest\x12\x18\n" +
 	"\aproject\x18\x01 \x01(\tR\aproject\x12\x17\n" +
 	"\atask_id\x18\x02 \x01(\tR\x06taskId\x12/\n" +

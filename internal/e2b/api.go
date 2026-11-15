@@ -152,19 +152,36 @@ func (g *Gateway) full(sb *pb.Sandbox, key string) sandboxDetail {
 	return d
 }
 
-// endsAfter reports whether sb's lifetime (ttl_max_s; 0 = none) lasts
-// beyond t.
+// idleRun reports whether sb runs on its idle timeout alone: resumed from
+// an automatic pause, its ttl_max_s is that pause's deadline (spec §37.11).
+func idleRun(sb *pb.Sandbox) bool {
+	return sb.State == pb.SandboxState_RUNNING && sb.PauseDeadline && sb.GetSpec().GetTtlRunningStopS() > 0
+}
+
+// endOf is when sb times out, if left alone (false: never).
+func endOf(sb *pb.Sandbox) (time.Time, bool) {
+	spec := sb.GetSpec()
+	if idleRun(sb) {
+		return time.Unix(0, int64(sb.LastActiveAt*1e9)).Add(time.Duration(spec.GetTtlRunningStopS()) * time.Second), true
+	}
+	if spec.GetTtlMaxS() <= 0 {
+		return time.Time{}, false
+	}
+	return time.Unix(0, int64(sb.CreatedAt*1e9)).Add(time.Duration(spec.GetTtlMaxS()) * time.Second), true
+}
+
+// endsAfter reports whether sb lasts beyond t.
 func endsAfter(sb *pb.Sandbox, t time.Time) bool {
-	ttl := sb.GetSpec().GetTtlMaxS()
-	return ttl <= 0 || time.Unix(0, int64(sb.CreatedAt*1e9)).Add(time.Duration(ttl)*time.Second).After(t)
+	end, ok := endOf(sb)
+	return !ok || end.After(t)
 }
 
 func (g *Gateway) detail(sb *pb.Sandbox, key string) sandboxDetail {
 	spec := sb.GetSpec()
 	started := time.Unix(0, int64(sb.CreatedAt*1e9)).UTC()
 	end := started
-	if spec.GetTtlMaxS() > 0 {
-		end = started.Add(time.Duration(spec.GetTtlMaxS()) * time.Second)
+	if t, ok := endOf(sb); ok {
+		end = t.UTC()
 	}
 	state := "running"
 	if sb.State == pb.SandboxState_PAUSED {
@@ -460,12 +477,17 @@ func (g *Gateway) pause(ctx context.Context, w http.ResponseWriter, r *http.Requ
 		writeErr(w, http.StatusConflict, "sandbox "+r.PathValue("id")+" is already paused")
 		return
 	}
-	if _, err := g.api.PauseSandbox(ctx, &pb.SandboxRef{Id: sb.Id}); err != nil {
+	sb, err := g.api.PauseSandbox(ctx, &pb.SandboxRef{Id: sb.Id})
+	if err != nil {
 		writeAPIErr(w, err)
 		return
 	}
-	if _, err := g.api.SetSandboxTimeout(ctx, &pb.SetTimeoutRequest{SandboxId: sb.Id, TimeoutS: pausedTimeout}); err != nil {
-		g.log.Warn("e2b: extending a paused sandbox's timeout failed", "id", sb.Id, "err", err)
+	// Kept pausedTimeout. The edge already keeps one that was paused
+	// automatically before (ttl_paused_s, which is pausedTimeout).
+	if !sb.GetPauseDeadline() {
+		if _, err := g.api.SetSandboxTimeout(ctx, &pb.SetTimeoutRequest{SandboxId: sb.Id, TimeoutS: pausedTimeout}); err != nil {
+			g.log.Warn("e2b: extending a paused sandbox's timeout failed", "id", sb.Id, "err", err)
+		}
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -497,9 +519,11 @@ func (g *Gateway) connect(ctx context.Context, w http.ResponseWriter, r *http.Re
 		}
 		code = http.StatusCreated
 	}
-	// E2B's connect only extends the sandbox's life: a shorter timeout than
-	// what is left keeps the current end.
-	if t := g.timeout(req.Timeout); t > 0 && !endsAfter(sb, time.Now().Add(time.Duration(t)*time.Second)) {
+	// A resumed sandbox runs for the timeout: what it has left is how long
+	// its pause was to be kept. For a running one, E2B's connect only
+	// extends its life: a shorter timeout than what is left keeps the
+	// current end.
+	if t := g.timeout(req.Timeout); t > 0 && (code == http.StatusCreated || !endsAfter(sb, time.Now().Add(time.Duration(t)*time.Second))) {
 		var err error
 		if sb, err = g.api.SetSandboxTimeout(ctx, &pb.SetTimeoutRequest{SandboxId: sb.Id, TimeoutS: t}); err != nil {
 			writeAPIErr(w, err)

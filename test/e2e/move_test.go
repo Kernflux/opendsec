@@ -162,3 +162,41 @@ func metricValue(text, series string) float64 {
 	}
 	return -1
 }
+
+// TestMoveKeepsPauseDeadline: a sandbox paused at its idle timeout
+// (ttl_paused_s) that moves when resumed is still run by its idle timeout
+// alone on its new edge (spec §37.11).
+func TestMoveKeepsPauseDeadline(t *testing.T) {
+	cfg := cluster.SimConfig(2, 2, 16, 64*1024, 100)
+	useStore(cfg, t.TempDir())
+	l, err := cluster.StartLocal(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(l.Stop)
+	c, _ := client.Dial(cfg.APIServers[0].Addr, l.AdminToken, "root")
+	defer c.Close()
+	cx := ctx(t)
+	e0, e1 := cfg.Edges[0].ID, cfg.Edges[1].ID
+
+	l.Edges[e1].SetDraining(true)
+	l.Settle()
+	sb, err := c.Create(cx, &pb.SandboxSpec{Backend: "sim", Resources: &pb.Resources{CpuCores: 1, MemoryMb: 1024},
+		TtlMaxS: 3600, TtlRunningStopS: 1, TtlPausedS: 600})
+	l.Edges[e1].SetDraining(false)
+	if err != nil || sb.EdgeId != e0 {
+		t.Fatalf("create on %s: %v %v", e0, sb, err)
+	}
+	eventuallyFor(t, 10*time.Second, func() bool {
+		s, err := c.GetSandbox(cx, &pb.SandboxRef{Id: sb.Id})
+		return err == nil && s.State == pb.SandboxState_PAUSED && s.PauseDeadline
+	})
+	if _, err := c.DrainEdge(cx, &pb.DrainEdgeRequest{EdgeId: e0, Draining: true}); err != nil {
+		t.Fatal(err)
+	}
+	l.Settle()
+	moved, err := c.TouchSandbox(cx, &pb.SandboxRef{Id: sb.Id})
+	if err != nil || moved.EdgeId != e1 || moved.State != pb.SandboxState_RUNNING || !moved.PauseDeadline {
+		t.Fatalf("moved: %v %v", moved, err)
+	}
+}

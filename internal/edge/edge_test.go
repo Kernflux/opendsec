@@ -864,3 +864,99 @@ func TestBalloonUnknown(t *testing.T) {
 		t.Fatal("touched a balloon known to be empty")
 	}
 }
+
+// An automatic pause still running at the next sweep is not followed by a
+// stop: the sandbox stays paused, kept ttl_paused_s more.
+func TestAutoPauseSlow(t *testing.T) {
+	f := newFixture(t, 10)
+	sp := &slowPause{Sim: f.sim, started: make(chan struct{}), release: make(chan struct{})}
+	f.e.backends["sim"] = sp
+	ctx := context.Background()
+	sb, err := f.create(t, &pb.SandboxSpec{TtlMaxS: 100, TtlPausedS: 1000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.clk.add(110 * time.Second)
+	f.e.Sweep(ctx)
+	<-sp.started
+	f.clk.add(time.Second)
+	f.e.Sweep(ctx) // the pause is still running
+	close(sp.release)
+	waitState(t, f.e, sb.Id, pb.SandboxState_PAUSED)
+	f.clk.add(time.Second)
+	f.e.Sweep(ctx)
+	time.Sleep(50 * time.Millisecond)
+	s, _ := f.e.Get(sb.Id)
+	if s.State != pb.SandboxState_PAUSED || s.Spec.TtlMaxS != 111+1000 || sp.stopped() != 0 {
+		t.Fatalf("state %v, ttl_max %d, stops %d", s.State, s.Spec.TtlMaxS, sp.stopped())
+	}
+	// Kept ttl_paused_s, then stopped.
+	f.clk.add(1000 * time.Second)
+	f.e.Sweep(ctx)
+	waitState(t, f.e, sb.Id, pb.SandboxState_STOPPED)
+}
+
+// A sandbox resumed from an automatic pause is run by its idle timeout
+// alone: the pause's deadline (ttl_max) does not pause it while it is used.
+func TestResumedFromAutoPause(t *testing.T) {
+	f := newFixture(t, 10)
+	ctx := context.Background()
+	sb, _ := f.create(t, &pb.SandboxSpec{TtlMaxS: 100, TtlRunningStopS: 60, TtlPausedS: 200})
+	f.clk.add(70 * time.Second)
+	f.e.Sweep(ctx)
+	waitState(t, f.e, sb.Id, pb.SandboxState_PAUSED) // kept until 270 s
+	for range 8 {                                    // in use, well beyond that
+		f.clk.add(50 * time.Second)
+		if _, err := f.e.Touch(ctx, sb.Id); err != nil {
+			t.Fatal(err)
+		}
+		f.e.Sweep(ctx)
+		time.Sleep(10 * time.Millisecond)
+		if s, _ := f.e.Get(sb.Id); s.State != pb.SandboxState_RUNNING {
+			t.Fatalf("in use at %v: %v (%s)", f.clk.now().Sub(time.Unix(0, int64(s.CreatedAt*1e9))), s.State, s.Message)
+		}
+	}
+	// Paused by hand past the old deadline, it is kept ttl_paused_s anew.
+	if _, err := f.e.Pause(ctx, sb.Id); err != nil {
+		t.Fatal(err)
+	}
+	f.clk.add(150 * time.Second)
+	f.e.Sweep(ctx)
+	time.Sleep(10 * time.Millisecond)
+	if s, _ := f.e.Get(sb.Id); s.State != pb.SandboxState_PAUSED || s.Spec.TtlMaxS != 470+200 {
+		t.Fatalf("paused by hand: %v, ttl_max %d", s.State, s.Spec.TtlMaxS)
+	}
+	// Idle after a resume, it pauses again; SetTimeout makes ttl_max a
+	// lifetime again.
+	f.e.Touch(ctx, sb.Id)
+	if s, err := f.e.SetTimeout(ctx, sb.Id, 30*time.Second, 0); err != nil || s.PauseDeadline || s.Spec.TtlMaxS != 620+30 {
+		t.Fatalf("set timeout: %v, %v", s, err)
+	}
+	f.clk.add(31 * time.Second)
+	f.e.Touch(ctx, sb.Id)
+	f.e.Sweep(ctx)
+	waitState(t, f.e, sb.Id, pb.SandboxState_PAUSED)
+}
+
+// A timeout set on a paused sandbox is how long the pause is kept: resumed,
+// the sandbox has the idle timeout it had.
+func TestSetTimeoutPaused(t *testing.T) {
+	f := newFixture(t, 10)
+	ctx := context.Background()
+	sb, _ := f.create(t, &pb.SandboxSpec{TtlMaxS: 100, TtlRunningStopS: 60})
+	if _, err := f.e.Pause(ctx, sb.Id); err != nil {
+		t.Fatal(err)
+	}
+	s, err := f.e.SetTimeout(ctx, sb.Id, 1000*time.Second, 0)
+	if err != nil || s.Spec.TtlMaxS != 1000 || s.Spec.TtlRunningStopS != 60 {
+		t.Fatalf("set timeout: %v, %v", s, err)
+	}
+	f.clk.add(500 * time.Second)
+	f.e.Sweep(ctx)
+	if _, err := f.e.Touch(ctx, sb.Id); err != nil {
+		t.Fatal(err)
+	}
+	f.clk.add(61 * time.Second)
+	f.e.Sweep(ctx)
+	waitState(t, f.e, sb.Id, pb.SandboxState_STOPPED)
+}

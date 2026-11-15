@@ -2832,8 +2832,8 @@ E2B 的命令模型和我们原来的不同：原来的命令跑在持久的 she
 | `GET /sandboxes/{id}`、`GET /v2/sandboxes` | `GetSandbox`、`ListSandboxes`：只列网关创建的、运行中或暂停的 sandbox；支持按 state 和 metadata 过滤 |
 | `DELETE /sandboxes/{id}` | `StopSandbox` |
 | `POST /sandboxes/{id}/timeout` | `SetSandboxTimeout` |
-| `POST /sandboxes/{id}/pause` | `PauseSandbox`，超时延长到 30 天（不超过准入上限）：E2B 的暂停 sandbox 会一直保留到被删除 |
-| `POST /v2/sandboxes/{id}/connect` | 暂停的先 `ResumeSandbox`（返回 201），再设置超时 |
+| `POST /sandboxes/{id}/pause` | `PauseSandbox`，再用 `SetSandboxTimeout` 保留 30 天（不超过准入上限）：E2B 的暂停 sandbox 会一直保留到被删除。对暂停的 sandbox，`SetSandboxTimeout` 只改 `ttl_max_s`，不抬高空闲超时 |
+| `POST /v2/sandboxes/{id}/connect` | 暂停的先 `ResumeSandbox`（返回 201），再把超时设为请求的值（它剩下的是暂停的保留期，不是运行的超时）；运行中的只延长，不缩短 |
 | `GET /sandboxes/{id}/metrics` | 空列表 |
 
 envd 部分：
@@ -2959,6 +2959,12 @@ E2B 的 `sandbox.fork()`、`create_snapshot()`、`Sandbox.create(snapshot_id)` �
 - 大于 0 时，运行中的 sandbox 到了 `ttl_max_s` 或空闲超时，edge 不停止它而是暂停，并保留 `ttl_paused_s` 秒：`ttl_max_s` 改成「暂停时的年龄 + ttl_paused_s」。到期后停止。
 - 暂停失败（后端不支持）就照常停止，消息里写明原因。
 - 暂停后任何调用都会自动恢复它，和其他暂停的 sandbox 一样。恢复后由空闲超时控制，空闲了会再次暂停。
+- 自动暂停时 edge 在 sandbox 记录上置 `pause_deadline`（`Sandbox` 字段 11，随记录持久化）：这时的 `ttl_max_s` 是暂停的保留期，不是寿命。
+  - 恢复后，有空闲超时的 sandbox 不再按 `ttl_max_s` 判断，否则使用中的 sandbox 会在保留期到点时被再次暂停。没有空闲超时的仍按 `ttl_max_s` 暂停。
+  - 这样的 sandbox 被手动暂停时，重新保留 `ttl_paused_s` 秒（旧的保留期可能已过）。
+  - `SetSandboxTimeout` 清掉这个标记，`ttl_max_s` 重新成为寿命。
+  - 网关：这样的 sandbox 运行时，`endAt` 按「上次活动 + 空闲超时」算；手动暂停时不再另设 30 天。
+- reaper 不处理正在暂停或恢复的 sandbox；自动暂停的续期和进入 PAUSED 在同一次加锁里完成。否则暂停较慢（microVM 写内存快照）时，下一轮扫描会把刚暂停的 sandbox 当作超期停掉。
 - **寿命不封顶**：每次暂停都重新计算 `ttl_max_s`，所以只要在保留期内恢复过，sandbox 可以一直存活，也不受准入的 `max_ttl_max_s` 限制。这和 E2B 的 auto-pause 一致；要硬性限制寿命，就不要设 `ttl_paused_s`。
 - apiserver 校验 `ttl_paused_s >= 0`，超过准入的寿命上限时截到上限。
 - 网关：`autoPause`（SDK 的 `lifecycle={"on_timeout": "pause"}`）设 `ttl_paused_s` 为 30 天，和手动暂停一致。sandbox 信息里返回 `lifecycle`：`onTimeout` 是 `pause` 或 `kill`，`autoResume` 总是 true。
@@ -2979,8 +2985,10 @@ E2B 的 `sandbox.fork()`、`create_snapshot()`、`Sandbox.create(snapshot_id)` �
 
 **测试**
 - edge `TestAutoPause`：截止时间和空闲超时都变成暂停（截止时间即使有活动也照样到期）；保留时间正确；调用唤醒后，空闲了再次暂停；保留期满后停止。
-- `TestE2BSDK/lifecycle`：用 E2B Python SDK 跑 `test/e2e/testdata/e2b_lifecycle_check.py`，本地 9 项：
-  - autoPause 到时暂停，connect 恢复后文件还在；
+- edge `TestAutoPauseSlow`（暂停跨过一轮扫描不被停掉）、`TestResumedFromAutoPause`（恢复后使用中不再被暂停，手动暂停重新保留）、`TestSetTimeoutPaused`；网关 `TestPauseConnect`、`TestIdleRun`；`TestMoveKeepsPauseDeadline`（迁移后标记还在）。
+- `TestE2BSDK/lifecycle`：用 E2B Python SDK 跑 `test/e2e/testdata/e2b_lifecycle_check.py`，本地 13 项：
+  - autoPause 到时暂停，几秒后仍是暂停；connect 恢复后文件还在，超时是 connect 给的值；
+  - 手动暂停后保留期很长；connect 恢复后超时是 connect 给的值；
   - 默认到时删除；
   - refresh 延长；
   - 只拍文件系统的暂停被拒绝。

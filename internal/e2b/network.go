@@ -135,8 +135,7 @@ func (g *Gateway) refresh(ctx context.Context, w http.ResponseWriter, r *http.Re
 	if req.Duration == 0 {
 		req.Duration = 15 // E2B's default timeout
 	}
-	end := time.Unix(0, int64(sb.CreatedAt*1e9)).Add(time.Duration(sb.GetSpec().GetTtlMaxS()) * time.Second)
-	if time.Until(end) < time.Duration(req.Duration)*time.Second {
+	if !endsAfter(sb, time.Now().Add(time.Duration(req.Duration)*time.Second)) {
 		if _, err := g.api.SetSandboxTimeout(ctx, &pb.SetTimeoutRequest{SandboxId: sb.Id, TimeoutS: g.timeout(req.Duration)}); err != nil {
 			writeAPIErr(w, err)
 			return
