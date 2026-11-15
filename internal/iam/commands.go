@@ -608,6 +608,9 @@ func (m *IAM) reserveLocked(c *Command) error {
 				delete(m.byEdge[r.Edge], c.Lease)
 			}
 			m.bindLocked(c.Lease, c.Edge)
+			// New on that edge: a report the edge made before does not
+			// have it, and must not release it (a sandbox moving there).
+			r.BoundAt = c.Now
 		}
 		return nil
 	}

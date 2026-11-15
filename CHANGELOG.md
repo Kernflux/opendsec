@@ -237,6 +237,11 @@ docs/OPERATIONS.md §6.4.
 - **A sandbox resumed from an automatic pause was paused again while in
   use**, once the time its pause was to be kept had passed. It now runs on
   its idle timeout alone (SPEC §37.11); `Sandbox.pause_deadline` marks it.
+- **A sandbox moving to another edge could lose its quota reservation for
+  a moment**: a reconcile of the new edge working from a report made
+  before the sandbox arrived released the lease (it was re-adopted at the
+  next reconcile; meanwhile the project could go over its quota). A lease
+  rebound to another edge now counts as new there.
 - **E2B gateway: a sandbox paused with `pause()` and resumed had a 30-day
   timeout** (or the admission cap): keeping the pause raised its idle
   timeout too. `SetSandboxTimeout` on a paused sandbox no longer raises the

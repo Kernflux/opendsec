@@ -73,6 +73,9 @@ type Reservation struct {
 	Res     map[string]float64 `json:"res"`
 	At      float64            `json:"at"`             // reserved at (unix seconds)
 	Edge    string             `json:"edge,omitempty"` // edge that reported it; "" = not yet claimed
+	// BoundAt: when it was rebound to Edge from another edge (0: never).
+	// Reconciles of Edge treat it as that young; At stays, for the usage.
+	BoundAt float64 `json:"bound_at,omitempty"`
 }
 
 type IAM struct {

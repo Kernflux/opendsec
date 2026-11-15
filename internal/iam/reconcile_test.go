@@ -194,3 +194,31 @@ func TestLeaseLock(t *testing.T) {
 		t.Fatalf("lock lost in snapshot: %+v", r)
 	}
 }
+
+// A lease rebound to another edge (its sandbox moves there) is young on
+// that edge: a report the edge made before the sandbox arrived does not
+// release it.
+func TestReconcileRebound(t *testing.T) {
+	m, _ := setup(t)
+	now := time.Now()
+	m.now = func() time.Time { return now }
+	one := map[string]float64{QSandboxes: 1}
+	if err := m.ReserveOn("mv", "root", one, "A"); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(time.Hour)
+	if err := m.ReserveOn("mv", "root", one, "B"); err != nil { // the move
+		t.Fatal(err)
+	}
+	if r, _ := m.ReconcileEdge("B", nil, time.Minute); r.Released != 0 { // B's report from before
+		t.Fatalf("released a lease just rebound: %+v", r)
+	}
+	if got := m.EdgeLeases(); got["B"] != 1 || got["A"] != 0 {
+		t.Fatalf("leases by edge: %v", got)
+	}
+	// Gone from B for long, it is released as any lease.
+	now = now.Add(2 * time.Minute)
+	if r, _ := m.ReconcileEdge("B", nil, time.Minute); r.Released != 1 {
+		t.Fatalf("not released: %+v", r)
+	}
+}

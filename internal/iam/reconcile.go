@@ -47,7 +47,7 @@ func (m *IAM) ReconcileEdgeFenced(edge string, live []LiveLease, minAge time.Dur
 		}
 	}
 	for lease := range m.byEdge[edge] {
-		if !seen[lease] && m.reservations[lease].At < cutoff {
+		if r := m.reservations[lease]; !seen[lease] && max(r.At, r.BoundAt) < cutoff {
 			c.Release = append(c.Release, lease)
 		}
 	}
