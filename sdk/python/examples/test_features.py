@@ -112,9 +112,15 @@ async def pause_resume(c, backend):
         await sb.pause()
         need((await sb.refresh()).state == "PAUSED", sb.state)
         await sb.resume()
-        a = int((await sb.read_file("/root/n")).decode() or 0)
+        async def count():  # the writer truncates, then writes: an empty read is in between
+            for _ in range(20):
+                if v := (await sb.read_file("/root/n")).decode():
+                    return int(v)
+                await asyncio.sleep(0.02)
+            return 0
+        a = await count()
         await asyncio.sleep(1)
-        b = int((await sb.read_file("/root/n")).decode() or 0)
+        b = await count()
         need(b > a > 0, ("process not alive after resume", a, b))
         need(await sb.read_file("/root/keep") == b"k", "file lost")
     finally:
