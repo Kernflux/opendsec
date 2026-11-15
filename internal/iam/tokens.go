@@ -1,7 +1,9 @@
 package iam
 
 import (
+	"slices"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/kernflux/opendsec/internal/rpcutil"
@@ -35,6 +37,49 @@ func (m *IAM) canManageLocked(actor, principal string) (*Principal, error) {
 		return p, nil
 	}
 	return nil, rpcutil.Err(rpcutil.Forbidden, "%s may not manage principal %s (needs project.admin on %s)", actor, principal, p.Project)
+}
+
+func within(project, ancestor string) bool {
+	return project == ancestor || strings.HasPrefix(project, ancestor+"/")
+}
+
+// adminGrantLocked refuses a grant of project.admin on project to principal
+// after which someone managing a principal would not administer a project
+// that principal administers.
+func (m *IAM) adminGrantLocked(project, principal string) error {
+	p := m.principals[principal]
+	if p == nil || m.projects[project] == nil {
+		return nil // refused when applied
+	}
+	// admin: x administers q once the grant is made.
+	admin := func(x, q string) bool {
+		return x == principal && within(q, project) || m.effectiveLocked(x, q)[ProjectAdmin]
+	}
+	// Those managing principal must administer project.
+	for _, a := range Ancestors(p.Project) {
+		if proj := m.projects[a]; proj != nil {
+			for x, perms := range proj.Policies {
+				if x != principal && slices.Contains(perms, ProjectAdmin) && !admin(x, project) {
+					return rpcutil.Err(rpcutil.Invalid, "%s on %s cannot be granted to %s: %s administers its project %s, so issues its tokens, without administering %s. Use a principal of a project whose admins all administer %s",
+						ProjectAdmin, project, principal, x, p.Project, project, project)
+				}
+			}
+		}
+	}
+	// principal comes to manage those of project and below: it must
+	// administer what they do.
+	for path, proj := range m.projects {
+		for x, perms := range proj.Policies {
+			if x == principal || !slices.Contains(perms, ProjectAdmin) {
+				continue
+			}
+			if o := m.principals[x]; o != nil && within(o.Project, project) && !admin(principal, path) {
+				return rpcutil.Err(rpcutil.Invalid, "%s on %s cannot be granted to %s: it would issue the tokens of %s (a principal of %s), which administers %s, and %s does not",
+					ProjectAdmin, project, principal, x, o.Project, path, principal)
+			}
+		}
+	}
+	return nil
 }
 
 // CreateToken issues a new token for principal.

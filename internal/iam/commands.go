@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"math"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -325,7 +326,21 @@ func (m *IAM) SetQuota(actor, project string, quota map[string]float64) (*Projec
 
 // Grant gives principal perms on project. The actor must hold project.admin
 // and every granted permission there: nobody can grant what they do not hold.
+// Grant gives principal perms on project. A grant of project.admin keeps
+// this true: whoever manages a principal (the admins of its project issue
+// its tokens, canManageLocked) administers every project it administers.
+// Otherwise they would hold, through its tokens, what they were not given.
+// Checked here, not in the state machine, whose replicas of an earlier
+// release would apply the command.
 func (m *IAM) Grant(actor, project, principal string, perms []string) (*Project, error) {
+	if slices.Contains(perms, ProjectAdmin) {
+		m.mu.RLock()
+		err := m.adminGrantLocked(project, principal)
+		m.mu.RUnlock()
+		if err != nil {
+			return nil, err
+		}
+	}
 	v, err := m.propose(&Command{Op: opGrant, Actor: actor, Project: project, Principal: principal, Perms: perms})
 	if err != nil {
 		return nil, err

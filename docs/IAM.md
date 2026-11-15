@@ -78,6 +78,12 @@ opendsecctl revoke root/team-a trainer              # 收回全部
 
 几点说明：
 
+- **管理一个身份的人，必须管理它所管理的全部项目。** 身份所属项目的管理员能给它签发 token，也就能以它的身份行事。所以授予 `project.admin` 时会检查这一点，不满足就拒绝（`invalid`）：
+  - 给身份 P 授予项目 Q 的 `project.admin`：P 所属项目的每个管理员都要已经是 Q 的管理员。
+  - 给身份 X 授予项目 G 的 `project.admin`：G 及其子项目里的身份所管理的项目，X 都要已经管理。
+  - 被拒绝时，换一个所属项目合适的身份，例如在目标项目里新建一个。
+  - 其他权限（例如镜像项目的 `layer.use`）可以跨项目授予，不做这个检查。要注意：给别的项目的身份授权，那个项目的管理员也就能用到这些权限。
+  - 只在授予时检查：之后收回某个管理员的权限，不会连带收回它所管理的身份的权限。
 - 权限之间**互不包含**：有 `project.admin` 不代表能创建 sandbox，需要的权限要逐个授予。例外是集群管理：root 上的 `project.admin` 同时具有 `fleet.view` 和 `fleet.operate` 的能力。
 - **集群级操作**需要 root 上的 `project.admin`：排空 edge（`edge drain`）、IAM 备份和恢复、IAM 副本管理。
 - 操作 sandbox 时检查的是**sandbox 所在项目**上的 `sandbox.operate`，不论 sandbox 是谁创建的。同一个项目里有 `sandbox.operate` 的身份可以操作彼此的 sandbox；需要隔离的调用方请放在不同的项目里。

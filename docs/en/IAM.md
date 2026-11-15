@@ -28,7 +28,7 @@ opendsecctl principal create root/team-a trainer -kind agent
 ```
 
 - Principal ids are unique across the cluster and cannot contain `.`, `/` or spaces.
-- A principal belongs to the project it was created in, whose admins manage it (issue and revoke its tokens, delete it).
+- A principal belongs to the project it was created in, whose admins manage it (issue and revoke its tokens, delete it). They can therefore act as it: a grant of `project.admin` is refused (`invalid`) unless everyone managing the principal already administers that project, and unless the principal already administers what the principals it comes to manage do. Other permissions can be granted across projects; the admins of the principal's project can then use them too.
 - `kind` is `user`, `service` or `agent` (default `agent`): a label only, with no effect on permissions.
 - Creation issues the first token, **shown only in that output**.
 - A new principal has no permissions; grant them separately (§3).

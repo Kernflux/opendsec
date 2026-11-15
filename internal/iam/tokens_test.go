@@ -164,3 +164,54 @@ func TestTokensPersist(t *testing.T) {
 		t.Fatal("revoked token came back after restart")
 	}
 }
+
+// Whoever issues a principal's tokens administers what it administers:
+// grants of project.admin that would break this are refused.
+func TestGrantAdminEscalation(t *testing.T) {
+	m, _ := setup(t)
+	m.CreateProject("admin", "root", "a", nil)
+	m.CreateProject("admin", "root/a", "sub", nil)
+	m.CreateProject("admin", "root", "b", nil)
+	for _, id := range []string{"lead", "bot", "bot2"} {
+		if _, _, err := m.CreatePrincipal("admin", "root/a", id, "user", 0); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// With only root's admin administering root/a, its principals may
+	// administer anything (users of an SSO project, say).
+	if _, err := m.Grant("admin", "root/b", "bot2", []string{ProjectAdmin}); err != nil {
+		t.Fatal(err)
+	}
+	// lead would issue bot2's tokens, and bot2 administers root/b.
+	_, err := m.Grant("admin", "root/a", "lead", []string{ProjectAdmin})
+	wantReason(t, err, rpcutil.Invalid)
+	m.Revoke("admin", "root/b", "bot2", nil)
+	for _, proj := range []string{"root/a", "root/a/sub"} {
+		if _, err := m.Grant("admin", proj, "lead", []string{ProjectAdmin}); err != nil {
+			t.Fatalf("grant on %s: %v", proj, err)
+		}
+	}
+	// lead, an admin of root/a only, issues bot's tokens: bot must not
+	// administer root or root/b. Below root/a it may.
+	for _, proj := range []string{"root", "root/b"} {
+		_, err := m.Grant("admin", proj, "bot", []string{SandboxCreate, ProjectAdmin})
+		wantReason(t, err, rpcutil.Invalid)
+		if m.Authorize("bot", proj, SandboxCreate) == nil {
+			t.Fatalf("partly granted on %s", proj)
+		}
+	}
+	if _, err := m.Grant("admin", "root/a/sub", "bot", []string{ProjectAdmin}); err != nil {
+		t.Fatal(err)
+	}
+	// Other permissions go across projects (layer.use on an image project).
+	if _, err := m.Grant("admin", "root/b", "bot", []string{LayerUse}); err != nil {
+		t.Fatal(err)
+	}
+	// Once lead administers root/b too, bot may.
+	if _, err := m.Grant("admin", "root/b", "lead", []string{ProjectAdmin}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.Grant("admin", "root/b", "bot", []string{ProjectAdmin}); err != nil {
+		t.Fatal(err)
+	}
+}

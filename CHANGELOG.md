@@ -229,6 +229,12 @@ docs/OPERATIONS.md §6.4.
   they go to the image store.
 
 ### Fixed
+- **A project's admins could act with rights they were never given**,
+  through a principal of their project that was granted `project.admin`
+  elsewhere: they issue its tokens. Such grants are now refused
+  (`invalid`): whoever manages a principal must administer every project
+  it administers (docs/IAM.md §3). Grants made before are kept: review
+  `project.admin` grants to principals of other projects.
 - **A sandbox paused at its lifetime (`ttl_paused_s`) was stopped** when
   the pause took longer than the reaper's one-second sweep, as a microVM's
   does: the next sweep saw it past `ttl_max_s` and queued a stop that ran
