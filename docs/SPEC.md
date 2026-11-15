@@ -1470,8 +1470,10 @@ SDK sb.fork(count=8)
   - 发往 sandbox 的新连接一律丢弃（其他 sandbox、宿主机、外部），回包放行。
   - sandbox 发出的每个包（包括已建立连接的）按「入口 veth + 源地址」查 verdict map，跳到该 sandbox 自己的链，伪造源地址的包查不到而被丢弃。链的顺序是：放行规则里的网段 → 丢弃私网、链路本地、组播、云元数据等地址 → 放行 DNS 代理学到的地址 → 规则含 `"*"` 时放行 → 丢弃。
   - 已建立的连接也逐包检查，所以撤销规则会立即切断连接；学到的地址在有流量时刷新超时，闲置 1 小时后过期，长连接不会因为超时被断开。
-  - 宿主机上除 DNS 代理端口外的服务都不可达；DNS 代理端口只对 sandbox 开放，避免成为开放解析器。veth 名字带 edge 的哈希，同一台机器上不同 edge 的规则互不干扰。
+  - 宿主机上除 DNS 代理端口外的服务都不可达；DNS 代理端口只对 sandbox 开放，避免成为开放解析器。veth 名字带 edge 的哈希，同一台机器上不同 edge 的规则互不干扰；后半段是 slot 编号（2026-11-15 之前是 lease 的 32 位哈希，两个 sandbox 可能撞名）。
 - **DNS 代理**（UDP / TCP）：按查询的源地址识别 sandbox。
+  - 每个 sandbox 的上限（2026-11-15）：同时处理 64 个查询、16 条 TCP 连接、65536 个已学地址。此前没有上限，每个查询一个 goroutine 加一个上游 socket，已学地址只在改规则时清理，一个 sandbox 能耗尽 edge 的文件描述符和内存。超出时在收包的循环里直接回 `SERVFAIL`（不起 goroutine）或关闭连接；地址满了先清掉过期的，仍然满就不再学新地址，只记一条日志。`TestLearnedFull`、`TestRefuse`。
+- **调用方不能自己写内网地址**（2026-11-15）：`network_rules` 里由调用方写的地址或网段，只要和 `privateNets` 重叠就拒绝（`forbidden`），除非项目在 `network.private_rule_projects` 里。规则集和默认规则里的不受限制。原因：出站流量伪装成节点地址，调用方写 `169.254.169.254` 或集群私网网段就能访问云元数据和内部服务（比如以 `no_root_squash` 导出的镜像库）。在 edge 上检查（`Manager.CheckPrivate`）：创建时查全部规则，`UpdateNetwork` 只查新增的；迁移来的 sandbox 和已有规则不查。`TestCheckPrivate`。
   - 允许的域名转发给上游（默认取宿主机 `/etc/resolv.conf`），把应答里的 IPv4 地址加进该 sandbox 的放行集合后再返回；超时取 TTL，限制在 5 分钟到 1 小时之间。
   - 不允许的域名返回 NXDOMAIN；AAAA 查询返回空应答（sandbox 只有 IPv4）。
 - edge 开启网络时会打开宿主机的 `net.ipv4.ip_forward`。

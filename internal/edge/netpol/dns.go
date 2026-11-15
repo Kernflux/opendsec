@@ -26,6 +26,17 @@ type dnsProxy struct {
 
 const dnsTimeout = 3 * time.Second
 
+// What one sandbox may hold of the edge's DNS proxy, which all the edge's
+// sandboxes share: queries being answered (each a goroutine and a socket
+// to the upstream resolver), TCP connections, and addresses learned for
+// its domains (in memory and in the kernel's sets). Beyond them it gets
+// SERVFAIL, or its connection is closed.
+const (
+	dnsMaxQueries = 64
+	dnsMaxConns   = 16
+	dnsMaxLearned = 65536
+)
+
 func startDNS(m *Manager, port int, upstream []string) (*dnsProxy, error) {
 	d := &dnsProxy{m: m}
 	for _, u := range upstream {
@@ -62,9 +73,23 @@ func (d *dnsProxy) serveUDP() {
 		if err != nil {
 			return
 		}
+		// Not a sandbox, or one over its share: answered here, at no cost.
+		a := d.m.byAddr(src.IP)
+		if a == nil || a.dnsQueries.Add(1) > dnsMaxQueries {
+			rcode := dnsmessage.RCodeRefused
+			if a != nil {
+				a.dnsQueries.Add(-1)
+				rcode = dnsmessage.RCodeServerFailure
+			}
+			if resp := refuse(buf[:n], rcode); resp != nil {
+				d.udp.WriteToUDP(resp, src)
+			}
+			continue
+		}
 		q := append([]byte(nil), buf[:n]...)
 		go func() {
-			if resp := d.handle(q, src.IP, false); resp != nil {
+			defer a.dnsQueries.Add(-1)
+			if resp := d.handle(a, q, false); resp != nil {
 				d.udp.WriteToUDP(resp, src)
 			}
 		}()
@@ -78,7 +103,16 @@ func (d *dnsProxy) serveTCP() {
 		if err != nil {
 			return
 		}
+		a := d.m.byAddr(c.RemoteAddr().(*net.TCPAddr).IP)
+		if a == nil || a.dnsConns.Add(1) > dnsMaxConns {
+			if a != nil {
+				a.dnsConns.Add(-1)
+			}
+			c.Close()
+			continue
+		}
 		go func() {
+			defer a.dnsConns.Add(-1)
 			defer c.Close()
 			for {
 				c.SetDeadline(time.Now().Add(10 * time.Second))
@@ -86,7 +120,13 @@ func (d *dnsProxy) serveTCP() {
 				if err != nil {
 					return
 				}
-				resp := d.handle(q, c.RemoteAddr().(*net.TCPAddr).IP, true)
+				var resp []byte
+				if a.dnsQueries.Add(1) > dnsMaxQueries {
+					resp = refuse(q, dnsmessage.RCodeServerFailure)
+				} else {
+					resp = d.handle(a, q, true)
+				}
+				a.dnsQueries.Add(-1)
 				if resp == nil || writeTCPMsg(c, resp) != nil {
 					return
 				}
@@ -113,8 +153,19 @@ func writeTCPMsg(w io.Writer, b []byte) error {
 	return err
 }
 
-// handle answers query q from src; nil drops it.
-func (d *dnsProxy) handle(q []byte, src net.IP, overTCP bool) []byte {
+// refuse answers query q with rcode, without looking further; nil drops it.
+func refuse(q []byte, rcode dnsmessage.RCode) []byte {
+	var p dnsmessage.Parser
+	h, err := p.Start(q)
+	if err != nil || h.Response {
+		return nil
+	}
+	qs, _ := p.AllQuestions()
+	return reply(h, qs, rcode)
+}
+
+// handle answers sandbox a's query q; nil drops it.
+func (d *dnsProxy) handle(a *Attachment, q []byte, overTCP bool) []byte {
 	var p dnsmessage.Parser
 	h, err := p.Start(q)
 	if err != nil || h.Response {
@@ -123,10 +174,6 @@ func (d *dnsProxy) handle(q []byte, src net.IP, overTCP bool) []byte {
 	qs, err := p.AllQuestions()
 	if err != nil || len(qs) != 1 {
 		return reply(h, qs, dnsmessage.RCodeFormatError)
-	}
-	a := d.m.byAddr(src)
-	if a == nil {
-		return reply(h, qs, dnsmessage.RCodeRefused)
 	}
 	name := strings.TrimSuffix(strings.ToLower(qs[0].Name.String()), ".")
 	if !a.current().allowsName(name) {
@@ -142,7 +189,9 @@ func (d *dnsProxy) handle(q []byte, src net.IP, overTCP bool) []byte {
 	ips, ttl := answerA(resp)
 	if len(ips) > 0 {
 		if err := a.learn(name, ips, ttl); err != nil {
-			d.m.log.Warn("netpol: allow resolved addresses", "lease", a.Lease, "name", name, "err", err)
+			if err != errLearnedFull { // logged once by learn
+				d.m.log.Warn("netpol: allow resolved addresses", "lease", a.Lease, "name", name, "err", err)
+			}
 			return reply(h, qs, dnsmessage.RCodeServerFailure)
 		}
 	}

@@ -40,7 +40,7 @@ DSecRunArgs(..., network_rules={"pypi": True})
 DSecRunArgs(..., network_rules={"*:443": True})
 
 # the internet, plus one database on the internal network
-DSecRunArgs(..., network_rules={"*": True, "10.20.0.15:5432/tcp": True})
+DSecRunArgs(..., network_rules={"*": True, "db": True})   # "db": a rule set of the administrator's, see §4
 
 # the cluster allows the internet by default; not for this sandbox
 DSecRunArgs(..., network_rules={"*": False})
@@ -103,13 +103,18 @@ To reach a service running in a sandbox, do not go over the network: use the SDK
 
 ## 4. Private addresses
 
-These ranges are reachable only through an **address or network rule naming them**:
+These ranges are reachable only through an **address or network rule naming them**, which by default only an administrator can write:
 
 `0.0.0.0/8`, `10.0.0.0/8`, `100.64.0.0/10`, `127.0.0.0/8`, `169.254.0.0/16` (cloud metadata `169.254.169.254` included), `172.16.0.0/12`, `192.0.0.0/24`, `192.168.0.0/16`, `198.18.0.0/15`, `224.0.0.0/4`, `240.0.0.0/4`
 
 - `*` does not include them.
 - Private addresses a domain resolves to are always blocked, even for an allowed domain. This stops DNS from being used to get around the rules.
-- To reach one internal service (a database, a package mirror, a model server), name its address and port in a network rule, e.g. `10.30.0.10:443/tcp`. Allow only what is needed: allowing whole private ranges lets code in the sandbox reach cluster nodes and other internal services.
+- **Who may name them**: a sandbox's traffic leaves with its node's address, so whoever can name these addresses reaches the cluster's private network and the cloud's metadata service. So:
+  - An administrator names them in a rule set (`network.rule_sets`) or a default rule of the cluster configuration, and callers refer to the rule set by name: with `"rule_sets": {"db": ["10.30.0.10:5432/tcp"]}`, a caller writes `{"db": True}`.
+  - A caller naming them in its own `network_rules` is refused (`forbidden`), as is a network overlapping them such as `0.0.0.0/0` (write `*` for the public internet).
+  - To let the callers of some projects name them, list the projects in `network.private_rule_projects` (subprojects included; `root` is every project). Do so only for callers you trust.
+  - Sandboxes running before the rule applied keep the rules they have.
+- Allow only what is needed: allowing whole private ranges lets code in the sandbox reach cluster nodes and other internal services.
 
 ## 5. Changing rules at run time
 

@@ -14,6 +14,7 @@ package netpol
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"hash/fnv"
 	"log/slog"
@@ -23,6 +24,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/kernflux/opendsec/internal/config"
@@ -85,6 +87,10 @@ type Attachment struct {
 	mu      sync.Mutex
 	pol     *policy
 	learned map[string]learned // ip -> how it was learned
+	full    bool               // learned is full, and it was logged
+
+	// What the sandbox has in the DNS proxy now (dnsMax*).
+	dnsQueries, dnsConns atomic.Int32
 }
 
 type learned struct {
@@ -316,17 +322,44 @@ func (a *Attachment) current() *policy {
 	return a.pol
 }
 
+var errLearnedFull = errors.New("too many resolved addresses")
+
 // learn lets the sandbox reach ips (resolved from name) for ttl.
 func (a *Attachment) learn(name string, ips []net.IP, ttl time.Duration) error {
 	ttl = min(max(ttl, 5*time.Minute), learnIdle)
-	exp := time.Now().Add(ttl)
+	now := time.Now()
+	exp := now.Add(ttl)
 	add := map[string]time.Time{}
 	a.mu.Lock()
 	for _, ip := range ips {
 		k := ip.String()
-		if l, ok := a.learned[k]; ok && l.name == name && l.exp.Sub(time.Now()) > ttl/2 {
+		if l, ok := a.learned[k]; ok && l.name == name && l.exp.Sub(now) > ttl/2 {
 			continue
 		}
+		if _, ok := a.learned[k]; !ok && len(a.learned) >= dnsMaxLearned {
+			// Full: those that ran out go (the kernel keeps the ones in
+			// use). Still full, the sandbox resolves no new address: one
+			// making names up must not grow the edge's memory and tables.
+			for old, l := range a.learned {
+				if l.exp.Before(now) {
+					delete(a.learned, old)
+				}
+			}
+			if len(a.learned) >= dnsMaxLearned {
+				for k := range add { // not given to the kernel
+					delete(a.learned, k)
+				}
+				first := !a.full
+				a.full = true
+				a.mu.Unlock()
+				if first {
+					a.m.log.Warn("netpol: a sandbox resolved too many addresses; new ones are refused until some expire",
+						"lease", a.Lease, "addresses", dnsMaxLearned)
+				}
+				return errLearnedFull
+			}
+		}
+		a.full = false
 		a.learned[k] = learned{name: name, exp: exp}
 		add[k] = exp
 	}

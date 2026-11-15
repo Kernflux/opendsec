@@ -207,6 +207,57 @@ func compile(np *config.NetworkPolicy, rules map[string]bool) (*policy, error) {
 	return p, nil
 }
 
+// CheckPrivate refuses the entries of rules that name private or reserved
+// addresses (privateNets), written by a caller of project: only the
+// cluster's configuration (rule sets, default rules, or
+// private_rule_projects for the project) lets a sandbox reach those. had
+// are the sandbox's rules so far, which stay.
+func (m *Manager) CheckPrivate(project string, rules, had map[string]bool) error {
+	for _, p := range m.policy.PrivateRuleProjects {
+		if project == p || strings.HasPrefix(project, p+"/") {
+			return nil
+		}
+	}
+	for k, on := range rules {
+		if !on || had[k] || m.policy.DefaultRules[k] {
+			continue
+		}
+		if _, ok := m.policy.RuleSets[k]; ok {
+			continue
+		}
+		target, _, err := splitPorts(strings.ToLower(strings.TrimSpace(k)))
+		if err != nil || !(strings.Contains(target, "/") || net.ParseIP(target) != nil) {
+			continue // a domain (what it resolves to is filtered), or refused by compile
+		}
+		if !strings.Contains(target, "/") {
+			target += "/32"
+		}
+		_, n, err := net.ParseCIDR(target)
+		if err != nil {
+			continue
+		}
+		for _, pn := range privateIPNets {
+			if n.Contains(pn.IP) || pn.Contains(n.IP) {
+				return rpcutil.Err(rpcutil.Forbidden, "network rule %q names private or reserved addresses (%s): project %s may only reach those through a rule set of the cluster's configuration (network.private_rule_projects allows it)",
+					k, pn, project)
+			}
+		}
+	}
+	return nil
+}
+
+var privateIPNets = func() []*net.IPNet {
+	var out []*net.IPNet
+	for _, c := range privateNets {
+		_, n, err := net.ParseCIDR(c)
+		if err != nil {
+			panic(err)
+		}
+		out = append(out, n)
+	}
+	return out
+}()
+
 func validDomain(d string) bool {
 	if len(d) == 0 || len(d) > 253 || !strings.Contains(d, ".") {
 		return false

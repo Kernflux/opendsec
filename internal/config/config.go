@@ -450,6 +450,14 @@ type NetworkPolicy struct {
 	// rules allow: "25/tcp", "6660-6669/tcp", or "53" (tcp and udp). For
 	// clusters open to untrusted users, e.g. mail submission ports.
 	BlockedPorts []string `json:"blocked_ports,omitempty"`
+	// PrivateRuleProjects: the projects (their subprojects too; "root" is
+	// every project) whose callers may name private and reserved addresses
+	// (10.0.0.0/8, 169.254.169.254, ...) in a sandbox's own network_rules.
+	// Others reach such addresses only through a rule set or default rule
+	// set here: a sandbox's traffic leaves as its node, so a caller naming
+	// them reaches the cluster's private network and the cloud's metadata
+	// service. Default: none.
+	PrivateRuleProjects []string `json:"private_rule_projects,omitempty"`
 	// UpstreamDNS: resolvers the edges' DNS proxies query; default: the
 	// host's /etc/resolv.conf.
 	UpstreamDNS []string `json:"upstream_dns"`

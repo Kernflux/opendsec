@@ -48,7 +48,8 @@ See [Network policy](NETWORK.md). In short:
 - Outbound traffic is denied by default and allowed by rules, enforced in the host's nftables, which root in the sandbox cannot change.
 - Inbound connections are always refused: sandboxes cannot reach each other or services on the host (except DNS).
 - Packets with forged source addresses are dropped.
-- Private, link-local (cloud metadata `169.254.169.254` included) and multicast addresses are reachable only through network rules that name them; private addresses a domain resolves to are always blocked, so DNS cannot be used to get around the rules.
+- Private, link-local (cloud metadata `169.254.169.254` included) and multicast addresses are reachable only through network rules that name them, which by default only the administrator can write, in the cluster configuration (`network.private_rule_projects` opens it to given projects); private addresses a domain resolves to are always blocked, so DNS cannot be used to get around the rules.
+- Each sandbox has limits on the DNS proxy: 64 queries in progress, 16 TCP connections, 65536 resolved addresses; beyond them it gets `SERVFAIL`. A sandbox flooding queries does not affect the others on its node.
 - Taking an allowance back cuts existing connections at once.
 
 ## 4. Isolation between callers

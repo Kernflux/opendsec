@@ -321,6 +321,11 @@ func (e *Edge) create(ctx context.Context, req *pb.EdgeCreateRequest) (*pb.Sandb
 	nb, networked := be.(backend.Networked)
 	networked = networked && e.Net != nil
 	if networked {
+		if !req.Move { // a sandbox moving here was admitted where it was made
+			if err := e.Net.CheckPrivate(req.Project, spec.NetworkRules, nil); err != nil {
+				return nil, err
+			}
+		}
 		if err := e.Net.Validate(spec.NetworkRules); err != nil {
 			return nil, err
 		}
@@ -956,6 +961,12 @@ func (e *Edge) UpdateNetwork(ctx context.Context, id string, rules map[string]bo
 	if a == nil {
 		return nil, rpcutil.Err(rpcutil.Invalid, "sandbox %s has no network (edge %s networking is off, or backend %s has none)",
 			id, e.cfg.ID, r.sb.Spec.GetBackend())
+	}
+	e.mu.Lock()
+	had, project := r.sb.Spec.NetworkRules, r.sb.Project
+	e.mu.Unlock()
+	if err := e.Net.CheckPrivate(project, rules, had); err != nil {
+		return nil, err
 	}
 	e.mu.Lock()
 	next := map[string]bool{}

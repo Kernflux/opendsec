@@ -39,6 +39,15 @@ docs/OPERATIONS.md §6.4.
   refuses a project path with `.` or `..`.
 
 ### Breaking
+- **Callers can no longer name private or reserved addresses in
+  `network_rules`** (`10.0.0.0/8`, `192.168.0.0/16`, `169.254.169.254`,
+  ..., or a network overlapping them such as `0.0.0.0/0`): the call is
+  `forbidden`. A sandbox's traffic leaves as its node, so such a rule
+  reached the cluster's private network and the cloud's metadata service.
+  Put the addresses in a rule set (`network.rule_sets`) for callers to
+  name, or list the projects whose callers may write them in
+  `network.private_rule_projects` (`["root"]` restores the old behaviour).
+  Running sandboxes keep their rules. docs/NETWORK.md §4.
 - The Python SDK's distribution is now `opendsec-sdk` (wheel
   `opendsec_sdk-<version>-py3-none-any.whl`; `pip install opendsec-sdk`);
   the module is still `opendsec`. The PyPI name `opendsec` belongs to an
@@ -229,6 +238,11 @@ docs/OPERATIONS.md §6.4.
   they go to the image store.
 
 ### Fixed
+- **A sandbox could exhaust its edge through the DNS proxy**: queries were
+  answered without bound (a goroutine and an upstream socket each), and
+  resolved addresses were kept until its rules changed. Each sandbox now
+  has at most 64 queries in progress, 16 TCP connections and 65536
+  resolved addresses, and gets `SERVFAIL` beyond.
 - **Sandbox networking: two sandboxes of an edge could get the same veth
   name** (a 32-bit hash of the lease): the second failed to start, and its
   cleanup removed the first one's link. Veths are now named by their slot.

@@ -150,6 +150,7 @@
 |---|---|
 | `rule_sets` | 规则集：名字 → 目标列表（域名、IPv4 地址或网段，可带 `:端口[/协议]`）。例如 `{"pypi": ["pypi.org", "files.pythonhosted.org"], "github": ["github.com", "codeload.github.com", "objects.githubusercontent.com"]}` |
 | `default_rules` | 每个 sandbox 默认带的规则，sandbox 自己的 `network_rules` 叠加在上面。例如 `{"*": true}` 让所有 sandbox 默认能访问公网，`{"pypi": true}` 默认只放行 PyPI |
+| `private_rule_projects` | 哪些项目（含子项目，`root` 表示全部）的调用方可以在自己的 `network_rules` 里写内网和保留地址（`10.0.0.0/8`、`169.254.169.254` 等）。默认为空：这些地址只能通过上面的规则集和默认规则放行。见[网络策略](NETWORK.md) §4 |
 | `upstream_dns` | edge 上 DNS 代理使用的上游解析服务器，默认用宿主机的 `/etc/resolv.conf` |
 | `blocked_ports` | 无论规则怎么放行，所有 sandbox 都不能访问的目标端口，例如 `["25/tcp", "465/tcp", "587/tcp"]`（邮件端口，适合对公众开放的集群）；写 `"53"` 时 tcp 和 udp 都封 |
 

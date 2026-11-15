@@ -75,7 +75,7 @@ asyncio.run(main())
 - **Images**: images the administrator imported, such as `root/py:3.12` (python:3.12) from the quickstart; `client.list_images()` lists them. Ask your administrator for other images.
 - **Network**:
   - Whether sandboxes reach the internet by default depends on the cluster config (`network.default_rules`; administrator fills in). Clusters installed with the quickstart reach nothing by default; allow what you need in `network_rules`, e.g. `{"*": True}` or a rule set `{"pypi": True}`.
-  - Private addresses (the VPC, cluster nodes) and cloud metadata are unreachable by default: `*` excludes them, and private addresses a domain resolves to are always blocked. To reach one internal service, name its address or network explicitly, e.g. `{"10.30.0.10:5432/tcp": True}` ([Network policy](NETWORK.md)).
+  - Private addresses (the VPC, cluster nodes) and cloud metadata are unreachable by default: `*` excludes them, and private addresses a domain resolves to are always blocked. To reach one internal service, ask the administrator for a rule set with its address and refer to it by name, e.g. `{"db": True}`; naming private addresses yourself is refused by default ([Network policy](NETWORK.md) §4).
   - Narrowing rules: keys of `network_rules` can be rule set names, domains (with subdomains), IPv4 addresses or networks, or `"*"` (every public address), optionally followed by `:port[/protocol]` to allow only those ports, e.g. `{"*": False, "pypi.org:443": True, "files.pythonhosted.org:443/tcp": True}`. Ports may be ranges such as `8000-8080`; the protocol is `tcp` or `udp`, both when left out.
   - IPv4 only.
 - **Lifecycle**:

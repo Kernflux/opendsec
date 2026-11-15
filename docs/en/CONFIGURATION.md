@@ -150,6 +150,7 @@ The cluster-wide network policy.
 |---|---|
 | `rule_sets` | Rule sets: name → destinations (domains, IPv4 addresses or networks, optionally with `:port[/protocol]`). E.g. `{"pypi": ["pypi.org", "files.pythonhosted.org"], "github": ["github.com", "codeload.github.com", "objects.githubusercontent.com"]}` |
 | `default_rules` | Rules every sandbox has, under its own `network_rules`. `{"*": true}` lets every sandbox reach the internet by default; `{"pypi": true}` only PyPI |
+| `private_rule_projects` | The projects (subprojects included; `root` is all) whose callers may name private and reserved addresses (`10.0.0.0/8`, `169.254.169.254`, ...) in their own `network_rules`. Default: none, so these addresses are reachable only through the rule sets and default rules above. See [Network policy](NETWORK.md) §4 |
 | `upstream_dns` | Resolvers the edges' DNS proxies use; default: the host's `/etc/resolv.conf` |
 | `blocked_ports` | Destination ports no sandbox reaches, whatever its rules allow: `["25/tcp", "465/tcp", "587/tcp"]` (mail, for clusters open to the public); `"53"` blocks tcp and udp |
 
