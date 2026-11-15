@@ -2959,7 +2959,9 @@ E2B 的 `sandbox.fork()`、`create_snapshot()`、`Sandbox.create(snapshot_id)` �
 - 大于 0 时，运行中的 sandbox 到了 `ttl_max_s` 或空闲超时，edge 不停止它而是暂停，并保留 `ttl_paused_s` 秒：`ttl_max_s` 改成「暂停时的年龄 + ttl_paused_s」。到期后停止。
 - 暂停失败（后端不支持）就照常停止，消息里写明原因。
 - 暂停后任何调用都会自动恢复它，和其他暂停的 sandbox 一样。恢复后由空闲超时控制，空闲了会再次暂停。
-- 自动暂停时 edge 在 sandbox 记录上置 `pause_deadline`（`Sandbox` 字段 11，随记录持久化）：这时的 `ttl_max_s` 是暂停的保留期，不是寿命。
+- 自动暂停时 edge 在 sandbox 记录上置 `pause_deadline`（`Sandbox` 字段 11）：这时的 `ttl_max_s` 是暂停的保留期，不是寿命。
+  - 存盘时这个标记不写进记录文件，而是记录旁边的 `<lease>.pd` 标记文件：此前的版本读记录时遇到不认识的字段会把记录当坏文件删掉、sandbox 随之被清理，回滚（包括 fleet 对失败节点的自动回退）不能因此丢 sandbox。回滚后旧版本不理会标记文件，sandbox 按没有这个字段时的方式运行。
+  - 从这个版本起，读记录时忽略不认识的字段：以后给记录加字段，回滚到这个版本或更新的版本是安全的。`TestStorePauseDeadline`。
   - 恢复后，有空闲超时的 sandbox 不再按 `ttl_max_s` 判断，否则使用中的 sandbox 会在保留期到点时被再次暂停。没有空闲超时的仍按 `ttl_max_s` 暂停。
   - 这样的 sandbox 被手动暂停时，重新保留 `ttl_paused_s` 秒（旧的保留期可能已过）。
   - `SetSandboxTimeout` 清掉这个标记，`ttl_max_s` 重新成为寿命。

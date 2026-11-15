@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 
 	pb "github.com/kernflux/opendsec/gen/go/opendsec/v1"
 )
@@ -26,13 +27,35 @@ func newStore(dir string) (*store, error) {
 
 func (s *store) path(lease string) string { return filepath.Join(s.dir, lease+".json") }
 
+// A record is read by whichever release runs after this one, an earlier
+// one after a rollback too. Releases before this one drop a record with a
+// field they do not know, and its sandbox with it. So pause_deadline, new
+// in this release, is kept in a marker beside the record instead, which
+// they leave alone: rolled back, the sandbox is run as before the field
+// existed.
+func (s *store) deadlinePath(lease string) string { return filepath.Join(s.dir, lease+".pd") }
+
 // save atomically writes sb.
 func (s *store) save(lease string, sb *pb.Sandbox) error {
+	marked := sb.PauseDeadline
+	if marked {
+		sb = proto.Clone(sb).(*pb.Sandbox)
+		sb.PauseDeadline = false
+	}
 	b, err := protojson.Marshal(sb)
 	if err != nil {
 		return err
 	}
-	return s.write(s.path(lease), b)
+	if err := s.write(s.path(lease), b); err != nil {
+		return err
+	}
+	if marked {
+		return s.write(s.deadlinePath(lease), nil)
+	}
+	if err := os.Remove(s.deadlinePath(lease)); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
 }
 
 // write replaces path with b durably: temp file, fsync, rename, fsync of
@@ -68,6 +91,7 @@ func (s *store) write(path string, b []byte) error {
 func (s *store) remove(lease string) {
 	os.Remove(s.path(lease))
 	os.Remove(s.movingPath(lease))
+	os.Remove(s.deadlinePath(lease))
 }
 
 // A sandbox frozen for a move to another edge (spec §26.2) has a marker
@@ -116,6 +140,12 @@ func (s *store) load() (map[string]*pb.Sandbox, []error) {
 			os.Remove(filepath.Join(s.dir, name))
 			continue
 		}
+		if l, ok := strings.CutSuffix(name, ".pd"); ok {
+			if _, err := os.Stat(s.path(l)); os.IsNotExist(err) { // left by a release that does not know it
+				os.Remove(filepath.Join(s.dir, name))
+			}
+			continue
+		}
 		lease, ok := strings.CutSuffix(name, ".json")
 		if !ok {
 			continue
@@ -123,12 +153,17 @@ func (s *store) load() (map[string]*pb.Sandbox, []error) {
 		b, err := os.ReadFile(filepath.Join(s.dir, name))
 		sb := &pb.Sandbox{}
 		if err == nil {
-			err = protojson.Unmarshal(b, sb)
+			// Fields of a later release are let be: after a rollback, the
+			// sandbox is worth more than what they said.
+			err = protojson.UnmarshalOptions{DiscardUnknown: true}.Unmarshal(b, sb)
 		}
 		if err != nil {
 			errs = append(errs, fmt.Errorf("record %s: %w", name, err))
 			os.Remove(filepath.Join(s.dir, name))
 			continue
+		}
+		if _, err := os.Stat(s.deadlinePath(lease)); err == nil {
+			sb.PauseDeadline = true
 		}
 		out[lease] = sb
 	}
