@@ -31,7 +31,7 @@ type initConfig struct {
 	DiskDir    string   `json:"disk_dir"`  // where to mount it (in the sandbox's mount namespace)
 	Rootfs     string   `json:"rootfs"`    // mountpoint for the merged rootfs
 	AgentDir   string   `json:"agent_dir"` // host dir with opendsec-aether, opendsec-chronus
-	RunDir     string   `json:"run_dir"`   // host dir mounted at /.opendsec/run
+	RunDir     string   `json:"run_dir"`   // unused: /.opendsec/run is the disk's run/ (kept for the tests' older configs)
 	Hostname   string   `json:"hostname"`
 	AetherArgs []string `json:"aether_args"`
 	Resolv     string   `json:"resolv,omitempty"` // host file bound at /etc/resolv.conf (networking, spec §20)
@@ -97,7 +97,14 @@ func sandboxInit() error {
 	if err := bind(cfg.AgentDir, r(".opendsec/bin"), true); err != nil {
 		return fmt.Errorf("agent dir: %w", err)
 	}
-	if err := bind(cfg.RunDir, r(".opendsec/run"), false); err != nil {
+	// The run dir is on the sandbox's disk, not the host's: the sandbox
+	// writes there without limit otherwise (command output, anything its
+	// root puts there), on the disk all sandboxes of the node share.
+	run := filepath.Join(cfg.DiskDir, "run")
+	if err := os.MkdirAll(run, 0o755); err != nil {
+		return fmt.Errorf("run dir: %w", err)
+	}
+	if err := bind(run, r(".opendsec/run"), false); err != nil {
 		return fmt.Errorf("run dir: %w", err)
 	}
 	// The edge reaches the writable layer here (pack_diff, snapshots).

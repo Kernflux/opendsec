@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -152,6 +153,21 @@ func TestIsolation(t *testing.T) {
 	upper := filepath.Join(s.diskDir(), "upper/etc/opendsec-test-marker")
 	if b, err := os.ReadFile(upper); err != nil || string(b) != "sandbox-data\n" {
 		t.Errorf("upper layer: %q %v", b, err)
+	}
+	// The run dir (sockets, output records) is on the sandbox's own disk:
+	// what it writes there is within its disk size. The host's holds only
+	// the link an edge of an earlier release adopts the sandbox by.
+	if got := out(sh(t, f, sb, `[ "$(stat -c %d /.opendsec/run)" = "$(stat -c %d /.opendsec/disk)" ] && echo same`)); got != "same" {
+		t.Errorf("/.opendsec/run is not on the sandbox's disk: %q", got)
+	}
+	ents, _ := os.ReadDir(filepath.Join(s.dir, "run"))
+	if len(ents) != 1 || ents[0].Name() != "aether.sock" || ents[0].Type()&os.ModeSymlink == 0 {
+		t.Errorf("host run dir: %v", ents)
+	}
+	if c, err := net.Dial("unix", filepath.Join(s.dir, "run", "aether.sock")); err != nil {
+		t.Errorf("the link for earlier releases: %v", err)
+	} else {
+		c.Close()
 	}
 	// Nothing of the sandbox is mounted on the host: every new mount
 	// namespace copies the host's mounts.

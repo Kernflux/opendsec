@@ -31,6 +31,8 @@ To report a vulnerability, see `SECURITY.md` in the repository root; do not open
 - A process limit `pids_max` (default 4096); CPU, memory and disk I/O limited by cgroups.
 - Core scheduling on by default.
 
+What a container sandbox can write is within its disk size: the writable layer of its root file system and `/.opendsec/run` (command output records) are on its own disk; its log on the node (`init.log`) is cut back at 4 MB. seccomp refuses mounts, namespace switches, kernel modules, bpf, io_uring and the like.
+
 **Containers share the host kernel**, so a kernel vulnerability can lead to an escape. Prefer microVMs for untrusted code.
 
 ### Both backends

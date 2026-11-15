@@ -49,7 +49,7 @@ func dropCaps() error {
 // Syscalls refused with EPERM (x86_64 numbers): mounts and namespace
 // switches (they could undo the sandbox's file restrictions), kernel
 // modules and kexec, bpf, keyrings, file handles (the "shocker" escape),
-// userfaultfd, perf, raw I/O ports, swap, quotas, reboot. clone and
+// userfaultfd, perf, io_uring, raw I/O ports, swap, quotas, reboot. clone and
 // unshare are refused only with CLONE_NEWUSER (a user namespace would give
 // back the dropped capabilities over its own mounts); clone3 gets ENOSYS
 // (its flags cannot be inspected), so libc falls back to clone.
@@ -62,6 +62,10 @@ var deniedSyscalls = []uint32{
 	unix.SYS_PERF_EVENT_OPEN, unix.SYS_IOPL, unix.SYS_IOPERM, unix.SYS_SWAPON, unix.SYS_SWAPOFF,
 	unix.SYS_QUOTACTL, unix.SYS_REBOOT, unix.SYS_ACCT, unix.SYS_LOOKUP_DCOOKIE,
 	unix.SYS_SETTIMEOFDAY, unix.SYS_CLOCK_SETTIME, unix.SYS_CLOCK_ADJTIME, unix.SYS_ADJTIMEX,
+	// io_uring: much of the kernel reachable through a new interface, with
+	// a history of privilege escalations; Docker's default profile refuses
+	// it too. Programs fall back to ordinary I/O.
+	unix.SYS_IO_URING_SETUP, unix.SYS_IO_URING_ENTER, unix.SYS_IO_URING_REGISTER,
 }
 
 const (

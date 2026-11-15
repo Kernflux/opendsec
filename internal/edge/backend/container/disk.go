@@ -24,7 +24,9 @@ func makeDisk(img string, sizeMB int64) (dev string, rdev uint64, keep *os.File,
 		return "", 0, nil, err
 	}
 	defer os.RemoveAll(stage)
-	for _, d := range []string{"upper", "work"} {
+	// run: the agents' sockets and output records (/.opendsec/run), on the
+	// sandbox's own disk: what it writes there counts against its size.
+	for _, d := range []string{"upper", "work", "run"} {
 		if err := os.Mkdir(filepath.Join(stage, d), 0o755); err != nil {
 			return "", 0, nil, err
 		}

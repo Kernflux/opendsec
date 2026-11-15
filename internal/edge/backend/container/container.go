@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"maps"
 	"math"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -145,6 +146,32 @@ func openLayer(root, rel string) (path string, done func(), err error) {
 		return "", nil, fmt.Errorf("writable layer: not a directory of the sandbox's disk (%v)", err)
 	}
 	return fmt.Sprintf("/proc/%d/fd/%d", os.Getpid(), ufd), func() { unix.Close(ufd) }, nil
+}
+
+// dialAether connects to the sandbox's aether, whose socket is in the
+// sandbox's run dir (/.opendsec/run, on its disk; a host dir bound there in
+// sandboxes of earlier releases). The sandbox's root can write that dir:
+// the socket is opened without following any link, must be a socket, and
+// is connected to through the open file, so the edge never connects to
+// what a link there names on the host.
+func (s *sandbox) dialAether(ctx context.Context) (net.Conn, error) {
+	rfd, err := unix.Open(fmt.Sprintf("/proc/%d/root", s.pid), unix.O_PATH|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return nil, err
+	}
+	defer unix.Close(rfd)
+	fd, err := unix.Openat2(rfd, ".opendsec/run/aether.sock", &unix.OpenHow{Flags: unix.O_PATH | unix.O_CLOEXEC,
+		Resolve: unix.RESOLVE_NO_SYMLINKS | unix.RESOLVE_BENEATH})
+	if err != nil {
+		return nil, err
+	}
+	defer unix.Close(fd)
+	var st unix.Stat_t
+	if err := unix.Fstat(fd, &st); err != nil || st.Mode&unix.S_IFMT != unix.S_IFSOCK {
+		return nil, fmt.Errorf("aether.sock is not a socket (%v)", err)
+	}
+	var d net.Dialer
+	return d.DialContext(ctx, "unix", fmt.Sprintf("/proc/self/fd/%d", fd))
 }
 
 // runtimeState is persisted in the sandbox dir so a restarted edge can
@@ -551,10 +578,13 @@ func (b *Backend) start(ctx context.Context, sb *backend.Sandbox, lease string, 
 		return nil, fmt.Errorf("persist runtime state: %w", err)
 	}
 
-	sock := filepath.Join(runDir, "aether.sock")
+	// For an edge of an earlier release adopting this sandbox after a
+	// rollback: it looks for the socket in the host's run dir.
+	os.Symlink(fmt.Sprintf("/proc/%d/root/.opendsec/run/aether.sock", s.pid), filepath.Join(runDir, "aether.sock"))
 	deadline := time.Now().Add(startTimeout)
 	for {
-		if _, err := os.Stat(sock); err == nil {
+		if c, err := s.dialAether(ctx); err == nil {
+			c.Close()
 			break
 		}
 		select {
@@ -568,7 +598,7 @@ func (b *Backend) start(ctx context.Context, sb *backend.Sandbox, lease string, 
 			return nil, fmt.Errorf("aether did not start within %v: %s", startTimeout, tail(filepath.Join(s.dir, "init.log")))
 		}
 	}
-	watch, err := b.connect(ctx, s, sock, deadline)
+	watch, err := b.connect(ctx, s, deadline)
 	if err != nil {
 		return nil, err
 	}
@@ -586,9 +616,10 @@ func resolvConf(n *netpol.Attachment) string {
 // connect dials aether and waits for its first heartbeat. The socket file
 // appears at bind(), slightly before listen(), so failures are retried until
 // the deadline rather than trusting the file.
-func (b *Backend) connect(ctx context.Context, s *sandbox, sock string, deadline time.Time) (pb.Runtime_WatchClient, error) {
+func (b *Backend) connect(ctx context.Context, s *sandbox, deadline time.Time) (pb.Runtime_WatchClient, error) {
 	var err error
-	s.conn, err = grpc.NewClient("unix://"+sock, grpc.WithTransportCredentials(insecure.NewCredentials()),
+	s.conn, err = grpc.NewClient("passthrough:///"+s.lease, grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) { return s.dialAether(ctx) }),
 		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(80<<20), grpc.MaxCallSendMsgSize(80<<20)))
 	if err != nil {
 		return nil, err
@@ -681,7 +712,7 @@ func (b *Backend) Adopt(ctx context.Context, sb *backend.Sandbox) (bool, error) 
 		}
 	}
 	go s.pollExit()
-	watch, err := b.connect(ctx, s, filepath.Join(s.dir, "run", "aether.sock"), time.Now().Add(startTimeout))
+	watch, err := b.connect(ctx, s, time.Now().Add(startTimeout))
 	if err != nil {
 		s.once.Do(func() { close(s.stopped) })
 		return false, err

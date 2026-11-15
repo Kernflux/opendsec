@@ -68,6 +68,9 @@ docs/OPERATIONS.md §6.4.
   to code importing `pkg/client`.
 
 ### Changed behaviour
+- **Container sandboxes: io_uring is refused** (`EPERM`), as in Docker's
+  default profile: programs fall back to ordinary I/O. Command output of a
+  container sandbox now counts against its disk (`disk_mb`).
 - **E2B gateway: internet by default, as on E2B** (SPEC §37.11). Sandboxes
   made through the gateway get the rule `"*": true` unless the caller turns
   it off (`allow_internet_access=False`, `deny_out` of all traffic),
@@ -238,6 +241,11 @@ docs/OPERATIONS.md §6.4.
   they go to the image store.
 
 ### Fixed
+- **A container sandbox could fill its node's disk through
+  `/.opendsec/run`** (the agents' sockets and command output records): it
+  was a directory of the host, outside the sandbox's disk. It is now on
+  the sandbox's own disk, within its size. Sandboxes made before keep the
+  old layout until they end.
 - **A sandbox could grow a log on its node without bound**, outside its
   disk: a container's `init.log` (its init's stderr), a microVM's
   `console.log` (the guest's serial console). The edge also read the whole
