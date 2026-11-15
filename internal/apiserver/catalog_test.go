@@ -32,6 +32,7 @@ type fakeKV struct {
 	locks   map[string]string // name -> holder
 	listFor time.Duration     // how long a KVList's answer takes to arrive
 	lockErr error             // AcquireLock's answer (an older IAM)
+	deny    map[string]bool   // "project|perm" refused by Authorize
 }
 
 func newFakeKV() *fakeKV { return &fakeKV{kv: map[string]*pb.KVEntry{}, locks: map[string]string{}} }
@@ -110,7 +111,12 @@ func (f *fakeKV) ReleaseLock(_ context.Context, r *pb.LockRequest, _ ...grpc.Cal
 	return &pb.Empty{}, nil
 }
 
-func (f *fakeKV) Authorize(context.Context, *pb.AuthorizeRequest, ...grpc.CallOption) (*pb.Empty, error) {
+func (f *fakeKV) Authorize(_ context.Context, r *pb.AuthorizeRequest, _ ...grpc.CallOption) (*pb.Empty, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.deny[r.Project+"|"+r.Perm] {
+		return nil, rpcutil.Err(rpcutil.Forbidden, "%s lacks %s on %s", r.Principal, r.Perm, r.Project)
+	}
 	return &pb.Empty{}, nil
 }
 

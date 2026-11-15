@@ -2,6 +2,7 @@ package apiserver
 
 import (
 	"context"
+	"slices"
 
 	pb "github.com/kernflux/opendsec/gen/go/opendsec/v1"
 	"github.com/kernflux/opendsec/internal/iam"
@@ -142,6 +143,9 @@ func (s *Server) RegisterImage(ctx context.Context, r *pb.RegisterImageRequest) 
 	if err != nil {
 		return nil, err
 	}
+	if err := s.checkLayerUse(ctx, p, projectOf(name), img.Layers); err != nil {
+		return nil, err
+	}
 	if err := s.checkImageQuota(ctx, name); err != nil {
 		return nil, err
 	}
@@ -159,6 +163,35 @@ func (s *Server) RegisterImage(ctx context.Context, r *pb.RegisterImageRequest) 
 		return nil, err
 	}
 	return infoPB(m), nil
+}
+
+// checkLayerUse refuses layers that are another project's: a layer some
+// image holds is registered into project only by one who may use one of
+// those images (layer.use), as compose requires of its parts. Knowing a
+// layer's id is not enough. Layers no image holds are the caller's own
+// import.
+func (s *Server) checkLayerUse(ctx context.Context, principal, project string, layers []string) error {
+	all, err := s.catalog().List(ctx, "root")
+	if err != nil {
+		return err
+	}
+	for _, l := range layers {
+		held, ok := false, false
+		for _, m := range all {
+			if !slices.Contains(m.Layers, l) {
+				continue
+			}
+			held = true
+			if p := projectOf(m.Name); p == project || s.authorize(ctx, principal, p, iam.LayerUse) == nil {
+				ok = true
+				break
+			}
+		}
+		if held && !ok {
+			return rpcutil.Err(rpcutil.Forbidden, "layer %s belongs to images %s may not use (needs %s on one of their projects)", l, principal, iam.LayerUse)
+		}
+	}
+	return nil
 }
 
 func (s *Server) ComposeImage(ctx context.Context, r *pb.ComposeImageRequest) (*pb.ImageInfo, error) {

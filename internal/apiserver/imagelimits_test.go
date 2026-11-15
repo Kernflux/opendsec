@@ -253,3 +253,39 @@ func TestPublishOlderIAM(t *testing.T) {
 		t.Fatalf("second image: %v", err)
 	}
 }
+
+// A layer held by another project's image is not registered by one who
+// only knows its id: it takes layer.use on that image's project.
+func TestRegisterImageForeignLayer(t *testing.T) {
+	st, _ := testStore(t)
+	kv := newFakeKV()
+	c := newCatalog(nil, kv, fakeEdges{st}, quietLog())
+	startCatalog(t, c)
+	s := &Server{imagesOn: true, log: quietLog(), iam: c.iam, authz: map[string]time.Time{},
+		authn: map[string]authnEntry{"tok": {principal: "u", exp: time.Now().Add(time.Hour)}}}
+	s.catOnce.Do(func() { s.cat = c })
+	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs("authorization", "Bearer tok"))
+	reg := func(name string, layers ...string) error {
+		_, err := s.RegisterImage(ctx, &pb.RegisterImageRequest{Image: &pb.ImageInfo{Name: name, Layers: layers}})
+		return err
+	}
+	secret, own := sizedLayer(t, st, 1<<20), sizedLayer(t, st, 1<<20)
+	if err := reg("root/a/private:1", secret); err != nil {
+		t.Fatal(err)
+	}
+	kv.deny = map[string]bool{"root/a|layer.use": true}
+	if err := reg("root/b/copy:1", own, secret); rpcutil.Reason(err) != rpcutil.Forbidden {
+		t.Fatalf("another project's layer: %v", err)
+	}
+	// Its own layers, new or already in its images, and with layer.use.
+	if err := reg("root/b/own:1", own); err != nil {
+		t.Fatal(err)
+	}
+	if err := reg("root/b/own:2", own); err != nil {
+		t.Fatal(err)
+	}
+	kv.deny = nil
+	if err := reg("root/b/copy:1", own, secret); err != nil {
+		t.Fatal(err)
+	}
+}

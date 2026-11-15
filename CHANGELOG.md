@@ -229,6 +229,11 @@ docs/OPERATIONS.md §6.4.
   they go to the image store.
 
 ### Fixed
+- **`RegisterImage` took any layer id**: knowing the id of a layer in
+  another project's image was enough to publish an image holding it, and
+  read it. A layer some image holds now needs `layer.use` on one of those
+  images' projects (or to be in the target project already), as `compose`
+  asks of its parts.
 - **A project's admins could act with rights they were never given**,
   through a principal of their project that was granted `project.admin`
   elsewhere: they issue its tokens. Such grants are now refused
