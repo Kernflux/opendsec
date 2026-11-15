@@ -48,4 +48,14 @@
    # 或者作为测试：OPENDSEC_EXAMPLE_MICROVM=1 pytest tests/test_runtime.py -k memory_fork
    ```
    单机测试集群：`opendsecctl cluster up -sim-edges 1 -runtime linux -image-store DIR -microvm-kernel <vmlinux>`，再 `opendsecctl image import docker.io/library/python:3.12-slim -as root/py:3.12 -store DIR -addr ... -token ...`。容器部分（`execute_code.py`、`task_pause.py`）由 `sdk/python/tests/test_runtime.py` 在 CI 里跑。
-6. SDK 发布到 PyPI（包名 `opendsec-sdk`，模块名 `opendsec`；`opendsec` 这个 PyPI 名字属于无关项目）：`python -m build --wheel sdk/python && twine upload dist/opendsec_sdk-*`。
+6. **升级和回滚演练**（上生产之前，在一个由 fleet 管理的测试集群上，测试集群先运行生产当前的版本）：
+   ```sh
+   # 在测试集群的运维机上；新旧两个版本都已经 fleet release push
+   CALLER_ENV=/root/caller.env PYTHON=/root/v/bin/python \
+   CHECK_NEW="..." CHECK_OLD="..." deploy/prod/rehearse-upgrade.sh <新版本> <生产当前的版本>
+   ```
+   - 脚本在压测下依次做：升级、回滚、再升级，每一步检查 rollout 结果和压测失败的原因，最后列出各节点的告警。压测里只有 `no_capacity`（edge 排空期间）算正常。
+   - **回滚必须演练**，不能只演练升级：新版本写下的数据（edge 上的 sandbox 记录、IAM 状态）在回滚后由旧版本读取，fleet 对启动失败的节点自动回退时也一样。2026-11-15 有一次就是这样发现的：旧版本读到记录里不认识的字段会删掉记录、清理 sandbox。
+   - `CHECK_NEW` 里创建几个要跨回滚存活的 sandbox（运行中的、暂停的），并检查这个版本的新功能；`CHECK_OLD` 里用旧 SDK 确认它们还在、能恢复。
+   - 给 sandbox 记录加字段时，`internal/edge` 的 `TestRecordReadableByEarlierReleases` 会失败并说明该怎么做。
+7. SDK 发布到 PyPI（包名 `opendsec-sdk`，模块名 `opendsec`；`opendsec` 这个 PyPI 名字属于无关项目）：`python -m build --wheel sdk/python && twine upload dist/opendsec_sdk-*`。
