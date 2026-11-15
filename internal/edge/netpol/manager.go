@@ -214,7 +214,11 @@ func (m *Manager) Allocate(lease string, rules map[string]bool, vm bool) (*Attac
 		return nil, rpcutil.Err(rpcutil.NoCapacity, "edge %s: no free sandbox address in %s", m.edge, m.pool)
 	}
 	base := binary.BigEndian.Uint32(m.pool.IP.To4()) + uint32(slot)*4
-	a := &Attachment{m: m, Lease: lease, Slot: slot, Veth: fmt.Sprintf("%s%08x", m.prefix, uint32(sum)),
+	// The veth is named by the slot, which no other sandbox of the edge
+	// has: named by a hash of the lease, two could get the same name, and
+	// the one failing for it then removed the other's link. ("s" keeps the
+	// names apart from those, still in use by sandboxes made before.)
+	a := &Attachment{m: m, Lease: lease, Slot: slot, Veth: fmt.Sprintf("%ss%x", m.prefix, slot),
 		Netns: m.nsPre + lease, HostIP: u32IP(base + 1), SandboxIP: u32IP(base + 2), VM: vm, pol: p,
 		learned: map[string]learned{}}
 	m.register(a)

@@ -229,6 +229,9 @@ docs/OPERATIONS.md §6.4.
   they go to the image store.
 
 ### Fixed
+- **Sandbox networking: two sandboxes of an edge could get the same veth
+  name** (a 32-bit hash of the lease): the second failed to start, and its
+  cleanup removed the first one's link. Veths are now named by their slot.
 - **Container sandboxes: `pack_diff` and snapshots followed symbolic links
   in the sandbox's writable disk** as the edge, which runs as root on the
   host: the sandbox's root can write that disk. The edge now opens the
