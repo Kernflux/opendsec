@@ -283,7 +283,7 @@ func (b *Backend) startVM(s *sandbox, withConfig bool) (*vm, error) {
 		return nil, err
 	}
 	defer cgfd.Close()
-	logf, err := os.OpenFile(filepath.Join(s.dir, "console.log"), os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600)
+	logf, err := linuxrt.OpenLog(filepath.Join(s.dir, "console.log"))
 	if err != nil {
 		return nil, err
 	}

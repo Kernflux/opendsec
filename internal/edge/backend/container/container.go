@@ -519,7 +519,7 @@ func (b *Backend) start(ctx context.Context, sb *backend.Sandbox, lease string, 
 	if err != nil {
 		return nil, err
 	}
-	logf, err := os.Create(filepath.Join(s.dir, "init.log"))
+	logf, err := linuxrt.OpenLog(filepath.Join(s.dir, "init.log"))
 	if err != nil {
 		return nil, err
 	}
@@ -962,7 +962,11 @@ func (b *Backend) watch(s *sandbox, w pb.Runtime_WatchClient) {
 // puts what matters first and a long goroutine dump after: its first lines
 // come first then.
 func tail(path string) string {
-	b, _ := os.ReadFile(path)
+	// Bounded: the sandbox writes this file (its init's stderr).
+	b, last := linuxrt.ReadLog(path, 64<<10, 2000)
+	if last != nil {
+		b = append(append(b, " … "...), last...)
+	}
 	head := ""
 	for _, mark := range []string{"runtime: failed", "fatal error:", "panic:", "SIGSEGV", "SIGBUS"} {
 		if i := strings.Index(string(b), mark); i >= 0 {
@@ -1077,6 +1081,7 @@ func (b *Backend) Probe(_ context.Context, sb *backend.Sandbox) bool {
 	if err != nil {
 		return false
 	}
+	linuxrt.CapLog(filepath.Join(s.dir, "init.log"))
 	select {
 	case <-s.exited:
 		return false

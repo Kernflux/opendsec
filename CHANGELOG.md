@@ -238,6 +238,11 @@ docs/OPERATIONS.md §6.4.
   they go to the image store.
 
 ### Fixed
+- **A sandbox could grow a log on its node without bound**, outside its
+  disk: a container's `init.log` (its init's stderr), a microVM's
+  `console.log` (the guest's serial console). The edge also read the whole
+  file when reporting a failed start. Logs are now cut back at 4 MB, and
+  only their first and last bytes are read.
 - **A sandbox could exhaust its edge through the DNS proxy**: queries were
   answered without bound (a goroutine and an upstream socket each), and
   resolved addresses were kept until its rules changed. Each sandbox now

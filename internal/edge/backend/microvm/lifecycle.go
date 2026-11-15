@@ -611,6 +611,7 @@ func (b *Backend) Probe(_ context.Context, sb *backend.Sandbox) bool {
 	if v == nil {
 		return s.hasPauseSnapshot()
 	}
+	linuxrt.CapLog(filepath.Join(s.dir, "console.log"))
 	select {
 	case <-v.exited:
 		return false

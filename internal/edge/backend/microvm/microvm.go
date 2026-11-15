@@ -405,7 +405,11 @@ func (b *Backend) Detach() {
 
 // tail returns the last lines of a log file, for error messages.
 func tail(path string) string {
-	b, _ := os.ReadFile(path)
+	// Bounded: the guest writes this file (its serial console).
+	b, last := linuxrt.ReadLog(path, 0, 4000)
+	if last != nil {
+		b = last
+	}
 	lines := strings.Split(strings.TrimSpace(string(b)), "\n")
 	if len(lines) > 8 {
 		lines = lines[len(lines)-8:]
