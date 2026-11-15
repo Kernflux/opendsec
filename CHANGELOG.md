@@ -229,6 +229,11 @@ docs/OPERATIONS.md §6.4.
   they go to the image store.
 
 ### Fixed
+- **Container sandboxes: `pack_diff` and snapshots followed symbolic links
+  in the sandbox's writable disk** as the edge, which runs as root on the
+  host: the sandbox's root can write that disk. The edge now opens the
+  layer without following any link and checks it is a directory of the
+  sandbox's own disk. MicroVM sandboxes were not affected.
 - **`RegisterImage` took any layer id**: knowing the id of a layer in
   another project's image was enough to publish an image holding it, and
   read it. A layer some image holds now needs `layer.use` on one of those

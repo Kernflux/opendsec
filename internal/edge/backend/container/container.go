@@ -21,6 +21,7 @@ import (
 	"syscall"
 	"time"
 
+	"golang.org/x/sys/unix"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
@@ -103,6 +104,47 @@ func (s *sandbox) diskDir() string {
 		return host
 	}
 	return fmt.Sprintf("/proc/%d/root/.opendsec/disk", s.pid)
+}
+
+// openUpper opens the sandbox's writable layer for the edge to read
+// (pack_diff, snapshots) and returns a path to it, valid until done is
+// called. The disk is the sandbox's to write: nothing on the way to the
+// layer may be a symbolic link, which, followed by the edge, would name a
+// file of the host; and the layer must be a directory on that disk.
+func (s *sandbox) openUpper() (path string, done func(), err error) {
+	if host := filepath.Join(s.dir, "disk"); s.diskDir() == host {
+		return openLayer(host, ".")
+	}
+	return openLayer(fmt.Sprintf("/proc/%d/root", s.pid), ".opendsec/disk") // the magic link, then no other
+}
+
+// openLayer opens the directory "upper" of the disk at rel under root.
+func openLayer(root, rel string) (path string, done func(), err error) {
+	how := &unix.OpenHow{Flags: unix.O_PATH | unix.O_DIRECTORY | unix.O_CLOEXEC,
+		Resolve: unix.RESOLVE_NO_SYMLINKS | unix.RESOLVE_BENEATH}
+	rfd, err := unix.Open(root, unix.O_PATH|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return "", nil, fmt.Errorf("sandbox root: %w", err)
+	}
+	defer unix.Close(rfd)
+	dfd, err := unix.Openat2(rfd, rel, how)
+	if err != nil {
+		return "", nil, fmt.Errorf("writable disk: %w", err)
+	}
+	defer unix.Close(dfd)
+	ufd, err := unix.Openat2(dfd, "upper", how)
+	if err != nil {
+		return "", nil, fmt.Errorf("writable layer: %w", err)
+	}
+	var d, u unix.Stat_t
+	if err := unix.Fstat(dfd, &d); err == nil {
+		err = unix.Fstat(ufd, &u)
+	}
+	if err != nil || d.Dev != u.Dev {
+		unix.Close(ufd)
+		return "", nil, fmt.Errorf("writable layer: not a directory of the sandbox's disk (%v)", err)
+	}
+	return fmt.Sprintf("/proc/%d/fd/%d", os.Getpid(), ufd), func() { unix.Close(ufd) }, nil
 }
 
 // runtimeState is persisted in the sandbox dir so a restarted edge can
@@ -618,8 +660,10 @@ func (b *Backend) Adopt(ctx context.Context, sb *backend.Sandbox) (bool, error) 
 	if !s.cg.Has(s.pid) {
 		return false, fmt.Errorf("pid %d is not in the sandbox cgroup", s.pid)
 	}
-	if _, err := os.Stat(filepath.Join(s.diskDir(), "upper")); err != nil {
+	if _, done, err := s.openUpper(); err != nil {
 		return false, fmt.Errorf("writable disk is not mounted: %v", err)
+	} else {
+		done()
 	}
 	if len(st.GPUs) > 0 {
 		if b.opt.GPUs == nil {
@@ -792,8 +836,13 @@ func (b *Backend) Snapshot(_ context.Context, sb *backend.Sandbox, id string, me
 		}
 		frozen = true
 	}
-	layer, err := b.opt.Store.PublishLayerDir(images.NewDiffLayerID(), filepath.Join(s.diskDir(), "upper"), b.lowerOf(img), nil,
-		images.LayerMeta{Source: snapshotSource + sb.ID})
+	var layer *images.LayerMeta
+	upper, done, err := s.openUpper()
+	if err == nil {
+		layer, err = b.opt.Store.PublishLayerDir(images.NewDiffLayerID(), upper, b.lowerOf(img), nil,
+			images.LayerMeta{Source: snapshotSource + sb.ID})
+		done()
+	}
 	if frozen {
 		s.cg.Freeze(false)
 	}
@@ -849,7 +898,12 @@ func (b *Backend) PackDiff(_ context.Context, sb *backend.Sandbox, id string, sc
 		}
 		defer s.cg.Freeze(false)
 	}
-	return b.opt.Store.PublishLayerDir(id, filepath.Join(s.diskDir(), "upper"), b.lowerOf(img), scrub,
+	upper, done, err := s.openUpper()
+	if err != nil {
+		return nil, rpcutil.Err(rpcutil.Invalid, "sandbox %s cannot be packed: %v", sb.ID, err)
+	}
+	defer done()
+	return b.opt.Store.PublishLayerDir(id, upper, b.lowerOf(img), scrub,
 		images.LayerMeta{Source: "pack_diff " + sb.ID})
 }
 

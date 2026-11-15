@@ -311,7 +311,8 @@ func (s *Store) PublishLayerDir(id, src string, lower []string, scrub []string, 
 	if exists {
 		return s.LayerMeta(id)
 	}
-	if out, err := exec.Command("cp", "-a", "--", strings.TrimSuffix(src, "/")+"/.", w.Rootfs+"/").CombinedOutput(); err != nil {
+	src = strings.TrimSuffix(src, "/") + "/." // src may be a link to the directory (an open one, by its fd)
+	if out, err := exec.Command("cp", "-a", "--", src, w.Rootfs+"/").CombinedOutput(); err != nil {
 		w.Abort()
 		return nil, fmt.Errorf("copy layer: %v: %s", err, out)
 	}
