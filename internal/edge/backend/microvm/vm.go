@@ -54,7 +54,13 @@ func (s *sandbox) digHoles(path string) {
 	if _, err := exec.LookPath("fallocate"); err != nil {
 		return
 	}
-	cmd := exec.Command("fallocate", "--dig-holes", path)
+	f, err := openRegular(path, os.O_RDWR)
+	if err != nil {
+		return
+	}
+	defer f.Close() // the child has its own
+	cmd := exec.Command("fallocate", "--dig-holes", "/proc/self/fd/3")
+	cmd.ExtraFiles = []*os.File{f}
 	if cmd.Start() != nil {
 		return
 	}
@@ -68,8 +74,14 @@ func (s *sandbox) digHoles(path string) {
 // digHolesNow punches the zero blocks out of path, waiting for it; best
 // effort, like digHoles.
 func digHolesNow(path string) {
-	if _, err := exec.LookPath("fallocate"); err == nil {
-		exec.Command("fallocate", "--dig-holes", path).Run()
+	if _, err := exec.LookPath("fallocate"); err != nil {
+		return
+	}
+	if f, err := openRegular(path, os.O_RDWR); err == nil {
+		cmd := exec.Command("fallocate", "--dig-holes", "/proc/self/fd/3")
+		cmd.ExtraFiles = []*os.File{f}
+		cmd.Run()
+		f.Close()
 	}
 }
 
@@ -531,7 +543,7 @@ func (b *Backend) watch(s *sandbox, v *vm, l *link, w pb.Runtime_WatchClient) {
 // dropCache writes back and evicts a file's page cache (a pause snapshot's
 // memory, so pausing really frees the sandbox's memory).
 func dropCache(path string) {
-	f, err := os.Open(path)
+	f, err := openRegular(path, os.O_RDONLY)
 	if err != nil {
 		return
 	}

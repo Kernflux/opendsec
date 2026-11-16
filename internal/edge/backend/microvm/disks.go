@@ -298,12 +298,7 @@ func MakeConfigDisk(img string, cfg []byte) error {
 
 // copySparse copies a disk image keeping it sparse (sharing blocks where the
 // filesystem supports reflinks).
-func copySparse(src, dst string) error {
-	if out, err := exec.Command("cp", "--sparse=always", "--reflink=auto", "--", src, dst).CombinedOutput(); err != nil {
-		return fmt.Errorf("copy %s: %v: %s", src, err, out)
-	}
-	return nil
-}
+func copySparse(src, dst string) error { return copySparseOwned(src, dst, -1) }
 
 // diskID identifies the content of an ext4 or EROFS image by its
 // filesystem UUID, random per mkfs: read-only disks are never modified, so

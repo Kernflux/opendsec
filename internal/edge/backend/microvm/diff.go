@@ -28,11 +28,7 @@ func (s *sandbox) mergePause() (int64, error) {
 	if !s.st.BaseOwned || s.st.Base != pauseMem {
 		tmp := dst + ".tmp"
 		os.Remove(tmp)
-		if err := copySparse(filepath.Join(s.root, s.st.Base), tmp); err != nil {
-			return 0, err
-		}
-		if err := os.Chown(tmp, s.uid, s.uid); err != nil {
-			os.Remove(tmp)
+		if err := copySparseOwned(filepath.Join(s.root, s.st.Base), tmp, s.uid); err != nil {
 			return 0, err
 		}
 		// Replaces a pauseMem this sandbox shares (with a snapshot of it)
@@ -57,12 +53,12 @@ func (s *sandbox) mergePause() (int64, error) {
 // mergeDiff writes the data ranges of the sparse file diff (a Firecracker
 // diff memory file: the dirty pages at their offsets) over dst.
 func mergeDiff(dst, diff string) (int64, error) {
-	in, err := os.Open(diff)
+	in, err := openRegular(diff, os.O_RDONLY)
 	if err != nil {
 		return 0, err
 	}
 	defer in.Close()
-	out, err := os.OpenFile(dst, os.O_WRONLY, 0)
+	out, err := openRegular(dst, os.O_WRONLY)
 	if err != nil {
 		return 0, err
 	}

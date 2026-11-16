@@ -170,7 +170,7 @@ func (b *Backend) snapshot(ctx context.Context, sb *backend.Sandbox, id string, 
 			os.Remove(filepath.Join(s.root, baseMem))
 			// Not for a VM without a dirty page log: its next diff would
 			// have nothing to go by.
-			if !s.st.Untracked && os.Link(filepath.Join(s.root, tmpMem), filepath.Join(s.root, baseMem)) == nil {
+			if !s.st.Untracked && linkRegular(filepath.Join(s.root, tmpMem), filepath.Join(s.root, baseMem)) == nil {
 				s.st.Base = baseMem
 			}
 			if base == pauseMem {
@@ -182,10 +182,10 @@ func (b *Backend) snapshot(ctx context.Context, sb *backend.Sandbox, id string, 
 			return nil, fmt.Errorf("snapshot: %w", err)
 		}
 	} else {
-		if err := LinkOrCopy(filepath.Join(s.root, pauseState), filepath.Join(dir, images.VMStateFile)); err != nil {
+		if err := linkRegular(filepath.Join(s.root, pauseState), filepath.Join(dir, images.VMStateFile)); err != nil {
 			return nil, err
 		}
-		if err := LinkOrCopy(filepath.Join(s.root, pauseMem), filepath.Join(dir, images.VMMemFile)); err != nil {
+		if err := linkRegular(filepath.Join(s.root, pauseMem), filepath.Join(dir, images.VMMemFile)); err != nil {
 			return nil, err
 		}
 		// Now shared with the snapshot's copies: the next pause merges into
@@ -199,7 +199,7 @@ func (b *Backend) snapshot(ctx context.Context, sb *backend.Sandbox, id string, 
 		}
 	}
 	for _, f := range []string{images.VMAgentsFile, images.VMImageFile} {
-		if err := LinkOrCopy(filepath.Join(s.root, f), filepath.Join(dir, f)); err != nil {
+		if err := linkRegular(filepath.Join(s.root, f), filepath.Join(dir, f)); err != nil {
 			return nil, err
 		}
 	}
@@ -239,22 +239,35 @@ func assemble(base, mem string) error {
 	if _, err := mergeDiff(full, mem); err != nil {
 		return err
 	}
-	if err := os.Chmod(full, 0o644); err != nil {
+	f, err := openRegular(full, os.O_RDONLY)
+	if err != nil {
+		return err
+	}
+	err = f.Chmod(0o644)
+	f.Close()
+	if err != nil {
 		return err
 	}
 	return os.Rename(full, mem)
 }
 
-// moveFile renames, or copies across filesystems.
+// moveFile moves the regular file src (a file of a jail: a link at the
+// name is refused, not moved) to dst, copying across filesystems.
 func moveFile(src, dst string) error {
-	err := os.Rename(src, dst)
-	if errors.Is(err, syscall.EXDEV) {
-		if err := copySparse(src, dst); err != nil {
-			return err
-		}
-		return os.Remove(src)
+	in, err := openRegular(src, os.O_RDONLY)
+	if err != nil {
+		return err
 	}
-	return err
+	defer in.Close()
+	os.Remove(dst)
+	err = linkOpen(in, dst)
+	if errors.Is(err, syscall.EXDEV) {
+		err = copySparse(src, dst)
+	}
+	if err != nil {
+		return err
+	}
+	return os.Remove(src)
 }
 
 // allocated sums the disk space used by the files in dir.

@@ -241,6 +241,14 @@ docs/OPERATIONS.md §6.4.
   they go to the image store.
 
 ### Fixed
+- **MicroVMs: the edge followed links in a VM's jail** when merging pause
+  snapshots, copying disks and memory into snapshots, and trimming memory
+  files, as root. The jail is writable by the VM's process, so a VMM that
+  was broken into could have had the edge write to, or copy, files of the
+  node. Files of a jail are now opened without following links and must
+  be regular files. (Hardening: it takes a Firecracker escape first.)
+- A numeric `init_user`'s home under `/tmp` is no longer made through a
+  link another user of the sandbox put at its name.
 - **A container sandbox could fill its node's disk through
   `/.opendsec/run`** (the agents' sockets and command output records): it
   was a directory of the host, outside the sandbox's disk. It is now on

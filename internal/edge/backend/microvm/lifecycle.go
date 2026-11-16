@@ -337,7 +337,7 @@ func (b *Backend) createCold(ctx context.Context, s *sandbox, spec *pb.SandboxSp
 	if err := MakeWritableDisk(disk, s.st.DiskMB); err != nil {
 		return fmt.Errorf("writable disk: %w", err)
 	}
-	if err := os.Chown(disk, s.uid, s.uid); err != nil {
+	if err := os.Lchown(disk, s.uid, s.uid); err != nil {
 		return err
 	}
 	var vc vmConfig
@@ -432,10 +432,7 @@ func (b *Backend) createRestored(ctx context.Context, s *sandbox, src *source, w
 		}
 	}
 	disk := filepath.Join(s.root, images.VMDiskFile)
-	if err := copySparse(filepath.Join(src.snapDir, images.VMDiskFile), disk); err != nil {
-		return err
-	}
-	if err := os.Chown(disk, s.uid, s.uid); err != nil {
+	if err := copySparseOwned(filepath.Join(src.snapDir, images.VMDiskFile), disk, s.uid); err != nil {
 		return err
 	}
 	for f, name := range map[string]string{images.VMStateFile: "restore.vmstate", images.VMMemFile: baseMem} {
