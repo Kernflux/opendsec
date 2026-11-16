@@ -113,7 +113,7 @@ deploy/prod/opendsecops upgrade <新版本>
 - 任何一步超时（`OPENDSEC_READY_TIMEOUT`，默认 180 秒）就停下，不再继续。已经升级的组件保持新版本；要回滚就执行 `opendsecops rollback <旧版本>`。
 - apiserver 收到 SIGTERM 后先让 `/readyz` 失败，再继续服务 6 秒，等 LB 把它摘掉，然后给进行中的请求最多 30 秒完成。SDK 会对断开的请求做重试和流续传（SPEC §26）。
 - edge 重启不会影响 sandbox：前提是配置了 `keep_sandboxes_on_exit` 和 `persist_state`，unit 使用 `KillMode=process`。新 edge 进程启动后会重新接管这些 sandbox。
-- 每个节点保留最近 3 个版本，`OPENDSEC_KEEP_RELEASES` 可以调整。已经在运行的 sandbox 继续使用它启动时挂载的那一版 agent。
+- 每个节点保留最近 3 个版本，`OPENDSEC_KEEP_RELEASES` 可以调整。运维机的 `releases/` 目录同样只保留这么多（当前版本和它之前最新的几个），`opendsecops release` 和 `release-add` 之后自动清理；设为 0 则全部保留。fleet 自己另存了一份发布包，不受影响。已经在运行的 sandbox 继续使用它启动时挂载的那一版 agent。
 
 ### 维护一台机器
 ```sh

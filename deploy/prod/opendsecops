@@ -121,6 +121,19 @@ opendsecctl_ops() { # opendsecctl against the cluster as admin, from the ops mac
 
 # ---- release --------------------------------------------------------------------------
 
+# prune_releases keeps the current release and the newest ones before it in
+# the ops directory, $KEEP_RELEASES in all, as the nodes do (a rollback
+# target stays; 0 keeps everything). Fleet holds its own copies.
+prune_releases() {
+	[ "$KEEP_RELEASES" -gt 0 ] 2>/dev/null || return 0
+	local cur old
+	cur=$(readlink "$OPS/current" | sed 's#releases/##')
+	(cd "$OPS/releases" && ls -1t | grep -vx -- "$cur" | tail -n +"$KEEP_RELEASES") | while read -r old; do
+		case $old in ''|.|..|*/*) continue ;; esac
+		rm -rf -- "$OPS/releases/$old" && log "removed the old release $old from $OPS/releases"
+	done
+}
+
 cmd_release() { # release BIN_DIR: package a build with the runtime dependencies pinned in deploy/deps.lock
 	local bin=${1:?usage: opendsecops release BIN_DIR} ver deps
 	ver=$("$bin/opendsecctl" version)
@@ -134,6 +147,7 @@ cmd_release() { # release BIN_DIR: package a build with the runtime dependencies
 	rm -rf "$deps"
 	ln -sfn "releases/$ver" "$OPS/current.new" && mv -T "$OPS/current.new" "$OPS/current"
 	log "release $ver packaged in $OPS/releases/$ver (push it to the fleet: opendsecctl fleet release push $OPS/releases/$ver)"
+	prune_releases
 }
 
 cmd_release_add() { # release-add DIR: a release packaged elsewhere (an offline bundle's), made the current one
@@ -150,6 +164,7 @@ cmd_release_add() { # release-add DIR: a release packaged elsewhere (an offline 
 	fi
 	ln -sfn "releases/$ver" "$OPS/current.new" && mv -T "$OPS/current.new" "$OPS/current"
 	log "release $ver added to $OPS/releases"
+	prune_releases
 }
 
 # ---- certificates ---------------------------------------------------------------------

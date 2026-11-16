@@ -113,7 +113,7 @@ deploy/prod/opendsecops upgrade <new version>
 - If any step times out (`OPENDSEC_READY_TIMEOUT`, default 180 s), it stops there. Components already upgraded keep the new version; to go back, `opendsecops rollback <old version>`.
 - On SIGTERM, an apiserver first fails `/readyz` and keeps serving 6 more seconds while the LB takes it out, then gives calls in flight up to 30 seconds. The SDK retries broken calls and resumes streams (SPEC §26).
 - Edge restarts do not touch sandboxes, provided `keep_sandboxes_on_exit` and `persist_state` are set and the unit uses `KillMode=process`. The new edge process re-adopts them.
-- Each node keeps the last 3 releases (`OPENDSEC_KEEP_RELEASES`). Running sandboxes keep the agents of the release they started with.
+- Each node keeps the last 3 releases (`OPENDSEC_KEEP_RELEASES`). The ops machine's `releases/` directory keeps as many (the current one and the newest before it), pruned after `opendsecops release` and `release-add`; 0 keeps them all. Fleet holds its own copies. Running sandboxes keep the agents of the release they started with.
 
 ### Maintaining a machine
 ```sh
