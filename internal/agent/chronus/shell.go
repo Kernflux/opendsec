@@ -168,6 +168,28 @@ func NewShell(workdir, user string, env map[string]string, dir string) (*Shell, 
 		run: make(chan struct{}, 1), cmds: map[int64]*Command{}, byReq: map[string]*Command{}, gone: map[string]int64{}}, nil
 }
 
+// numericHome makes the home of numeric user uid under tmp and returns it.
+// tmp is writable by everyone in the sandbox: what is already at the name
+// is used only if it is a directory of uid's (a link there is never
+// followed or chowned, and another user's directory would be a home they
+// control). Otherwise the user has no home ("/").
+func numericHome(tmp string, uid, gid int) string {
+	home := filepath.Join(tmp, fmt.Sprintf("home-%d", uid))
+	if err := os.Mkdir(home, 0o700); err == nil {
+		if os.Lchown(home, uid, gid) == nil {
+			return home
+		}
+		os.Remove(home)
+		return "/"
+	}
+	if fi, err := os.Lstat(home); err == nil && fi.IsDir() {
+		if st, ok := fi.Sys().(*syscall.Stat_t); ok && int(st.Uid) == uid {
+			return home
+		}
+	}
+	return "/"
+}
+
 func shellPath() string {
 	for _, p := range []string{"/bin/bash", "/usr/bin/bash", "/bin/sh", "/usr/bin/sh"} {
 		if _, err := os.Stat(p); err == nil {
@@ -217,10 +239,7 @@ func Environ(user string, extra map[string]string) ([]string, *syscall.Credentia
 	var cred *syscall.Credential
 	if uid, gid, ok := numericUser(user); ok {
 		// No /etc/passwd entry needed: a home of its own under /tmp.
-		home := fmt.Sprintf("/tmp/home-%d", uid)
-		if err := os.MkdirAll(home, 0o700); err == nil {
-			os.Chown(home, uid, gid)
-		}
+		home := numericHome("/tmp", uid, gid)
 		cred = &syscall.Credential{Uid: uint32(uid), Gid: uint32(gid)}
 		env["HOME"], env["USER"] = home, strconv.Itoa(uid)
 	} else if user != "" && user != "root" {
