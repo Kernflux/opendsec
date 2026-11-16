@@ -58,4 +58,5 @@
    - **回滚必须演练**，不能只演练升级：新版本写下的数据（edge 上的 sandbox 记录、IAM 状态）在回滚后由旧版本读取，fleet 对启动失败的节点自动回退时也一样。2026-11-15 有一次就是这样发现的：旧版本读到记录里不认识的字段会删掉记录、清理 sandbox。
    - `CHECK_NEW` 里创建几个要跨回滚存活的 sandbox（运行中的、暂停的），并检查这个版本的新功能；`CHECK_OLD` 里用旧 SDK 确认它们还在、能恢复。
    - 给 sandbox 记录加字段时，`internal/edge` 的 `TestRecordReadableByEarlierReleases` 会失败并说明该怎么做。
-7. SDK 发布到 PyPI（包名 `opendsec-sdk`，模块名 `opendsec`；`opendsec` 这个 PyPI 名字属于无关项目）：`python -m build --wheel sdk/python && twine upload dist/opendsec_sdk-*`。
+7. **发布后检查**（生产 rollout 之后）：在能访问集群的机器上，用这个版本的 SDK 运行 `deploy/prod/checks/run.sh`（环境变量见脚本开头）。它以调用方身份检查：容器的 `/.opendsec/run` 受磁盘配额限制、io_uring 被拒绝、内网地址的网络规则被拒绝、DNS 突发查询不影响其他 sandbox；给了 `PUBLISH_TOKEN` 时再检查容器的 `pack_diff` 和 fork。另外用调用方手里的旧版 SDK 跑一遍 `sdk/python/examples/test_features.py`，确认旧 SDK 仍然可用。
+8. SDK 发布到 PyPI（包名 `opendsec-sdk`，模块名 `opendsec`；`opendsec` 这个 PyPI 名字属于无关项目）：`python -m build --wheel sdk/python && twine upload dist/opendsec_sdk-*`。
