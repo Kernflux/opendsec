@@ -51,9 +51,13 @@ phase() {
 	caller "$PYTHON" "$LOAD" "$LOAD_S" "$LOAD_WORKERS" > "$LOGS/load-$tag.log" 2>&1 &
 	sleep 20
 	asadmin "$CTL" fleet rollout create -release "$rel" -bake 20 -pause 10 2>&1 | tail -1
+	# Until it is no longer running; a status call that fails (an apiserver
+	# restarting) is asked again.
 	for _ in $(seq 720); do
-		s=$(asadmin "$CTL" fleet rollout status 2>&1 | head -1)
-		case $s in *running*) sleep 5 ;; *) break ;; esac
+		if s=$(asadmin "$CTL" fleet rollout status 2>&1) && s=$(head -1 <<<"$s"); then
+			case $s in *running*) ;; *) break ;; esac
+		fi
+		sleep 5
 	done
 	echo "$s"
 	case $s in *": done "*"release=$rel "*) ;; *) fail "rollout to $rel: $s"; asadmin "$CTL" fleet rollout status -steps | tail -8 ;; esac
