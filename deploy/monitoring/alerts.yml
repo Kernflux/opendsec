@@ -161,39 +161,41 @@ groups:
 
 # SLO (docs/SLO.md): error ratios over several windows, and multi-window
 # burn-rate alerts. Targets: creations 99.9%, runtime calls 99.95%.
+# The error count falls back to 0, so a ratio is 0 rather than empty while
+# there are calls but no errors (it stays empty when there are no calls).
 - name: opendsec-slo
   rules:
   - record: opendsec:create_errors:ratio_rate5m
     expr: |
-      sum(rate(opendsec_apiserver_create_seconds_count{reason=~"unavailable|internal|timeout|no_capacity"}[5m]))
+      (sum(rate(opendsec_apiserver_create_seconds_count{reason=~"unavailable|internal|timeout|no_capacity"}[5m])) or vector(0))
         / clamp_min(sum(rate(opendsec_apiserver_create_seconds_count{reason!~"invalid|unauthenticated|forbidden|not_found|quota_exceeded|rate_limited|conflict"}[5m])), 1e-9)
   - record: opendsec:runtime_errors:ratio_rate5m
     expr: |
-      sum(rate(opendsec_rpc_server_handled_total{job="opendsec-apiserver",service="DSec",method=~"Exec|ExecStream|ReadFile|WriteFile|StopSandbox|PauseSandbox|ResumeSandbox|ForkSandbox",reason=~"unavailable|internal"}[5m]))
+      (sum(rate(opendsec_rpc_server_handled_total{job="opendsec-apiserver",service="DSec",method=~"Exec|ExecStream|ReadFile|WriteFile|StopSandbox|PauseSandbox|ResumeSandbox|ForkSandbox",reason=~"unavailable|internal"}[5m])) or vector(0))
         / clamp_min(sum(rate(opendsec_rpc_server_handled_total{job="opendsec-apiserver",service="DSec",method=~"Exec|ExecStream|ReadFile|WriteFile|StopSandbox|PauseSandbox|ResumeSandbox|ForkSandbox",reason!~"invalid|unauthenticated|forbidden|not_found|quota_exceeded|rate_limited|conflict"}[5m])), 1e-9)
   - record: opendsec:create_errors:ratio_rate30m
     expr: |
-      sum(rate(opendsec_apiserver_create_seconds_count{reason=~"unavailable|internal|timeout|no_capacity"}[30m]))
+      (sum(rate(opendsec_apiserver_create_seconds_count{reason=~"unavailable|internal|timeout|no_capacity"}[30m])) or vector(0))
         / clamp_min(sum(rate(opendsec_apiserver_create_seconds_count{reason!~"invalid|unauthenticated|forbidden|not_found|quota_exceeded|rate_limited|conflict"}[30m])), 1e-9)
   - record: opendsec:runtime_errors:ratio_rate30m
     expr: |
-      sum(rate(opendsec_rpc_server_handled_total{job="opendsec-apiserver",service="DSec",method=~"Exec|ExecStream|ReadFile|WriteFile|StopSandbox|PauseSandbox|ResumeSandbox|ForkSandbox",reason=~"unavailable|internal"}[30m]))
+      (sum(rate(opendsec_rpc_server_handled_total{job="opendsec-apiserver",service="DSec",method=~"Exec|ExecStream|ReadFile|WriteFile|StopSandbox|PauseSandbox|ResumeSandbox|ForkSandbox",reason=~"unavailable|internal"}[30m])) or vector(0))
         / clamp_min(sum(rate(opendsec_rpc_server_handled_total{job="opendsec-apiserver",service="DSec",method=~"Exec|ExecStream|ReadFile|WriteFile|StopSandbox|PauseSandbox|ResumeSandbox|ForkSandbox",reason!~"invalid|unauthenticated|forbidden|not_found|quota_exceeded|rate_limited|conflict"}[30m])), 1e-9)
   - record: opendsec:create_errors:ratio_rate1h
     expr: |
-      sum(rate(opendsec_apiserver_create_seconds_count{reason=~"unavailable|internal|timeout|no_capacity"}[1h]))
+      (sum(rate(opendsec_apiserver_create_seconds_count{reason=~"unavailable|internal|timeout|no_capacity"}[1h])) or vector(0))
         / clamp_min(sum(rate(opendsec_apiserver_create_seconds_count{reason!~"invalid|unauthenticated|forbidden|not_found|quota_exceeded|rate_limited|conflict"}[1h])), 1e-9)
   - record: opendsec:runtime_errors:ratio_rate1h
     expr: |
-      sum(rate(opendsec_rpc_server_handled_total{job="opendsec-apiserver",service="DSec",method=~"Exec|ExecStream|ReadFile|WriteFile|StopSandbox|PauseSandbox|ResumeSandbox|ForkSandbox",reason=~"unavailable|internal"}[1h]))
+      (sum(rate(opendsec_rpc_server_handled_total{job="opendsec-apiserver",service="DSec",method=~"Exec|ExecStream|ReadFile|WriteFile|StopSandbox|PauseSandbox|ResumeSandbox|ForkSandbox",reason=~"unavailable|internal"}[1h])) or vector(0))
         / clamp_min(sum(rate(opendsec_rpc_server_handled_total{job="opendsec-apiserver",service="DSec",method=~"Exec|ExecStream|ReadFile|WriteFile|StopSandbox|PauseSandbox|ResumeSandbox|ForkSandbox",reason!~"invalid|unauthenticated|forbidden|not_found|quota_exceeded|rate_limited|conflict"}[1h])), 1e-9)
   - record: opendsec:create_errors:ratio_rate6h
     expr: |
-      sum(rate(opendsec_apiserver_create_seconds_count{reason=~"unavailable|internal|timeout|no_capacity"}[6h]))
+      (sum(rate(opendsec_apiserver_create_seconds_count{reason=~"unavailable|internal|timeout|no_capacity"}[6h])) or vector(0))
         / clamp_min(sum(rate(opendsec_apiserver_create_seconds_count{reason!~"invalid|unauthenticated|forbidden|not_found|quota_exceeded|rate_limited|conflict"}[6h])), 1e-9)
   - record: opendsec:runtime_errors:ratio_rate6h
     expr: |
-      sum(rate(opendsec_rpc_server_handled_total{job="opendsec-apiserver",service="DSec",method=~"Exec|ExecStream|ReadFile|WriteFile|StopSandbox|PauseSandbox|ResumeSandbox|ForkSandbox",reason=~"unavailable|internal"}[6h]))
+      (sum(rate(opendsec_rpc_server_handled_total{job="opendsec-apiserver",service="DSec",method=~"Exec|ExecStream|ReadFile|WriteFile|StopSandbox|PauseSandbox|ResumeSandbox|ForkSandbox",reason=~"unavailable|internal"}[6h])) or vector(0))
         / clamp_min(sum(rate(opendsec_rpc_server_handled_total{job="opendsec-apiserver",service="DSec",method=~"Exec|ExecStream|ReadFile|WriteFile|StopSandbox|PauseSandbox|ResumeSandbox|ForkSandbox",reason!~"invalid|unauthenticated|forbidden|not_found|quota_exceeded|rate_limited|conflict"}[6h])), 1e-9)
   - record: opendsec:create_availability:ratio_rate5m
     expr: 1 - opendsec:create_errors:ratio_rate5m
